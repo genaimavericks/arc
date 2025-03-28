@@ -126,6 +126,32 @@ def save_ingestion_job(db, job_id, job_data):
     db.commit()
     return True
 
+def delete_dataset(db, dataset_id):
+    """Delete a dataset and its associated data"""
+    # Find the dataset in the ingestion jobs
+    dataset = db.query(IngestionJob).filter(IngestionJob.id == dataset_id).first()
+    
+    if not dataset:
+        return False, "Dataset not found"
+    
+    try:
+        # Delete the dataset record
+        db.delete(dataset)
+        
+        # Delete any processed data files
+        data_path = DATA_DIR / f"{dataset_id}.parquet"
+        if data_path.exists():
+            data_path.unlink()
+        
+        # Commit the changes
+        db.commit()
+        
+        return True, "Dataset deleted successfully"
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error deleting dataset: {str(e)}")
+        return False, f"Error deleting dataset: {str(e)}"
+
 # Models for API requests
 class DatabaseConfig(BaseModel):
     type: str
@@ -632,6 +658,31 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
             with open(file_path, 'r') as f:
                 data = json.load(f)
             
+            # Function to flatten nested JSON
+            def flatten_json(nested_json, prefix=''):
+                flattened = {}
+                for key, value in nested_json.items():
+                    if isinstance(value, dict):
+                        # Recursively flatten nested dictionaries
+                        flattened.update(flatten_json(value, f"{prefix}{key}_"))
+                    elif isinstance(value, list):
+                        # Handle lists by converting them to strings if they contain simple types
+                        # or by flattening if they contain dictionaries
+                        if all(not isinstance(item, dict) for item in value):
+                            # For lists of simple types, convert to string
+                            flattened[f"{prefix}{key}"] = str(value)
+                        else:
+                            # For lists of dictionaries, flatten each item
+                            for i, item in enumerate(value):
+                                if isinstance(item, dict):
+                                    flattened.update(flatten_json(item, f"{prefix}{key}_{i}_"))
+                                else:
+                                    flattened[f"{prefix}{key}_{i}"] = item
+                    else:
+                        # For simple types, just add them with the prefix
+                        flattened[f"{prefix}{key}"] = value
+                return flattened
+            
             # Convert to DataFrame - ensure data is always a list
             if isinstance(data, list):
                 # Handle empty list case
@@ -639,8 +690,16 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                     # Create empty DataFrame with default columns
                     df = pd.DataFrame(columns=['data'])
                 else:
-                    # Convert list of dictionaries to DataFrame
-                    df = pd.DataFrame(data)
+                    # Flatten each item in the list if it's a dictionary
+                    flattened_data = []
+                    for item in data:
+                        if isinstance(item, dict):
+                            flattened_data.append(flatten_json(item))
+                        else:
+                            flattened_data.append({"value": item})
+                    
+                    # Convert list of flattened dictionaries to DataFrame
+                    df = pd.DataFrame(flattened_data)
                     
                     # Ensure all columns have consistent types by inferring types
                     for col in df.columns:
@@ -668,8 +727,9 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                                     else None
                                 )
             else:
-                # If data is not a list (e.g., single object), convert to a single-row DataFrame
-                df = pd.DataFrame([data])
+                # If data is not a list (e.g., single object), flatten it and convert to a single-row DataFrame
+                flattened_data = flatten_json(data) if isinstance(data, dict) else {"value": data}
+                df = pd.DataFrame([flattened_data])
             
             # Save to parquet
             df.to_parquet(output_file, index=False)
@@ -2186,11 +2246,44 @@ async def preview_file(
             with open(file_path, 'r', encoding='utf-8') as jsonfile:
                 data = json.load(jsonfile)
             
-            # If it's an array, limit to first 10 items
+            # Function to flatten nested JSON (same as in ingestion process)
+            def flatten_json(nested_json, prefix=''):
+                flattened = {}
+                for key, value in nested_json.items():
+                    if isinstance(value, dict):
+                        # Recursively flatten nested dictionaries
+                        flattened.update(flatten_json(value, f"{prefix}{key}_"))
+                    elif isinstance(value, list):
+                        # Handle lists by converting them to strings if they contain simple types
+                        # or by flattening if they contain dictionaries
+                        if all(not isinstance(item, dict) for item in value):
+                            # For lists of simple types, convert to string
+                            flattened[f"{prefix}{key}"] = str(value)
+                        else:
+                            # For lists of dictionaries, flatten each item
+                            for i, item in enumerate(value):
+                                if isinstance(item, dict):
+                                    flattened.update(flatten_json(item, f"{prefix}{key}_{i}_"))
+                                else:
+                                    flattened[f"{prefix}{key}_{i}"] = item
+                    else:
+                        # For simple types, just add them with the prefix
+                        flattened[f"{prefix}{key}"] = value
+                return flattened
+            
+            # If it's an array, limit to first 10 items and flatten each item
             if isinstance(data, list):
-                preview_data = data[:10]
+                limited_data = data[:10]  # Limit to first 10 items
+                flattened_data = []
+                for item in limited_data:
+                    if isinstance(item, dict):
+                        flattened_data.append(flatten_json(item))
+                    else:
+                        flattened_data.append({"value": item})
+                preview_data = flattened_data
             else:
-                preview_data = data
+                # If it's a single object, flatten it
+                preview_data = flatten_json(data) if isinstance(data, dict) else {"value": data}
             
             # Log activity
             log_activity(
@@ -2200,8 +2293,13 @@ async def preview_file(
                 details=f"Previewed file: {file_info.filename}"
             )
             
+            # Convert to DataFrame to get headers and rows for consistent display
+            df = pd.DataFrame(preview_data if isinstance(preview_data, list) else [preview_data])
+            
+            # Return data in a format similar to CSV preview
             return {
-                "data": preview_data,
+                "headers": df.columns.tolist(),
+                "data": df.values.tolist() if not df.empty else [],
                 "filename": file_info.filename,
                 "type": "json"
             }
@@ -2374,6 +2472,39 @@ async def complete_chunked_upload(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error completing chunked upload: {str(e)}"
         )
+
+# Delete a dataset
+@router.delete("/delete-dataset/{dataset_id}")
+def delete_dataset_endpoint(
+    dataset_id: str,
+    current_user: User = Depends(has_permission("data:delete")),  # Requires delete permission
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a dataset and all its associated data.
+    
+    This endpoint requires the 'data:delete' permission, which should be restricted
+    to admin and researcher roles.
+    """
+    # Log the activity
+    log_activity(
+        db=db,
+        username=current_user.username,
+        action="Delete dataset",
+        details=f"Deleted dataset with ID: {dataset_id}"
+    )
+    
+    # Call the delete function
+    success, message = delete_dataset(db, dataset_id)
+    
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND if "not found" in message.lower() 
+            else status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=message
+        )
+    
+    return {"success": True, "message": message}
 
 # Create data directory if it doesn't exist
 DATA_DIR.mkdir(exist_ok=True)

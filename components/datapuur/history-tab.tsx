@@ -290,7 +290,13 @@ export function HistoryTab() {
         status: "failed",
         source_type: "file",
         schema: null,
-        statistics: null,
+        statistics: {} as { 
+          row_count: number; 
+          column_count: number; 
+          null_percentage: number; 
+          memory_usage: string; 
+          processing_time: string; 
+        } | undefined,
       },
       {
         id: "5",
@@ -405,7 +411,13 @@ export function HistoryTab() {
           table: "products",
         },
         schema: null,
-        statistics: null,
+        statistics: {} as { 
+          row_count: number; 
+          column_count: number; 
+          null_percentage: number; 
+          memory_usage: string; 
+          processing_time: string; 
+        } | undefined,
       },
     ]
   }
@@ -854,7 +866,9 @@ export function HistoryTab() {
     const previewData = itemData[id]?.preview
     if (!previewData || !previewData.data) return 1
 
-    return Math.ceil(previewData.data.length / previewPageSize)
+    // Ensure data is an array before calculating length
+    const dataArray = Array.isArray(previewData.data) ? previewData.data : [previewData.data]
+    return Math.ceil(dataArray.length / previewPageSize)
   }
 
   // Get paginated preview data
@@ -866,9 +880,12 @@ export function HistoryTab() {
     const startIndex = (currentPage - 1) * previewPageSize
     const endIndex = startIndex + previewPageSize
 
+    // Ensure data is an array before slicing
+    const dataArray = Array.isArray(previewData.data) ? previewData.data : [previewData.data]
+
     return {
       headers: previewData.headers || [],
-      rows: previewData.data.slice(startIndex, endIndex),
+      rows: dataArray.slice(startIndex, endIndex),
     }
   }
 
@@ -894,7 +911,19 @@ export function HistoryTab() {
     }
 
     const previewData = itemData[id]?.preview
-    if (!previewData || !previewData.data || previewData.data.length === 0) {
+    if (!previewData || !previewData.data) {
+      return (
+        <div className="p-4 bg-muted/30 rounded-md text-muted-foreground">
+          No preview data available for this ingestion.
+        </div>
+      )
+    }
+
+    // Ensure data is an array
+    const dataArray = Array.isArray(previewData.data) ? previewData.data : [previewData.data]
+    
+    // Check if array is empty
+    if (dataArray.length === 0) {
       return (
         <div className="p-4 bg-muted/30 rounded-md text-muted-foreground">
           No preview data available for this ingestion.
@@ -915,7 +944,7 @@ export function HistoryTab() {
             <table className="w-full border-collapse">
               <thead>
                 <tr className="bg-muted/50">
-                  {headers.map((header, i) => (
+                  {headers.map((header: string, i: number) => (
                     <th key={i} className="px-4 py-2 text-left text-sm font-medium text-muted-foreground border-b">
                       {header}
                     </th>
@@ -923,13 +952,17 @@ export function HistoryTab() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, rowIndex) => (
+                {rows.map((row: any, rowIndex: number) => (
                   <tr key={rowIndex} className={rowIndex % 2 === 0 ? "bg-background" : "bg-muted/20"}>
-                    {row.map((cell, cellIndex) => (
+                    {Array.isArray(row) ? row.map((cell: any, cellIndex: number) => (
                       <td key={cellIndex} className="px-4 py-2 text-sm border-b border-border">
                         {cell !== null ? String(cell) : <span className="text-muted-foreground italic">NULL</span>}
                       </td>
-                    ))}
+                    )) : (
+                      <td className="px-4 py-2 text-sm border-b border-border">
+                        {row !== null ? String(row) : <span className="text-muted-foreground italic">NULL</span>}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -942,7 +975,7 @@ export function HistoryTab() {
           <div className="flex items-center justify-between">
             <div className="text-sm text-muted-foreground">
               Showing {(currentPage - 1) * previewPageSize + 1} to{" "}
-              {Math.min(currentPage * previewPageSize, previewData.data.length)} of {previewData.data.length} rows
+              {Math.min(currentPage * previewPageSize, dataArray.length)} of {dataArray.length} rows
             </div>
             <div className="flex items-center space-x-2">
               <Button
@@ -1026,7 +1059,7 @@ export function HistoryTab() {
               </tr>
             </thead>
             <tbody>
-              {schemaData.fields.map((field, index) => (
+              {schemaData.fields.map((field: { name: string; type: string; nullable: boolean; }, index: number) => (
                 <tr key={index} className={index % 2 === 0 ? "bg-background" : "bg-muted/20"}>
                   <td className="px-4 py-2 text-sm font-medium border-b border-border">{field.name}</td>
                   <td className="px-4 py-2 text-sm border-b border-border">
@@ -1414,4 +1447,3 @@ export function HistoryTab() {
     </div>
   )
 }
-

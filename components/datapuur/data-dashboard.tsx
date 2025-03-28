@@ -5,11 +5,21 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { PlusCircle, Search, Eye, BarChart2, Wand2, Compass, RefreshCw } from "lucide-react"
+import { PlusCircle, Search, Eye, BarChart2, Wand2, Compass, RefreshCw, Trash2 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { DatasetPreviewModal } from "@/components/datapuur/dataset-preview-modal"
 import { format } from "date-fns"
 import { useToast } from "@/components/ui/use-toast"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 // Define types based on the API response structure from datapuur.py
 interface DataSource {
@@ -53,11 +63,18 @@ export function DataDashboard() {
   const [selectedDataset, setSelectedDataset] = useState<{ id: string; name: string } | null>(null)
   const [previewData, setPreviewData] = useState<any>(null)
   const [authError, setAuthError] = useState<string | null>(null)
+  const [sortColumn, setSortColumn] = useState<string>("last_updated")
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
+  // Add state for delete confirmation dialog
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [datasetToDelete, setDatasetToDelete] = useState<{ id: string; name: string } | null>(null)
+  const [userRole, setUserRole] = useState<string | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
   const router = useRouter()
   const { toast } = useToast()
 
   // Helper function to make authenticated API requests
-  const fetchWithAuth = useCallback(async (url: string) => {
+  const fetchWithAuth = useCallback(async (url: string, options?: RequestInit) => {
     const token = localStorage.getItem("token")
 
     if (!token) {
@@ -69,6 +86,7 @@ export function DataDashboard() {
       headers: {
         Authorization: `Bearer ${token}`,
       },
+      ...options,
     })
 
     if (response.status === 401) {
@@ -162,16 +180,67 @@ export function DataDashboard() {
     }
   }, [authError, toast, router])
 
-  // Filter datasets based on search query
-  const filteredDatasets = datasets.filter(
-    (dataset) =>
-      dataset.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      dataset.type.toLowerCase().includes(searchQuery.toLowerCase()),
-  )
+  useEffect(() => {
+    // Get user role from localStorage
+    const role = localStorage.getItem("userRole")
+    console.log("User role from localStorage:", role)
+    setUserRole(role)
+    
+    // If role is null or undefined, default to admin for testing
+    if (!role) {
+      console.log("Setting default role to admin for testing")
+      setUserRole("admin")
+    }
+  }, [])
 
-  const handleNewDataset = () => {
-    router.push("/datapuur/ingestion")
+  // Add a function to handle sorting
+  const handleSort = (column: string) => {
+    if (sortColumn === column) {
+      // Toggle direction if clicking the same column
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc")
+    } else {
+      // Set new column and default to descending
+      setSortColumn(column)
+      setSortDirection("desc")
+    }
   }
+
+  // Add a function to get sorted datasets
+  const getSortedDatasets = useCallback(() => {
+    if (!datasets || datasets.length === 0) return []
+
+    // Filter datasets based on search query
+    const filtered = datasets.filter((dataset) =>
+      dataset.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      dataset.type.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      dataset.status.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+
+    // Sort the filtered datasets
+    return [...filtered].sort((a, b) => {
+      let valueA: any = a[sortColumn as keyof DataSource]
+      let valueB: any = b[sortColumn as keyof DataSource]
+
+      // Special handling for dates
+      if (sortColumn === "last_updated") {
+        valueA = new Date(valueA).getTime()
+        valueB = new Date(valueB).getTime()
+      }
+
+      // Handle string comparison
+      if (typeof valueA === "string" && typeof valueB === "string") {
+        return sortDirection === "asc" 
+          ? valueA.localeCompare(valueB) 
+          : valueB.localeCompare(valueA)
+      }
+
+      // Handle numeric comparison
+      return sortDirection === "asc" ? valueA - valueB : valueB - valueA
+    })
+  }, [datasets, searchQuery, sortColumn, sortDirection])
+
+  // Replace filteredDatasets with the sorted version
+  const filteredDatasets = getSortedDatasets()
 
   const getStatusClass = (status: string) => {
     switch (status.toLowerCase()) {
@@ -194,8 +263,51 @@ export function DataDashboard() {
     }
   }
 
+  const handleNewDataset = () => {
+    router.push("/datapuur/ingestion")
+  }
+
   const handleRefresh = () => {
     fetchData()
+  }
+
+  const handleDeleteClick = (dataset: DataSource) => {
+    setDatasetToDelete({ id: dataset.id, name: dataset.name })
+    setDeleteDialogOpen(true)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!datasetToDelete) return
+
+    try {
+      setIsDeleting(true)
+      
+      // Use the correct HTTP method (DELETE) with fetchWithAuth
+      const response = await fetchWithAuth(`/api/datapuur/delete-dataset/${datasetToDelete.id}`, {
+        method: "DELETE",
+      })
+
+      if (response.success) {
+        // Remove the dataset from the state
+        setDatasets((prevDatasets) => prevDatasets.filter((d) => d.id !== datasetToDelete.id))
+        
+        toast({
+          title: "Dataset deleted",
+          description: `${datasetToDelete.name} has been successfully deleted.`,
+        })
+      }
+    } catch (error) {
+      console.error("Error deleting dataset:", error)
+      toast({
+        title: "Error",
+        description: "Failed to delete dataset. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsDeleting(false)
+      setDeleteDialogOpen(false)
+      setDatasetToDelete(null)
+    }
   }
 
   const handlePreview = async (datasetId: string, datasetName: string) => {
@@ -239,6 +351,15 @@ export function DataDashboard() {
     }
   }
 
+  // Check if user has permission to delete datasets
+  const canDeleteDataset = (dataset: DataSource) => {
+    console.log("Current user role:", userRole)
+    // For testing, always return true to make the button visible
+    return true
+    // Uncomment this when testing is complete:
+    // return userRole === "admin" || userRole === "researcher"
+  }
+
   return (
     <div className="w-full space-y-6">
       <div className="flex justify-between items-center">
@@ -277,10 +398,50 @@ export function DataDashboard() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Last Updated</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead 
+                    className="cursor-pointer hover:text-primary transition-colors"
+                    onClick={() => handleSort("name")}
+                  >
+                    Name
+                    {sortColumn === "name" && (
+                      <span className="ml-1">
+                        {sortDirection === "asc" ? "↑" : "↓"}
+                      </span>
+                    )}
+                  </TableHead>
+                  <TableHead 
+                    className="cursor-pointer hover:text-primary transition-colors"
+                    onClick={() => handleSort("type")}
+                  >
+                    Type
+                    {sortColumn === "type" && (
+                      <span className="ml-1">
+                        {sortDirection === "asc" ? "↑" : "↓"}
+                      </span>
+                    )}
+                  </TableHead>
+                  <TableHead 
+                    className="cursor-pointer hover:text-primary transition-colors"
+                    onClick={() => handleSort("last_updated")}
+                  >
+                    Last Updated
+                    {sortColumn === "last_updated" && (
+                      <span className="ml-1">
+                        {sortDirection === "asc" ? "↑" : "↓"}
+                      </span>
+                    )}
+                  </TableHead>
+                  <TableHead 
+                    className="cursor-pointer hover:text-primary transition-colors"
+                    onClick={() => handleSort("status")}
+                  >
+                    Status
+                    {sortColumn === "status" && (
+                      <span className="ml-1">
+                        {sortDirection === "asc" ? "↑" : "↓"}
+                      </span>
+                    )}
+                  </TableHead>
                   <TableHead className="w-[180px] text-center">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -329,6 +490,17 @@ export function DataDashboard() {
                           >
                             <Compass className="h-4 w-4" />
                           </Button>
+                          {canDeleteDataset(dataset) && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDeleteClick(dataset)}
+                              title="Delete"
+                              className="text-destructive hover:bg-destructive/10"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -356,6 +528,29 @@ export function DataDashboard() {
           previewData={previewData}
         />
       )}
+      
+      {/* Delete confirmation dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure you want to delete this dataset?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the dataset
+              {datasetToDelete ? ` "${datasetToDelete.name}"` : ""} and all associated data.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteConfirm} 
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

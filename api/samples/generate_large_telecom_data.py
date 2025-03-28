@@ -6,7 +6,7 @@ import os
 
 # Define the output file path
 output_file = 'TelecomChurn_Large_300.csv'
-target_size_mb = 300
+target_size_mb = 100
 approx_row_size_bytes = 150  # Approximate size of each row in bytes
 target_rows = int((target_size_mb * 1024 * 1024) / approx_row_size_bytes)
 

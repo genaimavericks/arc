@@ -75,7 +75,24 @@ export default function IngestionPage() {
   }
 
   const handleJobUpdated = (updatedJob: Job) => {
-    setIngestionJobs((prevJobs) => prevJobs.map((job) => (job.id === updatedJob.id ? updatedJob : job)))
+    setIngestionJobs((prevJobs) => {
+      // First update the job in the state
+      const updatedJobs = prevJobs.map((job) => (job.id === updatedJob.id ? updatedJob : job));
+      
+      // If the job has just completed or failed, set a timeout to remove it
+      if ((updatedJob.status === "completed" || updatedJob.status === "failed") && 
+          updatedJobs.find(job => job.id === updatedJob.id)?.status !== updatedJob.status) {
+        
+        // Remove the job after 10 seconds (10000ms)
+        setTimeout(() => {
+          setIngestionJobs(currentJobs => 
+            currentJobs.filter(job => job.id !== updatedJob.id)
+          );
+        }, 10000);
+      }
+      
+      return updatedJobs;
+    });
   }
 
   const handleError = (error: { message: string }) => {
