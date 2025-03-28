@@ -8,9 +8,40 @@ import { Badge } from "@/components/ui/badge"
 import { AlertCircle, CheckCircle, Clock, RefreshCw, XCircle, FileText, Database, FolderOpen } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 
-export function IngestionMonitor({ jobs, onJobUpdated, errors }) {
+// Define job interface
+interface Job {
+  id: string
+  name: string
+  type: string
+  status: string
+  progress: number
+  startTime: string
+  endTime: string | null
+  details: string
+  error?: string
+  duration?: string
+}
+
+// Define component props
+interface IngestionMonitorProps {
+  jobs: Job[]
+  onJobUpdated?: (job: Job) => void
+  errors?: string[]
+  isPolling?: boolean
+}
+
+export function IngestionMonitor({ jobs, onJobUpdated, errors = [], isPolling = true }: IngestionMonitorProps) {
   const [activeTab, setActiveTab] = useState("active")
-  const [isPolling, setIsPolling] = useState(true)
+  const [localIsPolling, setLocalIsPolling] = useState(isPolling)
+
+  // Helper function to get the group key for a job
+  const getGroupKey = (job: Job) => {
+    // Safely handle undefined or null startTime
+    if (!job.startTime) {
+      return "unknown-date"
+    }
+    return job.startTime.split("T")[0]
+  }
 
   // Filter jobs based on status
   const activeJobs = jobs.filter((job) => job.status === "running" || job.status === "queued")
@@ -19,11 +50,16 @@ export function IngestionMonitor({ jobs, onJobUpdated, errors }) {
 
   // Poll for job updates
   useEffect(() => {
-    if (!isPolling) return
+    if (!localIsPolling) return
 
-    const pollInterval = setInterval(async () => {
+    // Initial check immediately when a new job is added
+    const checkJobs = async () => {
       // Only poll for active jobs
-      const jobsToUpdate = jobs.filter((job) => job.status === "running" || job.status === "queued")
+      const jobsToUpdate = jobs.filter((job) => 
+        (job.status === "running" || job.status === "queued") && 
+        // Skip temporary jobs (they start with "temp-")
+        !job.id.startsWith("temp-")
+      )
 
       if (jobsToUpdate.length === 0) {
         return
@@ -47,12 +83,18 @@ export function IngestionMonitor({ jobs, onJobUpdated, errors }) {
       } catch (error) {
         console.error("Error polling job status:", error)
       }
-    }, 3000) // Poll every 3 seconds
+    }
+
+    // Run immediately when jobs change
+    checkJobs()
+    
+    // Then set up the polling interval
+    const pollInterval = setInterval(checkJobs, 3000) // Poll every 3 seconds
 
     return () => clearInterval(pollInterval)
-  }, [jobs, isPolling, onJobUpdated])
+  }, [jobs, localIsPolling, onJobUpdated])
 
-  const getJobIcon = (type) => {
+  const getJobIcon = (type: string) => {
     switch (type) {
       case "file":
         return <FileText className="h-4 w-4" />
@@ -63,7 +105,7 @@ export function IngestionMonitor({ jobs, onJobUpdated, errors }) {
     }
   }
 
-  const getStatusBadge = (status) => {
+  const getStatusBadge = (status: string) => {
     switch (status) {
       case "running":
         return (
@@ -98,7 +140,7 @@ export function IngestionMonitor({ jobs, onJobUpdated, errors }) {
     }
   }
 
-  const formatTime = (timeString) => {
+  const formatTime = (timeString: string) => {
     if (!timeString) return "N/A"
     try {
       return formatDistanceToNow(new Date(timeString), { addSuffix: true })
@@ -107,7 +149,7 @@ export function IngestionMonitor({ jobs, onJobUpdated, errors }) {
     }
   }
 
-  const cancelJob = async (jobId) => {
+  const cancelJob = async (jobId: string) => {
     try {
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "/api"}/datapuur/cancel-job/${jobId}`, {
         method: "POST",
@@ -128,40 +170,27 @@ export function IngestionMonitor({ jobs, onJobUpdated, errors }) {
   }
 
   // Add a function to group jobs by batch or source
-  const groupJobs = (jobs) => {
+  const groupJobs = (jobs: Job[]) => {
     // Group jobs by their creation time (within a 30-second window)
-    const groupedJobs = {}
+    const groupedJobs: Record<string, Job[]> = {}
 
     jobs.forEach((job) => {
-      // Use the first part of the job name (before extension) as a potential group key
-      const baseName = job.name.split(".")[0]
-
-      // Find if there's an existing group with similar start time
-      let assigned = false
-      Object.keys(groupedJobs).forEach((groupKey) => {
-        const group = groupedJobs[groupKey]
-        // Check if this job was created within 30 seconds of the group's first job
-        if (group.length > 0) {
-          const firstJobTime = new Date(group[0].startTime).getTime()
-          const currentJobTime = new Date(job.startTime).getTime()
-          const timeDiff = Math.abs(currentJobTime - firstJobTime)
-
-          // If within 30 seconds and has similar name, add to this group
-          if (timeDiff < 30000 && (groupKey.includes(baseName) || baseName.includes(groupKey.split("-batch")[0]))) {
-            group.push(job)
-            assigned = true
-          }
-        }
-      })
-
-      // If not assigned to any group, create a new group
-      if (!assigned) {
-        const groupKey = `${baseName}-batch-${Date.now()}`
-        groupedJobs[groupKey] = [job]
+      const timeKey = getGroupKey(job)
+      if (!groupedJobs[timeKey]) {
+        groupedJobs[timeKey] = []
       }
+      groupedJobs[timeKey].push(job)
     })
 
-    return groupedJobs
+    // Sort groups by most recent first
+    return Object.entries(groupedJobs)
+      .sort(([keyA], [keyB]) => {
+        return keyB.localeCompare(keyA)
+      })
+      .map(([key, jobs]) => ({
+        key,
+        jobs,
+      }))
   }
 
   return (
@@ -171,11 +200,11 @@ export function IngestionMonitor({ jobs, onJobUpdated, errors }) {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setIsPolling(!isPolling)}
-            className={isPolling ? "border-primary text-primary" : ""}
+            onClick={() => setLocalIsPolling(!localIsPolling)}
+            className={localIsPolling ? "border-primary text-primary" : ""}
           >
-            <RefreshCw className={`h-4 w-4 mr-2 ${isPolling ? "animate-spin" : ""}`} />
-            {isPolling ? "Auto-refreshing" : "Auto-refresh paused"}
+            <RefreshCw className={`h-4 w-4 mr-2 ${localIsPolling ? "animate-spin" : ""}`} />
+            {localIsPolling ? "Auto-refreshing" : "Auto-refresh paused"}
           </Button>
         </div>
         <div className="text-sm text-muted-foreground">
@@ -198,17 +227,17 @@ export function IngestionMonitor({ jobs, onJobUpdated, errors }) {
           ) : (
             <>
               {/* Group jobs that were likely uploaded together */}
-              {Object.entries(groupJobs(activeJobs)).map(([groupKey, groupedJobs]) => (
-                <div key={groupKey} className="mb-6">
-                  {groupedJobs.length > 1 && (
+              {groupJobs(activeJobs).map(({ key, jobs }) => (
+                <div key={key} className="mb-6">
+                  {jobs.length > 1 && (
                     <div className="flex items-center mb-2 text-sm text-muted-foreground">
                       <FolderOpen className="h-4 w-4 mr-1" />
-                      <span>Batch upload ({groupedJobs.length} files)</span>
+                      <span>Batch upload ({jobs.length} files)</span>
                     </div>
                   )}
 
                   <div className="space-y-3">
-                    {groupedJobs.map((job) => (
+                    {jobs.map((job) => (
                       <div key={job.id} className="border border-border rounded-lg p-4 bg-card/50">
                         <div className="flex justify-between items-start mb-2">
                           <div className="flex items-center">
@@ -263,7 +292,7 @@ export function IngestionMonitor({ jobs, onJobUpdated, errors }) {
                   <div className="flex items-center space-x-2">{getStatusBadge(job.status)}</div>
                 </div>
                 <div className="mt-2 text-xs text-muted-foreground flex justify-between">
-                  <span>Completed {formatTime(job.endTime)}</span>
+                  <span>Completed {formatTime(job.endTime || '')}</span>
                   <span>Duration: {job.duration || "N/A"}</span>
                 </div>
               </div>
@@ -288,7 +317,7 @@ export function IngestionMonitor({ jobs, onJobUpdated, errors }) {
                   <div className="flex items-center space-x-2">{getStatusBadge(job.status)}</div>
                 </div>
                 <div className="mt-2 text-xs text-destructive">Error: {job.error || "Unknown error occurred"}</div>
-                <div className="mt-1 text-xs text-muted-foreground">Failed {formatTime(job.endTime)}</div>
+                <div className="mt-1 text-xs text-muted-foreground">Failed {formatTime(job.endTime || '')}</div>
               </div>
             ))
           )}
@@ -303,11 +332,10 @@ export function IngestionMonitor({ jobs, onJobUpdated, errors }) {
             Error Log
           </h4>
           <div className="space-y-2 max-h-40 overflow-y-auto">
-            {errors.map((error) => (
-              <div key={error.id} className="bg-destructive/10 border border-destructive/20 rounded-md p-2 text-sm">
+            {errors.map((error, index) => (
+              <div key={index} className="bg-destructive/10 border border-destructive/20 rounded-md p-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-destructive font-medium">{error.message}</span>
-                  <span className="text-xs text-muted-foreground">{formatTime(error.timestamp)}</span>
+                  <span className="text-destructive font-medium">{error}</span>
                 </div>
               </div>
             ))}
@@ -317,4 +345,3 @@ export function IngestionMonitor({ jobs, onJobUpdated, errors }) {
     </div>
   )
 }
-

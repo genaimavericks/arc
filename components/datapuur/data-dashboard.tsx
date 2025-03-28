@@ -264,8 +264,8 @@ export function DataDashboard() {
       </div>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Datasets</CardTitle>
+        <CardHeader className="flex flex-row items-left justify-between">
+          <CardTitle className="text-left">Datasets</CardTitle>
           <div className="text-sm text-muted-foreground">Auto-refreshes every 30 seconds</div>
         </CardHeader>
         <CardContent>
@@ -359,4 +359,3 @@ export function DataDashboard() {
     </div>
   )
 }
-

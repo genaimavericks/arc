@@ -7,6 +7,30 @@ import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { motion } from "framer-motion"
 
+// Define job interface for type safety
+interface Job {
+  id: string
+  name: string
+  type: string
+  status: string
+  progress: number
+  startTime: string
+  endTime: string | null
+  details: string
+}
+
+// Define component props interface
+interface FileUploadProps {
+  onSchemaDetected: (schema: any) => void
+  isProcessing: boolean
+  setIsProcessing: (isProcessing: boolean) => void
+  chunkSize: number
+  onStatusChange: (status: string) => void
+  onJobCreated: (job: Job) => void
+  onJobUpdated?: (job: Job) => void
+  onError: (error: { message: string }) => void
+}
+
 export function FileUpload({
   onSchemaDetected,
   isProcessing,
@@ -14,8 +38,9 @@ export function FileUpload({
   chunkSize,
   onStatusChange,
   onJobCreated,
+  onJobUpdated,
   onError,
-}) {
+}: FileUploadProps) {
   // Update the component to handle multiple files
   // Change the file state from a single file to an array of files
   const [files, setFiles] = useState<File[]>([])
@@ -70,9 +95,9 @@ export function FileUpload({
         return false
       }
 
-      // Check file size (limit to 50MB for browser processing)
-      if (file.size > 50 * 1024 * 1024) {
-        setError(`File ${file.name} exceeds 50MB limit.`)
+      // Check file size (limit to 2GB for browser processing)
+      if (file.size > 2048 * 1024 * 1024) {
+        setError(`File ${file.name} exceeds 2GB limit.`)
         return false
       }
 
@@ -109,89 +134,268 @@ export function FileUpload({
         // Update status for current file
         onStatusChange(`Uploading file ${i + 1} of ${files.length}: ${file.name}...`)
 
-        const formData = new FormData()
-        formData.append("file", file)
-        formData.append("chunkSize", chunkSize.toString())
-
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "/api"}/datapuur/upload`, {
-          method: "POST",
-          body: formData,
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-        })
-
-        if (!response.ok) {
-          const errorData = await response.json()
-          throw new Error(errorData.detail || `Failed to upload file ${file.name}`)
-        }
-
-        const data = await response.json()
-        onStatusChange(`File ${i + 1} uploaded successfully! Processing data...`)
-
-        // Create a new ingestion job
-        const ingestResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "/api"}/datapuur/ingest-file`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-          body: JSON.stringify({
-            file_id: data.file_id,
-            file_name: file.name,
-            chunk_size: chunkSize,
-          }),
-        })
-
-        if (!ingestResponse.ok) {
-          const errorData = await ingestResponse.json()
-          throw new Error(errorData.detail || `Failed to start ingestion for ${file.name}`)
-        }
-
-        const ingestData = await ingestResponse.json()
-
-        // Create a new job object
-        const newJob = {
-          id: ingestData.job_id,
+        // Create a job object immediately to show in the UI, even before the upload completes
+        // This ensures the job card appears right away for large files
+        const tempJobId = `temp-${Date.now()}-${i}`
+        const initialJob: Job = {
+          id: tempJobId,
           name: file.name,
           type: "file",
-          status: "running",
+          status: "uploading", // Changed from "queued" to "uploading" for better user feedback
           progress: 0,
           startTime: new Date().toISOString(),
           endTime: null,
           details: `File: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`,
         }
-
-        if (onJobCreated) onJobCreated(newJob)
-        onStatusChange(`Ingestion job started for ${file.name} with ID: ${ingestData.job_id}`)
-
-        // Fetch schema for the first file only
-        if (i === 0) {
-          const schemaResponse = await fetch(
-            `${process.env.NEXT_PUBLIC_API_URL || "/api"}/datapuur/schema/${data.file_id}`,
-            {
-              headers: {
-                Authorization: `Bearer ${localStorage.getItem("token")}`,
-              },
-            },
-          )
-
-          if (!schemaResponse.ok) {
-            const errorData = await schemaResponse.json()
-            throw new Error(errorData.detail || "Failed to detect schema")
-          }
-
-          const schemaData = await schemaResponse.json()
-          onSchemaDetected(schemaData.schema)
-          onStatusChange("Schema detected successfully!")
+        
+        // Notify about the job immediately - ensure this is called
+        if (onJobCreated) {
+          console.log("Creating initial job:", initialJob)
+          onJobCreated(initialJob)
         }
 
-        // Update progress for this file
-        setUploadProgress((prev) => ({ ...prev, [i]: 100 }))
+        const formData = new FormData()
+        formData.append("file", file)
+        formData.append("chunkSize", chunkSize.toString())
+        
+        // For large files, use a streaming approach with chunked upload
+        const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks for better performance
+        
+        if (file.size > 50 * 1024 * 1024) { // Only use chunked upload for files > 50MB
+          // Use chunked upload for large files
+          const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+          let uploadedChunks = 0;
+          
+          // Create a unique upload ID for this file
+          const uploadId = `upload-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+          
+          for (let start = 0; start < file.size; start += CHUNK_SIZE) {
+            const chunk = file.slice(start, start + CHUNK_SIZE);
+            const chunkFormData = new FormData();
+            chunkFormData.append('file', chunk, file.name);
+            chunkFormData.append('chunkSize', chunkSize.toString());
+            chunkFormData.append('chunkIndex', String(uploadedChunks));
+            chunkFormData.append('totalChunks', String(totalChunks));
+            chunkFormData.append('uploadId', uploadId);
+            
+            try {
+              // Send the chunk
+              const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "/api"}/datapuur/upload-chunk`, {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${localStorage.getItem("token")}`,
+                },
+                body: chunkFormData,
+              });
+              
+              if (!response.ok) {
+                throw new Error(`Failed to upload chunk ${uploadedChunks + 1} of ${totalChunks}`);
+              }
+              
+              uploadedChunks++;
+              
+              // Update progress based on chunks
+              const percentComplete = Math.round((uploadedChunks / totalChunks) * 100);
+              
+              // Update the job progress
+              const progressJob: Job = {
+                ...initialJob,
+                progress: percentComplete,
+                details: `Uploading: ${percentComplete}% of ${(file.size / 1024 / 1024).toFixed(2)} MB`,
+              };
+              
+              // Update the job in the UI
+              if (onJobUpdated) {
+                onJobUpdated(progressJob);
+              }
+              
+              // Update status
+              onStatusChange(`Uploading file ${i + 1} of ${files.length}: ${file.name} (${percentComplete}%)...`);
+            } catch (error) {
+              console.error("Error uploading chunk:", error);
+              throw error;
+            }
+          }
+          
+          // Complete the chunked upload
+          const completeResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "/api"}/datapuur/complete-chunked-upload`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${localStorage.getItem("token")}`,
+            },
+            body: JSON.stringify({
+              uploadId,
+              fileName: file.name,
+              totalChunks,
+              chunkSize: CHUNK_SIZE,
+              totalSize: file.size,
+              originalChunkSize: chunkSize
+            }),
+          });
+          
+          if (!completeResponse.ok) {
+            throw new Error("Failed to complete chunked upload");
+          }
+          
+          const data = await completeResponse.json();
+          onStatusChange(`File ${i + 1} uploaded successfully! Processing data...`);
+          
+          // Continue with ingestion as before
+          const ingestResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "/api"}/datapuur/ingest-file`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${localStorage.getItem("token")}`,
+            },
+            body: JSON.stringify({
+              file_id: data.file_id,
+              file_name: file.name,
+              chunk_size: chunkSize,
+            }),
+          });
+          
+          if (!ingestResponse.ok) {
+            const errorData = await ingestResponse.json();
+            throw new Error(errorData.detail || `Failed to start ingestion for ${file.name}`);
+          }
+          
+          const ingestData = await ingestResponse.json();
+          
+          // Update the job with the real job ID
+          const updatedJob: Job = {
+            id: ingestData.job_id,
+            name: file.name,
+            type: "file",
+            status: "running",
+            progress: 0,
+            startTime: new Date().toISOString(),
+            endTime: null,
+            details: `File: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`,
+          };
+          
+          // Replace the temporary job with the real one - use both callbacks to ensure proper updating
+          if (onJobUpdated) {
+            onJobUpdated(updatedJob)
+          }
+          
+          // Also notify about job creation to ensure it appears in the jobs list
+          if (onJobCreated) {
+            onJobCreated(updatedJob)
+          }
+          
+          onStatusChange(`Ingestion job started for ${file.name} with ID: ${ingestData.job_id}`)
+        } else {
+          // Use XMLHttpRequest for smaller files (existing code)
+          const xhr = new XMLHttpRequest()
+          
+          // Set up progress tracking
+          xhr.upload.addEventListener("progress", (event) => {
+            if (event.lengthComputable) {
+              const percentComplete = Math.round((event.loaded / event.total) * 100)
+              
+              // Update the job progress
+              const progressJob: Job = {
+                ...initialJob,
+                progress: percentComplete,
+                details: `Uploading: ${percentComplete}% of ${(file.size / 1024 / 1024).toFixed(2)} MB`,
+              }
+              
+              // Update the job in the UI - use onJobUpdated instead of onJobCreated for progress updates
+              if (onJobUpdated) {
+                console.log("Updating job progress:", progressJob)
+                onJobUpdated(progressJob)
+              }
+              
+              // Update status
+              onStatusChange(`Uploading file ${i + 1} of ${files.length}: ${file.name} (${percentComplete}%)...`)
+            }
+          })
+          
+          // Create a promise to handle the XHR response
+          const uploadPromise = new Promise<any>((resolve, reject) => {
+            xhr.onload = function() {
+              if (xhr.status >= 200 && xhr.status < 300) {
+                try {
+                  const data = JSON.parse(xhr.responseText)
+                  resolve(data)
+                } catch (e) {
+                  reject(new Error("Invalid JSON response"))
+                }
+              } else {
+                try {
+                  const errorData = JSON.parse(xhr.responseText)
+                  reject(new Error(errorData.detail || `Failed to upload file ${file.name}`))
+                } catch (e) {
+                  reject(new Error(`Failed to upload file ${file.name}`))
+                }
+              }
+            }
+            
+            xhr.onerror = function() {
+              reject(new Error(`Network error during upload of ${file.name}`))
+            }
+          })
+          
+          // Open and send the request
+          xhr.open("POST", `${process.env.NEXT_PUBLIC_API_URL || "/api"}/datapuur/upload`, true)
+          xhr.setRequestHeader("Authorization", `Bearer ${localStorage.getItem("token")}`)
+          xhr.send(formData)
+          
+          // Wait for the upload to complete
+          const data = await uploadPromise
+          onStatusChange(`File ${i + 1} uploaded successfully! Processing data...`)
+
+          // Create a new ingestion job
+          const ingestResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "/api"}/datapuur/ingest-file`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${localStorage.getItem("token")}`,
+            },
+            body: JSON.stringify({
+              file_id: data.file_id,
+              file_name: file.name,
+              chunk_size: chunkSize,
+            }),
+          })
+
+          if (!ingestResponse.ok) {
+            const errorData = await ingestResponse.json()
+            throw new Error(errorData.detail || `Failed to start ingestion for ${file.name}`)
+          }
+
+          const ingestData = await ingestResponse.json()
+
+          // Update the job with the real job ID
+          const updatedJob: Job = {
+            id: ingestData.job_id,
+            name: file.name,
+            type: "file",
+            status: "running",
+            progress: 0,
+            startTime: new Date().toISOString(),
+            endTime: null,
+            details: `File: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`,
+          }
+
+          // Replace the temporary job with the real one - use both callbacks to ensure proper updating
+          if (onJobUpdated) {
+            onJobUpdated(updatedJob)
+          }
+          
+          // Also notify about job creation to ensure it appears in the jobs list
+          if (onJobCreated) {
+            onJobCreated(updatedJob)
+          }
+          
+          onStatusChange(`Ingestion job started for ${file.name} with ID: ${ingestData.job_id}`)
+        }
       } catch (error) {
         console.error(`Error uploading file ${file.name}:`, error)
-        setError(`Error with file ${file.name}: ${error.message || "Failed to upload file"}`)
-        if (onError) onError(error)
+        const errorMessage = error instanceof Error ? error.message : "Failed to upload file"
+        setError(`Error with file ${file.name}: ${errorMessage}`)
+        if (onError) onError({ message: errorMessage })
         // Continue with next file despite error
       }
     }
@@ -335,7 +539,7 @@ export function FileUpload({
       <div className="mt-4 p-4 bg-card/50 rounded-lg border border-border">
         <h4 className="font-medium text-foreground mb-2">Instructions:</h4>
         <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
-          <li>Upload CSV or JSON files up to 50MB</li>
+          <li>Upload CSV or JSON files up to 2GB</li>
           <li>CSV files should use comma as delimiter and include a header row</li>
           <li>JSON files should contain an array of objects with consistent structure</li>
           <li>The system will automatically detect the schema of your data</li>
@@ -346,4 +550,3 @@ export function FileUpload({
     </div>
   )
 }
-

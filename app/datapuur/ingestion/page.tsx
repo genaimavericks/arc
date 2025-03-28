@@ -14,14 +14,33 @@ import { IngestionMonitor } from "@/components/datapuur/ingestion-monitor"
 import { FileUp, Database, Table, Settings, Activity, History } from "lucide-react"
 import { motion } from "framer-motion"
 
+// Define job interface for type safety
+interface Job {
+  id: string
+  name: string
+  type: string
+  status: string
+  progress: number
+  startTime: string
+  endTime: string | null
+  details: string
+}
+
+// Define error interface
+interface IngestionError {
+  id: number
+  message: string
+  timestamp: string
+}
+
 export default function IngestionPage() {
   const [activeTab, setActiveTab] = useState("file-upload")
-  const [detectedSchema, setDetectedSchema] = useState(null)
+  const [detectedSchema, setDetectedSchema] = useState<any>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [processingStatus, setProcessingStatus] = useState("")
   const [chunkSize, setChunkSize] = useState(1000)
-  const [ingestionJobs, setIngestionJobs] = useState([])
-  const [ingestionErrors, setIngestionErrors] = useState([])
+  const [ingestionJobs, setIngestionJobs] = useState<Job[]>([])
+  const [ingestionErrors, setIngestionErrors] = useState<IngestionError[]>([])
 
   // Animation variants
   const container = {
@@ -39,27 +58,27 @@ export default function IngestionPage() {
     show: { opacity: 1, y: 0 },
   }
 
-  const handleSchemaDetected = (schema) => {
+  const handleSchemaDetected = (schema: any) => {
     setDetectedSchema(schema)
   }
 
-  const handleChunkSizeChange = (size) => {
+  const handleChunkSizeChange = (size: number) => {
     setChunkSize(size)
   }
 
-  const handleProcessingStatusChange = (status) => {
+  const handleProcessingStatusChange = (status: string) => {
     setProcessingStatus(status)
   }
 
-  const handleJobCreated = (job) => {
+  const handleJobCreated = (job: Job) => {
     setIngestionJobs((prevJobs) => [job, ...prevJobs])
   }
 
-  const handleJobUpdated = (updatedJob) => {
+  const handleJobUpdated = (updatedJob: Job) => {
     setIngestionJobs((prevJobs) => prevJobs.map((job) => (job.id === updatedJob.id ? updatedJob : job)))
   }
 
-  const handleError = (error) => {
+  const handleError = (error: { message: string }) => {
     setIngestionErrors((prevErrors) => [
       {
         id: Date.now(),
@@ -112,6 +131,36 @@ export default function IngestionPage() {
               </motion.p>
 
               <motion.div variants={container} initial="hidden" animate="show" className="space-y-8">
+                {/* Ingestion Jobs - moved outside tabs to be visible at all times */}
+                {ingestionJobs.length > 0 && (
+                  <motion.div
+                    variants={item}
+                    className="bg-card/80 backdrop-blur-sm p-6 rounded-lg border border-border shadow-md"
+                  >
+                    <h3 className="text-xl font-semibold text-foreground mb-4 flex items-center">
+                      <Activity className="w-5 h-5 mr-2 text-primary" />
+                      Ingestion Jobs
+                    </h3>
+                    
+                    {/* Pre-ingestion progress - moved into the Ingestion Jobs card */}
+                    {processingStatus && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="bg-primary/10 border border-primary rounded-lg p-4 text-primary mb-4"
+                      >
+                        {processingStatus}
+                      </motion.div>
+                    )}
+                    
+                    <IngestionMonitor
+                      jobs={ingestionJobs}
+                      onJobUpdated={handleJobUpdated}
+                      errors={ingestionErrors.map((err) => err.message)}
+                    />
+                  </motion.div>
+                )}
+
                 <Tabs defaultValue="file-upload" onValueChange={setActiveTab} className="w-full">
                   <TabsList className="grid grid-cols-3 mb-8">
                     <TabsTrigger value="file-upload" className="flex items-center gap-2">
@@ -145,24 +194,6 @@ export default function IngestionPage() {
                       />
                     </motion.div>
 
-                    {/* Ingestion Jobs - moved above */}
-                    {ingestionJobs.length > 0 && (
-                      <motion.div
-                        variants={item}
-                        className="bg-card/80 backdrop-blur-sm p-6 rounded-lg border border-border shadow-md"
-                      >
-                        <h3 className="text-xl font-semibold text-foreground mb-4 flex items-center">
-                          <Activity className="w-5 h-5 mr-2 text-primary" />
-                          Ingestion Jobs
-                        </h3>
-                        <IngestionMonitor
-                          jobs={ingestionJobs}
-                          onJobUpdated={handleJobUpdated}
-                          errors={ingestionErrors}
-                        />
-                      </motion.div>
-                    )}
-
                     {/* File Upload */}
                     <motion.div
                       variants={item}
@@ -175,6 +206,7 @@ export default function IngestionPage() {
                         chunkSize={chunkSize}
                         onStatusChange={handleProcessingStatusChange}
                         onJobCreated={handleJobCreated}
+                        onJobUpdated={handleJobUpdated}
                         onError={handleError}
                       />
                     </motion.div>
@@ -207,17 +239,6 @@ export default function IngestionPage() {
                   </TabsContent>
                 </Tabs>
 
-                {/* Processing status */}
-                {processingStatus && activeTab !== "history" && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-primary/10 border border-primary rounded-lg p-4 text-primary"
-                  >
-                    {processingStatus}
-                  </motion.div>
-                )}
-
                 {/* Schema Viewer - only show for database tab */}
                 {detectedSchema && activeTab === "database" && (
                   <motion.div
@@ -239,4 +260,3 @@ export default function IngestionPage() {
     </main>
   )
 }
-
