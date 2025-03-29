@@ -9,7 +9,7 @@ Smart Data Intelligence (SDI) is a powerful application that integrates data ing
 1. **DataPuur** - Focused on intelligent data acquisition, transformation, profiling, and analytics
 2. **KGInsight** - Specialized in knowledge graph generation, management, and exploration
 
-Built with Next.js 15+ (React 19) for the frontend and Python FastAPI for the backend, this application provides a powerful foundation for advanced data intelligence operations.
+Built with Next.js for the frontend and Python FastAPI for the backend, this application provides a powerful foundation for advanced data intelligence operations.
 
 ## Key Features
 
@@ -27,8 +27,8 @@ Built with Next.js 15+ (React 19) for the frontend and Python FastAPI for the ba
 ## Technology Stack
 
 ### Frontend
-- React.js (v19) with component-based responsive design
-- Next.js 15+ for server-side rendering and routing
+- React.js with component-based responsive design
+- Next.js for server-side rendering and routing
 - Tailwind CSS for styling
 - Radix UI and custom components for UI elements
 - Interactive data visualization tools
@@ -74,131 +74,457 @@ Entry point to the application offering navigation to DataPuur and KGInsights co
 
 ### Prerequisites
 
-- Node.js (v18 or newer)
-- Python 3.8+
-- pnpm (recommended) or npm
+- Node.js (v18+)
+- Python (v3.10+)
+- Git
 
-### Installation
+### Local Development Setup
 
-1. Clone the repository:
+#### Windows Setup
+
+1. **Clone the Repository**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/RSWdjinni/rsw.git
    cd rsw
    ```
 
-2. Install frontend dependencies:
+2. **Set Up Environment**
    ```bash
-   pnpm install
-   ```
-   Or using npm:
-   ```bash
+   # Python setup
+   python -m venv .venv
+   .\.venv\Scripts\activate
+   pip install -r requirements.txt
+
+   # Node.js setup
    npm install
    ```
 
-3. Install backend dependencies:
+3. **Start Development Server**
    ```bash
-   pip install -r api/requirements.txt
+   # Start the combined server
+   ./start.sh
+   ```
+   Access the application at http://localhost:9090
+
+#### Mac Setup
+
+1. **Clone the Repository**
+   ```bash
+   git clone https://github.com/RSWdjinni/rsw.git
+   cd rsw
    ```
 
-### Running the Application
-
-#### Development Mode
-
-1. Start the backend API server:
+2. **Set Up Environment**
    ```bash
-   python run-api.py
+   # Python setup
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+
+   # Node.js setup
+   npm install
    ```
-   The API will be available at http://localhost:9090/api
 
-2. In a separate terminal, start the frontend development server:
+3. **Start Development Server**
    ```bash
-   pnpm dev
+   # Start the combined server
+   ./start.sh
    ```
-   Or using npm:
+   Access the application at http://localhost:9090
+
+## Deployment
+
+### Ubuntu Server Deployment
+
+1. **Install Dependencies**
    ```bash
-   npm run dev
+   sudo apt update && sudo apt upgrade -y
+   sudo apt install -y python3-pip python3-venv nodejs npm nginx
+   sudo npm install -g pm2
    ```
-   The frontend will be available at http://localhost:3000
 
-#### Using Convenience Scripts
-
-- On Unix/Linux/Mac:
-  ```bash
-  ./start.sh
-  ```
-
-- On Windows:
-  ```bash
-  start-windows.bat
-  ```
-
-### Testing
-
-To test the API:
-```bash
-python test_api_ingestion.py
-```
-
-To run a mock API server for frontend development:
-```bash
-python mock_api_server.py
-```
-
-## System Architecture
-
-### Data Flow
-
-1. External data sources connect to the Data Acquisition & Ingestion component
-2. Raw data is imported, validated, and stored in MongoDB
-3. Data Xformer with GenAI agents performs transformation and enrichment
-4. Data Profiler with GenAI analyzes and profiles the data
-5. Processed data is stored in MySQL structured storage
-6. Vector DB (Redis) stores embeddings for semantic search
-7. KG Schema Generator with GenAI creates knowledge graph schemas
-8. Knowledge graphs are built and stored in Neo4j
-9. GenAI Dashboard and KG Dashboard Manager provide visualization
-10. GenAI Data/KG Chatbots provide natural language interfaces
-11. Users access insights through the React-based frontend
-
-## Project Structure
-
-```
-rsw/
-├── api/             # FastAPI backend
-├── app/             # Next.js pages and routes
-├── components/      # React components
-├── hooks/           # Custom React hooks
-├── lib/             # Shared utilities
-├── styles/          # Global styles
-└── public/          # Static assets
-```
-
-## Building for Production
-
-1. Build the frontend:
+2. **Set Up Application**
    ```bash
-   pnpm build
-   ```
-   Or using npm:
-   ```bash
+   # Clone repository
+   git clone https://github.com/RSWdjinni/rsw.git
+   cd rsw
+
+   # Python setup
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+
+   # Node.js setup
+   npm install
    npm run build
    ```
 
-2. Start the production server:
+   ### Cloning a Private Repository
+
+   If the repository is private, you'll need to set up authentication:
+
+   #### Option 1: Using SSH Keys (Recommended)
+
+   1. Generate an SSH key on your server:
+      ```bash
+      ssh-keygen -t ed25519 -C "your_email@example.com"
+      ```
+
+   2. Add the public key to your GitHub account:
+      ```bash
+      # Display the public key to copy
+      cat ~/.ssh/id_ed25519.pub
+      ```
+      Then add this key to your GitHub account under Settings > SSH and GPG keys
+
+   3. Clone using SSH URL:
+      ```bash
+      git clone git@github.com:RSWdjinni/rsw.git
+      cd rsw
+      ```
+
+   #### Option 2: Using Personal Access Token
+
+   1. Create a Personal Access Token in GitHub (Settings > Developer settings > Personal access tokens)
+
+   2. Clone using HTTPS with token:
+      ```bash
+      git clone https://USERNAME:TOKEN@github.com/RSWdjinni/rsw.git
+      cd rsw
+      ```
+      Replace USERNAME with your GitHub username and TOKEN with your personal access token
+
+   #### Option 3: Using GitHub CLI
+
+   1. Install GitHub CLI:
+      ```bash
+      sudo apt install gh
+      ```
+
+   2. Authenticate with GitHub:
+      ```bash
+      gh auth login
+      ```
+      Follow the prompts to authenticate
+
+   3. Clone the repository:
+      ```bash
+      gh repo clone RSWdjinni/rsw
+      cd rsw
+      ```
+
+### Deployment with Caddy (Ubuntu)
+
+Caddy is a modern web server with automatic HTTPS certificate provisioning.
+
+1. **Install Caddy**
    ```bash
-   pnpm start
+   sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
+   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+   sudo apt update
+   sudo apt install caddy
    ```
-   Or using npm:
+
+2. **Configure Caddy**
    ```bash
-   npm run start
+   sudo nano /etc/caddy/Caddyfile
    ```
+
+   For IP address with external certificates:
+   ```
+   {
+     # Global options
+     auto_https off  # Disable automatic HTTPS since we're using IP
+   }
+
+   :443 {
+     # Use external certificates
+     tls /path/to/certificate.crt /path/to/private_key.key
+     
+     # Reverse proxy to the application
+     reverse_proxy localhost:9090
+   }
+
+   # Redirect HTTP to HTTPS
+   :80 {
+     redir https://{host}{uri} permanent
+   }
+   ```
+
+   ### Creating Self-Signed Certificates for IP Address
+
+   If you don't have certificates, you can create self-signed ones:
+
+   ```bash
+   # Install OpenSSL if not already installed
+   sudo apt install -y openssl
+
+   # Create directory for certificates
+   sudo mkdir -p /etc/ssl/rsw
+
+   # Generate private key
+   sudo openssl genrsa -out /etc/ssl/rsw/server.key 2048
+
+   # Create self-signed certificate (include your IP in the SAN)
+   sudo openssl req -new -x509 -key /etc/ssl/rsw/server.key -out /etc/ssl/rsw/server.crt -days 3650 -subj "/CN=RSW Application" -addext "subjectAltName = IP:YOUR_SERVER_IP"
+
+   # Set proper permissions
+   sudo chmod 400 /etc/ssl/rsw/server.key
+   sudo chmod 444 /etc/ssl/rsw/server.crt
+   ```
+
+   Then update your Caddyfile to use these certificates:
+   ```
+   {
+     auto_https off
+   }
+
+   :443 {
+     tls /etc/ssl/rsw/server.crt /etc/ssl/rsw/server.key
+     reverse_proxy localhost:9090
+   }
+
+   :80 {
+     redir https://{host}{uri} permanent
+   }
+   ```
+
+   For certificate chains or different formats:
+   ```
+   yourdomain.com {
+       # Certificate with full chain (PEM format)
+       tls /path/to/fullchain.pem /path/to/private_key.key
+       
+       # Optional: Configure TLS settings
+       tls {
+           # Minimum TLS version
+           min_version 1.2
+           
+           # Specify cipher suites (if needed)
+           # cipher_suites TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+       }
+       
+       # Reverse proxy to the application
+       reverse_proxy localhost:9090
+   }
+   ```
+
+3. **Start Caddy Service**
+   ```bash
+   sudo systemctl reload caddy
+   sudo systemctl status caddy
+   ```
+
+4. **Start Application with PM2**
+   ```bash
+   # Start the application
+   pm2 start "./start.sh" --name rsw
+   pm2 save
+   pm2 startup
+   ```
+
+5. **Verify Setup**
+   - Visit https://yourdomain.com
+   - Caddy automatically provisions and renews HTTPS certificates
+
+## Creating a Deployable Package
+
+The RSW project includes a build script that creates a configurable and deployable package for easier distribution and deployment.
+
+### Building the Package
+
+1. **Using the Automated Build Script**
+   ```bash
+   # Make the build script executable
+   chmod +x build-package.sh
+   
+   # Run the build script
+   ./build-package.sh
+   ```
+
+   This script will:
+   - Create a structured package directory
+   - Build optimized frontend assets
+   - Copy backend code and configuration templates
+   - Create deployment and startup scripts
+   - Package everything into a single archive (`rsw-deployment.tar.gz`)
+
+2. **Package Contents**
+   The generated package includes:
+   - Frontend assets (built with Next.js)
+   - Backend API code
+   - Configuration templates
+   - Deployment scripts
+   - Startup scripts
+
+### Deploying the Package
+
+1. **Transfer the Package**
+   ```bash
+   # Using SCP
+   scp rsw-deployment.tar.gz user@server:/path/to/deployment/
+   
+   # Or using SFTP
+   sftp user@server
+   put rsw-deployment.tar.gz /path/to/deployment/
+   ```
+
+2. **Extract and Configure**
+   ```bash
+   # On the server
+   mkdir -p /opt/rsw
+   cd /opt/rsw
+   tar -xzf /path/to/rsw-deployment.tar.gz
+   cd package
+   
+   # Run the deployment script
+   ./deploy.sh
+   
+   # Edit configuration when prompted
+   nano config/.env
+   
+   # Run deploy script again after configuration
+   ./deploy.sh
+   ```
+
+3. **Start the Application**
+   ```bash
+   # Start the application
+   ./start.sh
+   ```
+
+4. **Set Up as a Service (Optional)**
+   ```bash
+   # Create systemd service file
+   sudo nano /etc/systemd/system/rsw.service
+   ```
+   
+   Add the following content:
+   ```
+   [Unit]
+   Description=RSW Application
+   After=network.target
+   
+   [Service]
+   User=your_user
+   WorkingDirectory=/opt/rsw/package
+   ExecStart=/opt/rsw/package/start.sh
+   Restart=always
+   RestartSec=5
+   StandardOutput=journal
+   StandardError=journal
+   SyslogIdentifier=rsw
+   
+   [Install]
+   WantedBy=multi-user.target
+   ```
+   
+   Enable and start the service:
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable rsw
+   sudo systemctl start rsw
+   ```
+
+5. **Monitor the Application**
+   ```bash
+   # Check service status
+   sudo systemctl status rsw
+   
+   # View logs
+   sudo journalctl -u rsw -f
+   ```
+
+### Setting Up with Caddy (Recommended)
+
+For production environments, we recommend using Caddy as a reverse proxy with HTTPS.
+
+1. **Install Caddy**
+   ```bash
+   sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
+   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+   sudo apt update
+   sudo apt install caddy
+   ```
+
+2. **Configure Caddy for IP-based Access with External Certificates**
+   ```bash
+   sudo nano /etc/caddy/Caddyfile
+   ```
+   
+   Add the following configuration:
+   ```
+   {
+     # Global options
+     auto_https off  # Disable automatic HTTPS since we're using IP
+   }
+   
+   :443 {
+     # Use external certificates
+     tls /path/to/certificate.crt /path/to/private_key.key
+     
+     # Reverse proxy to the application
+     reverse_proxy localhost:9090
+   }
+   
+   # Redirect HTTP to HTTPS
+   :80 {
+     redir https://{host}{uri} permanent
+   }
+   ```
+
+3. **Start Caddy**
+   ```bash
+   sudo systemctl reload caddy
+   sudo systemctl status caddy
+   ```
+
+### Troubleshooting Common Deployment Issues
+
+1. **Application Won't Start**
+   - Check logs: `sudo journalctl -u rsw -f`
+   - Verify configuration in `config/.env`
+   - Ensure Python dependencies are installed
+
+2. **Module Import Errors**
+   - Ensure the package structure is intact
+   - Check if all required Python packages are installed
+   - Verify Python version (Python 3.10+ recommended)
+
+3. **Permission Issues**
+   - Check ownership: `sudo chown -R your_user:your_user /opt/rsw`
+   - Set proper permissions: `chmod -R 755 /opt/rsw`
+   - Ensure start.sh is executable: `chmod +x start.sh`
+
+For more detailed deployment instructions, refer to the `PACKAGE_README.md` file included in the deployment package.
 
 ## Security Considerations
 
 - User authentication with role-based access control
 - API Gateway for centralized security management
-- Containerized components for isolation
 - Secure data processing and storage
+
+## Troubleshooting
+
+### Common Issues and Solutions
+
+1. **Database Connection Errors**
+   - Verify database credentials in `.env` file
+   - Check if database service is running
+
+2. **API Authentication Failures**
+   - Ensure JWT secret is properly configured
+   - Check token expiration settings
+
+3. **Frontend Build Errors**
+   - Clear npm cache: `npm cache clean --force`
+   - Delete node_modules and reinstall: `rm -rf node_modules && npm install`
+
+4. **Permission Issues on Ubuntu**
+   - Ensure proper ownership: `sudo chown -R $USER:$USER /path/to/app`
+   - Set correct permissions: `chmod -R 755 /path/to/app`
 
 ## License
 

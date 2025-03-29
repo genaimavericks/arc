@@ -72,7 +72,7 @@ def save_uploaded_file(db, file_id, file_data):
             path=file_data['path'],
             type=file_data['type'],
             uploaded_by=file_data['uploaded_by'],
-            uploaded_at=datetime.fromisoformat(file_data['uploaded_at']),
+            uploaded_at=datetime.now(),
             chunk_size=file_data.get('chunk_size', 1000),
             schema=schema_json
         )
@@ -125,6 +125,32 @@ def save_ingestion_job(db, job_id, job_data):
     
     db.commit()
     return True
+
+def delete_dataset(db, dataset_id):
+    """Delete a dataset and its associated data"""
+    # Find the dataset in the ingestion jobs
+    dataset = db.query(IngestionJob).filter(IngestionJob.id == dataset_id).first()
+    
+    if not dataset:
+        return False, "Dataset not found"
+    
+    try:
+        # Delete the dataset record
+        db.delete(dataset)
+        
+        # Delete any processed data files
+        data_path = DATA_DIR / f"{dataset_id}.parquet"
+        if data_path.exists():
+            data_path.unlink()
+        
+        # Commit the changes
+        db.commit()
+        
+        return True, "Dataset deleted successfully"
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error deleting dataset: {str(e)}")
+        return False, f"Error deleting dataset: {str(e)}"
 
 # Models for API requests
 class DatabaseConfig(BaseModel):
@@ -505,57 +531,124 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
         # Process file based on type
         if file_type == "csv":
             try:
-                # Read CSV in chunks with all columns as string type initially
-                chunk_iterator = pd.read_csv(
-                    file_path, 
-                    chunksize=chunk_size,
-                    dtype=str,  # Read all columns as strings initially
-                    keep_default_na=False  # Don't convert empty strings to NaN
-                )
+                # Optimize for large files by using a more efficient approach
+                # First, determine the file size to estimate progress better
+                file_size = os.path.getsize(file_path)
                 
-                total_rows = sum(1 for _ in open(file_path, 'r')) - 1  # Subtract header row
-                processed_rows = 0
-                
-                # Process first chunk
-                first_chunk = next(chunk_iterator)
-                
-                # Try to convert numeric columns safely
-                for col in first_chunk.columns:
-                    # Try to convert to numeric, but keep as string if it fails
-                    if col in ['MonthlyCharges', 'TotalCharges']:
-                        first_chunk[col] = pd.to_numeric(first_chunk[col], errors='coerce')
-                
-                first_chunk.to_parquet(output_file, index=False)
-                processed_rows += len(first_chunk)
-                
-                # Update progress
-                job.progress = min(int((processed_rows / total_rows) * 100), 99)
-                db_session.commit()
-                
-                # Process remaining chunks
-                for chunk in chunk_iterator:
-                    # Try to convert numeric columns safely
-                    for col in chunk.columns:
-                        if col in ['MonthlyCharges', 'TotalCharges']:
-                            chunk[col] = pd.to_numeric(chunk[col], errors='coerce')
+                # For very large files (>100MB), use a more optimized approach
+                if file_size > 100 * 1024 * 1024:  # 100MB
+                    # Use pyarrow for better performance with large files
+                    import pyarrow as pa
+                    import pyarrow.csv as csv
+                    import pyarrow.parquet as pq
                     
-                    # Read existing parquet file
-                    if os.path.exists(output_file):
-                        existing_df = pd.read_parquet(output_file)
-                        # Concatenate with new chunk
-                        combined_df = pd.concat([existing_df, chunk], ignore_index=True)
-                        # Write back to file
-                        combined_df.to_parquet(output_file, index=False)
-                    else:
-                        chunk.to_parquet(output_file, index=False)
+                    # Update job status
+                    job.details = f"Processing large file ({file_size / (1024 * 1024):.2f} MB) with optimized engine"
+                    db_session.commit()
+                    
+                    # Read the CSV file in a memory-efficient way
+                    read_options = csv.ReadOptions(block_size=10 * 1024 * 1024)  # 10MB chunks
+                    convert_options = csv.ConvertOptions(
+                        strings_can_be_null=True,
+                        timestamp_parsers=["%Y-%m-%d", "%Y/%m/%d", "%m-%d-%Y", "%m/%d/%Y"]  # Common date formats
+                    )
+                    
+                    # Create a CSV reader that processes the file in chunks
+                    with csv.open_csv(file_path, read_options=read_options, convert_options=convert_options) as reader:
+                        # Read and process the file in batches
+                        batch_number = 0
+                        table_batches = []
                         
-                    processed_rows += len(chunk)
+                        for batch in reader:
+                            batch_number += 1
+                            # Convert RecordBatch to Table before appending
+                            if isinstance(batch, pa.RecordBatch):
+                                batch = pa.Table.from_batches([batch])
+                            table_batches.append(batch)
+                            
+                            # Update progress every few batches
+                            if batch_number % 5 == 0:
+                                # Estimate progress based on batches processed
+                                progress = min(int((batch_number * 10 * 1024 * 1024 / file_size) * 100), 99)
+                                job.progress = progress
+                                job.details = f"Processing batch {batch_number} ({progress}% complete)"
+                                db_session.commit()
+                        
+                        # Combine all batches into a single table
+                        if table_batches:
+                            table = pa.concat_tables(table_batches)
+                            # Write to parquet with compression
+                            pq.write_table(table, output_file, compression='snappy')
+                        else:
+                            raise ValueError("No data was read from the CSV file")
+                        
+                        # Final update
+                        job.progress = 99
+                        job.details = f"Finalizing file processing..."
+                        db_session.commit()
+                else:
+                    # For smaller files, use pandas with optimized settings
+                    # Read CSV in chunks with all columns as string type initially
+                    chunk_iterator = pd.read_csv(
+                        file_path, 
+                        chunksize=chunk_size,
+                        dtype=str,  # Read all columns as strings initially to prevent type conversion errors
+                        keep_default_na=False,  # Don't convert empty strings to NaN
+                        low_memory=True,  # Use less memory
+                        engine='c'  # Use the faster C engine
+                    )
+                    
+                    # Count lines more efficiently for large files
+                    total_rows = 0
+                    with open(file_path, 'r') as f:
+                        # Count lines in chunks to avoid loading the entire file
+                        chunk_size = 1024 * 1024  # 1MB chunks
+                        while True:
+                            chunk = f.read(chunk_size)
+                            if not chunk:
+                                break
+                            total_rows += chunk.count('\n')
+                    
+                    # Subtract 1 for header if file has content
+                    if total_rows > 0:
+                        total_rows -= 1
+                    
+                    processed_rows = 0
+                    
+                    # Process first chunk
+                    first_chunk = next(chunk_iterator)
+                    
+                    # Try to convert numeric columns safely
+                    for col in first_chunk.columns:
+                        # Only attempt numeric conversion on specific columns we know should be numeric
+                        # This prevents errors when trying to convert IDs or other string values to numbers
+                        if col in ['MonthlyCharges', 'TotalCharges']:
+                            first_chunk[col] = pd.to_numeric(first_chunk[col], errors='coerce')
+                    
+                    # Write directly to parquet with compression
+                    first_chunk.to_parquet(output_file, index=False, compression='snappy')
+                    processed_rows += len(first_chunk)
                     
                     # Update progress
                     job.progress = min(int((processed_rows / total_rows) * 100), 99)
                     db_session.commit()
                     
-                    time.sleep(0.1)  # Simulate processing time
+                    # Process remaining chunks more efficiently
+                    for chunk in chunk_iterator:
+                        # Try to convert numeric columns safely
+                        for col in chunk.columns:
+                            if col in ['MonthlyCharges', 'TotalCharges']:
+                                chunk[col] = pd.to_numeric(chunk[col], errors='coerce')
+                        
+                        # Append to parquet file directly instead of reading/writing the whole file
+                        chunk.to_parquet(output_file, index=False, compression='snappy', append=True)
+                        processed_rows += len(chunk)
+                        
+                        # Update progress
+                        job.progress = min(int((processed_rows / total_rows) * 100), 99)
+                        db_session.commit()
+                        
+                        # Remove sleep to speed up processing
             except Exception as e:
                 logger.error(f"Error processing CSV file: {str(e)}")
                 raise ValueError(f"Error processing CSV file: {str(e)}")
@@ -565,11 +658,78 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
             with open(file_path, 'r') as f:
                 data = json.load(f)
             
-            # Convert to DataFrame
+            # Function to flatten nested JSON
+            def flatten_json(nested_json, prefix=''):
+                flattened = {}
+                for key, value in nested_json.items():
+                    if isinstance(value, dict):
+                        # Recursively flatten nested dictionaries
+                        flattened.update(flatten_json(value, f"{prefix}{key}_"))
+                    elif isinstance(value, list):
+                        # Handle lists by converting them to strings if they contain simple types
+                        # or by flattening if they contain dictionaries
+                        if all(not isinstance(item, dict) for item in value):
+                            # For lists of simple types, convert to string
+                            flattened[f"{prefix}{key}"] = str(value)
+                        else:
+                            # For lists of dictionaries, flatten each item
+                            for i, item in enumerate(value):
+                                if isinstance(item, dict):
+                                    flattened.update(flatten_json(item, f"{prefix}{key}_{i}_"))
+                                else:
+                                    flattened[f"{prefix}{key}_{i}"] = item
+                    else:
+                        # For simple types, just add them with the prefix
+                        flattened[f"{prefix}{key}"] = value
+                return flattened
+            
+            # Convert to DataFrame - ensure data is always a list
             if isinstance(data, list):
-                df = pd.DataFrame(data)
+                # Handle empty list case
+                if len(data) == 0:
+                    # Create empty DataFrame with default columns
+                    df = pd.DataFrame(columns=['data'])
+                else:
+                    # Flatten each item in the list if it's a dictionary
+                    flattened_data = []
+                    for item in data:
+                        if isinstance(item, dict):
+                            flattened_data.append(flatten_json(item))
+                        else:
+                            flattened_data.append({"value": item})
+                    
+                    # Convert list of flattened dictionaries to DataFrame
+                    df = pd.DataFrame(flattened_data)
+                    
+                    # Ensure all columns have consistent types by inferring types
+                    for col in df.columns:
+                        # Try to convert numeric columns
+                        if df[col].dtype == object:  # Only attempt conversion on object (string) columns
+                            # Check if column contains numeric data by trying conversion
+                            try:
+                                # If more than 80% of non-null values can be converted to numeric, treat as numeric
+                                non_null_values = df[col].dropna()
+                                if len(non_null_values) > 0:
+                                    numeric_count = sum(pd.to_numeric(non_null_values, errors='coerce').notna())
+                                    if numeric_count / len(non_null_values) > 0.8:
+                                        df.loc[:, col] = pd.to_numeric(df[col], errors='coerce')
+                            except:
+                                pass
+                        
+                            # Check if column contains boolean data
+                            # Look for columns with values that match boolean patterns
+                            if all(str(val).lower() in ['true', 'false', '1', '0', 'yes', 'no', 'y', 'n', '', 'nan', 'none', 'null'] 
+                                  for val in df[col].dropna().astype(str)):
+                                # Convert to boolean using .loc to avoid SettingWithCopyWarning
+                                df.loc[:, col] = df[col].map(
+                                    lambda x: True if pd.notna(x) and str(x).lower() in ['true', '1', 'yes', 'y'] 
+                                    else False if pd.notna(x) and str(x).lower() in ['false', '0', 'no', 'n']
+                                    else None
+                                )
             else:
-                df = pd.DataFrame([data])
+                # If data is not a list (e.g., single object), flatten it and convert to a single-row DataFrame
+                flattened_data = flatten_json(data) if isinstance(data, dict) else {"value": data}
+                df = pd.DataFrame([flattened_data])
             
             # Save to parquet
             df.to_parquet(output_file, index=False)
@@ -748,7 +908,7 @@ async def upload_file(
         "path": str(file_path),
         "type": file_ext,
         "uploaded_by": current_user.username,
-        "uploaded_at": datetime.now().isoformat(),
+        "uploaded_at": datetime.now(),
         "chunk_size": chunkSize
     }
     save_uploaded_file(db, file_id, file_data)
@@ -1043,7 +1203,7 @@ async def get_job_status(
         type=job.type,
         status=job.status,
         progress=job.progress,
-        start_time=job.start_time.isoformat(),
+        start_time=job.start_time.isoformat() if job.start_time else None,
         end_time=job.end_time.isoformat() if job.end_time else None,
         details=job.details,
         error=job.error,
@@ -1102,7 +1262,7 @@ async def cancel_job(
         type=job.type,
         status=job.status,
         progress=job.progress,
-        start_time=job.start_time.isoformat(),
+        start_time=job.start_time.isoformat() if job.start_time else None,
         end_time=job.end_time.isoformat() if job.end_time else None,
         details=job.details,
         error=job.error,
@@ -1172,7 +1332,14 @@ async def get_ingestion_history(
             
             if job.type == "file" and config and "file_id" in config:
                 file_id = config["file_id"]
-                file_info = get_uploaded_file(db, file_id)
+                file_info = get_uploaded_file(db, file_id) if file_id else None
+            # Get database info if it's a database ingestion
+            elif job.type == "database" and config:
+                db_info = {
+                    "type": config.get("type", "unknown"),
+                    "name": config.get("database", "unknown"),
+                    "table": config.get("table", "unknown")
+                }
             
             # Create history item
             history_item = {
@@ -1180,7 +1347,7 @@ async def get_ingestion_history(
                 "filename": job.name,
                 "type": "database" if job.type == "database" else file_info.type if file_info else "unknown",
                 "size": os.path.getsize(file_info.path) if file_info and os.path.exists(file_info.path) else 0,
-                "uploaded_at": job.start_time.isoformat(),
+                "uploaded_at": job.start_time.strftime("%Y-%m-%d %H:%M:%S") if isinstance(job.start_time, datetime) else job.start_time,
                 "uploaded_by": current_user.username,
                 "preview_url": f"/api/datapuur/ingestion-preview/{job.id}",
                 "download_url": f"/api/datapuur/ingestion-download/{job.id}",
@@ -1190,11 +1357,7 @@ async def get_ingestion_history(
             
             # Add database info if it's a database ingestion
             if job.type == "database" and config:
-                history_item["database_info"] = {
-                    "type": config.get("type", "unknown"),
-                    "name": config.get("database", "unknown"),
-                    "table": config.get("table", "unknown")
-                }
+                history_item["database_info"] = db_info
             
             items.append(history_item)
         
@@ -1225,21 +1388,21 @@ async def get_ingestion_preview(
     db: Session = Depends(get_db)
 ):
     """Get preview data for an ingestion"""
+    job = get_ingestion_job(db, ingestion_id)
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Ingestion not found"
+        )
+    
+    # Check if job is completed
+    if job.status != "completed":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot preview ingestion with status: {job.status}"
+        )
+    
     try:
-        job = get_ingestion_job(db, ingestion_id)
-        if not job:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Ingestion not found"
-            )
-        
-        # Check if job is completed
-        if job.status != "completed":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot preview ingestion with status: {job.status}"
-            )
-        
         # Get the parquet file path
         parquet_path = DATA_DIR / f"{ingestion_id}.parquet"
         
@@ -1249,111 +1412,23 @@ async def get_ingestion_preview(
                 detail="Ingestion data file not found"
             )
         
-        try:
-            # Read the parquet file
-            df = pd.read_parquet(parquet_path)
+        # Read the parquet file
+        df = pd.read_parquet(parquet_path)
+        
+        # Limit to first 10 rows for preview
+        preview_df = df.head(10).copy()  # Create an explicit copy to avoid SettingWithCopyWarning
+        
+        # Convert to appropriate format based on job type
+        if job.type == "file":
+            config = json.loads(job.config) if job.config else {}
+            file_id = config.get("file_id")
+            file_info = get_uploaded_file(db, file_id) if file_id else None
+            file_type = file_info.type if file_info else "unknown"
             
-            # Limit to first 10 rows for preview
-            preview_df = df.head(10)
-            
-            # Convert to appropriate format based on job type
-            if job.type == "file":
-                config = json.loads(job.config) if job.config else {}
-                file_id = config.get("file_id")
-                file_info = get_uploaded_file(db, file_id) if file_id else None
-                file_type = file_info.type if file_info else "unknown"
-                
-                if file_type == "csv":
-                    # For CSV, return as list of lists with headers
-                    headers = preview_df.columns.tolist()
-                    # Convert NumPy types to Python native types
-                    rows = []
-                    for row in preview_df.values:
-                        python_row = []
-                        for item in row:
-                            if pd.isna(item):
-                                python_row.append(None)
-                            elif isinstance(item, (np.integer, np.floating)):
-                                python_row.append(item.item())
-                            else:
-                                python_row.append(item)
-                        rows.append(python_row)
-                    
-                    return {
-                        "data": rows,
-                        "headers": headers,
-                        "filename": file_info.filename if file_info else f"file_{file_id}",
-                        "type": "csv"
-                    }
-                elif file_type == "json":
-                    # For JSON, return as list of dictionaries
-                    # Convert DataFrame to records and then handle NumPy types
-                    records = []
-                    for record in preview_df.to_dict(orient='records'):
-                        clean_record = {}
-                        for key, value in record.items():
-                            if pd.isna(value):
-                                clean_record[key] = None
-                            elif isinstance(value, (np.integer, np.floating)):
-                                clean_record[key] = value.item()
-                            else:
-                                clean_record[key] = value
-                        records.append(clean_record)
-                    
-                    return {
-                        "data": records,
-                        "headers": preview_df.columns.tolist(),
-                        "filename": file_info.filename if file_info else f"file_{file_id}",
-                        "type": "json"
-                    }
-                else:
-                    # Generic table format
-                    headers = preview_df.columns.tolist()
-                    rows = []
-                    for row in preview_df.values:
-                        python_row = []
-                        for item in row:
-                            if pd.isna(item):
-                                python_row.append(None)
-                            elif isinstance(item, (np.integer, np.floating)):
-                                python_row.append(item.item())
-                            else:
-                                python_row.append(item)
-                        rows.append(python_row)
-                    
-                    return {
-                        "data": rows,
-                        "headers": headers,
-                        "filename": file_info.filename if file_info else f"file_{file_id}",
-                        "type": "table"
-                    }
-            elif job.type == "database":
-                # For database, return as list of dictionaries
-                config = json.loads(job.config) if job.config else {}
-                connection_name = config.get("connection_name", "Database Connection")
-                
-                # Convert DataFrame to records and then handle NumPy types
-                records = []
-                for record in preview_df.to_dict(orient='records'):
-                    clean_record = {}
-                    for key, value in record.items():
-                        if pd.isna(value):
-                            clean_record[key] = None
-                        elif isinstance(value, (np.integer, np.floating)):
-                            clean_record[key] = value.item()
-                        else:
-                            clean_record[key] = value
-                    records.append(clean_record)
-                
-                return {
-                    "data": records,
-                    "headers": preview_df.columns.tolist(),
-                    "filename": connection_name,
-                    "type": "database"
-                }
-            else:
-                # Generic table format as fallback
+            if file_type == "csv":
+                # For CSV, return as list of lists with headers
                 headers = preview_df.columns.tolist()
+                # Convert NumPy types to Python native types
                 rows = []
                 for row in preview_df.values:
                     python_row = []
@@ -1369,25 +1444,133 @@ async def get_ingestion_preview(
                 return {
                     "data": rows,
                     "headers": headers,
-                    "filename": f"ingestion_{ingestion_id}",
-                    "type": "table"
+                    "filename": file_info.filename if file_info else f"file_{file_id}",
+                    "type": "csv"
                 }
-        except Exception as e:
-            # Log the specific parquet reading error
-            print(f"Error reading parquet file: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error reading ingestion data: {str(e)}"
-            )
-    except HTTPException:
-        # Re-raise HTTP exceptions as is
-        raise
+            elif file_type == "json":
+                # For JSON, always return a list of dictionaries
+                
+                # Handle empty DataFrame case
+                if preview_df.empty:
+                    return {
+                        "data": [],  # Empty array
+                        "headers": [],
+                        "filename": file_info.filename if file_info else f"file_{file_id}",
+                        "type": "json"
+                    }
+                
+                # Convert all columns to appropriate Python types first
+                for col in preview_df.columns:
+                    if preview_df[col].dtype.kind in 'iuf':  # Integer, unsigned int, or float
+                        preview_df.loc[:, col] = preview_df[col].astype(float)
+                    elif preview_df[col].dtype.kind == 'b':  # Boolean
+                        preview_df.loc[:, col] = preview_df[col].astype(bool)
+                
+                # Convert to records and ensure all values have proper Python types
+                try:
+                    # First attempt - standard conversion
+                    records = []
+                    for record in preview_df.to_dict(orient='records'):
+                        clean_record = {}
+                        for key, value in record.items():
+                            if pd.isna(value):
+                                clean_record[key] = None
+                            elif isinstance(value, (np.integer, np.floating)):
+                                clean_record[key] = float(value)
+                            elif isinstance(value, np.bool_):
+                                clean_record[key] = bool(value)
+                            else:
+                                clean_record[key] = value
+                        records.append(clean_record)
+                except Exception as e:
+                    # Fallback - if any error occurs, create a simpler structure
+                    print(f"Error in preview conversion: {str(e)}")
+                    records = []
+                    for i, row in preview_df.iterrows():
+                        record = {}
+                        for col in preview_df.columns:
+                            val = row[col]
+                            if pd.isna(val):
+                                record[col] = None
+                            elif isinstance(val, (np.integer, np.floating)):
+                                record[col] = float(val)
+                            elif isinstance(val, np.bool_):
+                                record[col] = bool(val)
+                            else:
+                                record[col] = str(val)
+                        records.append(record)
+                
+                # CRITICAL: Force records to be a list if it's not already
+                if not isinstance(records, list):
+                    records = [records] if records else []
+                
+                # Verify each record is a dict
+                for i, record in enumerate(records):
+                    if not isinstance(record, dict):
+                        records[i] = {"value": record}
+                
+                # Log the structure for debugging
+                print(f"Preview response structure: data is a {type(records).__name__} with {len(records)} items")
+                
+                return {
+                    "data": records,
+                    "headers": preview_df.columns.tolist(),
+                    "filename": file_info.filename if file_info else f"file_{file_id}",
+                    "type": "json"
+                }
+        elif job.type == "database":
+            # For database, return as list of dictionaries
+            config = json.loads(job.config) if job.config else {}
+            connection_name = config.get("connection_name", "Database Connection")
+            
+            # Convert DataFrame to records and then handle NumPy types
+            records = []
+            for record in preview_df.to_dict(orient='records'):
+                clean_record = {}
+                for key, value in record.items():
+                    if pd.isna(value):
+                        clean_record[key] = None
+                    elif isinstance(value, (np.integer, np.floating)):
+                        clean_record[key] = value.item()
+                    elif isinstance(value, np.bool_):
+                        clean_record[key] = bool(value)
+                    else:
+                        clean_record[key] = value
+                records.append(clean_record)
+            
+            return {
+                "data": records,
+                "headers": preview_df.columns.tolist(),
+                "filename": connection_name,
+                "type": "database"
+            }
+        else:
+            # Generic table format as fallback
+            headers = preview_df.columns.tolist()
+            rows = []
+            for row in preview_df.values:
+                python_row = []
+                for item in row:
+                    if pd.isna(item):
+                        python_row.append(None)
+                    elif isinstance(item, (np.integer, np.floating)):
+                        python_row.append(item.item())
+                    else:
+                        python_row.append(item)
+                rows.append(python_row)
+            
+            return {
+                "data": rows,
+                "headers": headers,
+                "filename": f"ingestion_{ingestion_id}",
+                "type": "table"
+            }
     except Exception as e:
-        # Catch any other exceptions and return a 500 error
-        print(f"Unexpected error in get_ingestion_preview: {str(e)}")
+        # Log the specific parquet reading error
+        print(f"Error reading parquet file: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Unexpected error processing preview: {str(e)}"
+            detail=f"Error reading ingestion data: {str(e)}"
         )
 
 @router.get("/ingestion-schema/{ingestion_id}", response_model=SchemaResponse)
@@ -1461,9 +1644,11 @@ async def get_ingestion_schema(
                     sample = str(sample_value)
                 elif isinstance(sample_value, np.ndarray):
                     sample = sample_value.tolist()  # Convert NumPy array to list
+                elif isinstance(sample_value, pd.Timestamp):
+                    sample = str(sample_value)
                 else:
                     sample = sample_value
-            
+                    
             fields.append({
                 "name": column,
                 "type": field_type,
@@ -1747,6 +1932,7 @@ async def download_ingestion(
             media_type=media_type,
             background=BackgroundTasks().add_task(lambda: os.unlink(temp_path))
         )
+    
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1772,7 +1958,7 @@ async def get_data_sources(
                 id=job.id,
                 name=job.name,
                 type="File" if job.type == "file" else "Database",
-                last_updated=job.end_time.isoformat() if job.end_time else None,
+                last_updated=job.end_time.strftime("%Y-%m-%d %H:%M:%S") if isinstance(job.end_time, datetime) else job.end_time,
                 status="Active"
             )
         )
@@ -1866,7 +2052,7 @@ async def get_activities(
             Activity(
                 id=job.id,
                 action=f"{job.type.capitalize()} ingestion: {job.name}",
-                time=job.start_time.isoformat(),
+                time=job.start_time.strftime("%Y-%m-%d %H:%M:%S") if isinstance(job.start_time, datetime) else job.start_time,
                 status=status
             )
         )
@@ -1874,7 +2060,7 @@ async def get_activities(
     # Sort activities by time (most recent first)
     sorted_activities = sorted(
         activities, 
-        key=lambda x: datetime.fromisoformat(x.time), 
+        key=lambda x: x.time, 
         reverse=True
     )
     
@@ -1939,7 +2125,7 @@ async def get_dashboard_data(
         "metrics": metrics.dict(),
         "recent_activities": [a.dict() for a in sorted(
             activities, 
-            key=lambda x: datetime.fromisoformat(x.time), 
+            key=lambda x: x.time, 
             reverse=True
         )[:4]],
         "chart_data": chart_data
@@ -1978,7 +2164,7 @@ async def get_file_history(
                 "filename": file.filename,
                 "type": file.type,
                 "size": os.path.getsize(file.path) if os.path.exists(file.path) else 0,
-                "uploaded_at": file.uploaded_at.isoformat(),
+                "uploaded_at": file.uploaded_at,
                 "uploaded_by": file.uploaded_by,
                 "preview_url": f"/api/datapuur/preview/{file.id}",
                 "download_url": f"/api/datapuur/download/{file.id}",
@@ -2060,11 +2246,44 @@ async def preview_file(
             with open(file_path, 'r', encoding='utf-8') as jsonfile:
                 data = json.load(jsonfile)
             
-            # If it's an array, limit to first 10 items
+            # Function to flatten nested JSON (same as in ingestion process)
+            def flatten_json(nested_json, prefix=''):
+                flattened = {}
+                for key, value in nested_json.items():
+                    if isinstance(value, dict):
+                        # Recursively flatten nested dictionaries
+                        flattened.update(flatten_json(value, f"{prefix}{key}_"))
+                    elif isinstance(value, list):
+                        # Handle lists by converting them to strings if they contain simple types
+                        # or by flattening if they contain dictionaries
+                        if all(not isinstance(item, dict) for item in value):
+                            # For lists of simple types, convert to string
+                            flattened[f"{prefix}{key}"] = str(value)
+                        else:
+                            # For lists of dictionaries, flatten each item
+                            for i, item in enumerate(value):
+                                if isinstance(item, dict):
+                                    flattened.update(flatten_json(item, f"{prefix}{key}_{i}_"))
+                                else:
+                                    flattened[f"{prefix}{key}_{i}"] = item
+                    else:
+                        # For simple types, just add them with the prefix
+                        flattened[f"{prefix}{key}"] = value
+                return flattened
+            
+            # If it's an array, limit to first 10 items and flatten each item
             if isinstance(data, list):
-                preview_data = data[:10]
+                limited_data = data[:10]  # Limit to first 10 items
+                flattened_data = []
+                for item in limited_data:
+                    if isinstance(item, dict):
+                        flattened_data.append(flatten_json(item))
+                    else:
+                        flattened_data.append({"value": item})
+                preview_data = flattened_data
             else:
-                preview_data = data
+                # If it's a single object, flatten it
+                preview_data = flatten_json(data) if isinstance(data, dict) else {"value": data}
             
             # Log activity
             log_activity(
@@ -2074,8 +2293,13 @@ async def preview_file(
                 details=f"Previewed file: {file_info.filename}"
             )
             
+            # Convert to DataFrame to get headers and rows for consistent display
+            df = pd.DataFrame(preview_data if isinstance(preview_data, list) else [preview_data])
+            
+            # Return data in a format similar to CSV preview
             return {
-                "data": preview_data,
+                "headers": df.columns.tolist(),
+                "data": df.values.tolist() if not df.empty else [],
                 "filename": file_info.filename,
                 "type": "json"
             }
@@ -2134,6 +2358,153 @@ async def download_file(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error downloading file: {str(e)}"
         )
+
+# Add new endpoint for chunked uploads
+@router.post("/upload-chunk", status_code=status.HTTP_200_OK)
+async def upload_chunk(
+    file: UploadFile = File(...),
+    chunkSize: int = Form(1000),
+    chunkIndex: int = Form(...),
+    totalChunks: int = Form(...),
+    uploadId: str = Form(...),
+    current_user: User = Depends(has_permission("data:upload")),
+    db: Session = Depends(get_db)
+):
+    """Upload a chunk of a large file"""
+    # Create a directory for this upload if it doesn't exist
+    chunks_dir = UPLOAD_DIR / "chunks" / uploadId
+    chunks_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Save the chunk
+    chunk_path = chunks_dir / f"chunk_{chunkIndex}"
+    try:
+        with open(chunk_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error saving chunk: {str(e)}"
+        )
+    finally:
+        file.file.close()
+    
+    return {"message": f"Chunk {chunkIndex + 1} of {totalChunks} uploaded successfully"}
+
+@router.post("/complete-chunked-upload", status_code=status.HTTP_200_OK)
+async def complete_chunked_upload(
+    request: Request,
+    current_user: User = Depends(has_permission("data:upload")),
+    db: Session = Depends(get_db)
+):
+    """Complete a chunked upload by combining all chunks into a single file"""
+    # Parse request body
+    data = await request.json()
+    upload_id = data.get("uploadId")
+    file_name = data.get("fileName")
+    total_chunks = data.get("totalChunks")
+    chunk_size = data.get("chunkSize")
+    original_chunk_size = data.get("originalChunkSize", 1000)
+    
+    if not all([upload_id, file_name, total_chunks, chunk_size]):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing required parameters"
+        )
+    
+    # Get file extension
+    file_ext = file_name.split('.')[-1].lower()
+    if file_ext not in ['csv', 'json']:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only CSV and JSON files are supported"
+        )
+    
+    # Generate a unique file ID
+    file_id = str(uuid.uuid4())
+    file_path = UPLOAD_DIR / f"{file_id}.{file_ext}"
+    
+    # Combine chunks into a single file
+    chunks_dir = UPLOAD_DIR / "chunks" / upload_id
+    
+    try:
+        with open(file_path, "wb") as outfile:
+            for i in range(total_chunks):
+                chunk_path = chunks_dir / f"chunk_{i}"
+                if not chunk_path.exists():
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Chunk {i + 1} is missing"
+                    )
+                
+                with open(chunk_path, "rb") as infile:
+                    shutil.copyfileobj(infile, outfile)
+        
+        # Clean up chunks
+        shutil.rmtree(chunks_dir)
+        
+        # Store file info in database
+        file_data = {
+            "filename": file_name,
+            "path": str(file_path),
+            "type": file_ext,
+            "uploaded_by": current_user.username,
+            "uploaded_at": datetime.now(),
+            "chunk_size": original_chunk_size
+        }
+        save_uploaded_file(db, file_id, file_data)
+        
+        # Log activity
+        log_activity(
+            db=db,
+            username=current_user.username,
+            action="File upload (chunked)",
+            details=f"Uploaded file: {file_name} ({file_ext.upper()}) using chunked upload"
+        )
+        
+        return {"file_id": file_id, "message": "File uploaded successfully"}
+    
+    except Exception as e:
+        # Clean up any partial files
+        if file_path.exists():
+            os.remove(file_path)
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error completing chunked upload: {str(e)}"
+        )
+
+# Delete a dataset
+@router.delete("/delete-dataset/{dataset_id}")
+def delete_dataset_endpoint(
+    dataset_id: str,
+    current_user: User = Depends(has_permission("data:delete")),  # Requires delete permission
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a dataset and all its associated data.
+    
+    This endpoint requires the 'data:delete' permission, which should be restricted
+    to admin and researcher roles.
+    """
+    # Log the activity
+    log_activity(
+        db=db,
+        username=current_user.username,
+        action="Delete dataset",
+        details=f"Deleted dataset with ID: {dataset_id}"
+    )
+    
+    # Call the delete function
+    success, message = delete_dataset(db, dataset_id)
+    
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND if "not found" in message.lower() 
+            else status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=message
+        )
+    
+    return {"success": True, "message": message}
 
 # Create data directory if it doesn't exist
 DATA_DIR.mkdir(exist_ok=True)
