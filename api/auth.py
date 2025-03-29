@@ -401,6 +401,14 @@ async def login_for_access_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
+    # Check if user is active
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account is inactive",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
     # Get user's role and permissions
     user_role = db.query(Role).filter(Role.name == user.role).first()
     permissions = []

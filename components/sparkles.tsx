@@ -30,11 +30,15 @@ export const SparklesCore = ({
 
   // Enhanced sparkles color logic for professional dark mode
   const effectiveParticleColor =
-    particleColor === "#FFFFFF" || particleColor === "var(--foreground)"
-      ? theme === "dark"
-        ? "rgba(255, 255, 255, 0.7)" // Slightly transparent white for dark mode
-        : "#212121" // Dark gray for light mode
-      : particleColor
+    particleColor === "var(--foreground)"
+      ? theme === "dark" 
+        ? "#FFFFFF" // White for dark mode
+        : "#000000" // Black for light mode
+      : particleColor === "#FFFFFF" 
+        ? theme === "dark"
+          ? "#FFFFFF" // White for dark mode
+          : "#000000" // Black for light mode
+        : particleColor
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -188,4 +192,3 @@ export const SparklesCore = ({
     />
   )
 }
-

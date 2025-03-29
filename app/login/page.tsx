@@ -101,8 +101,8 @@ export default function LoginPage() {
           <h1 className="text-2xl font-bold text-foreground text-center mb-6">Login</h1>
 
           {error && (
-            <div className="bg-red-500/20 border border-red-500 text-red-200 px-4 py-2 rounded-md mb-4">
-              <p className="font-medium">{error}</p>
+            <div className="bg-red-100 border border-red-400 text-red-800 px-4 py-3 rounded-md mb-4 shadow-sm">
+              <p className="font-medium text-center">{error}</p>
             </div>
           )}
 
@@ -182,4 +182,3 @@ export default function LoginPage() {
     </main>
   )
 }
-

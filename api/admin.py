@@ -20,6 +20,8 @@ class UserResponse(BaseModel):
     email: str
     role: str
     is_active: bool
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     
     model_config = ConfigDict(from_attributes=True)  # Updated from orm_mode
 
@@ -176,6 +178,9 @@ async def update_user(
     if "is_active" in user_data:
         user.is_active = user_data["is_active"]
     
+    # Update the updated_at timestamp
+    user.updated_at = datetime.now()
+    
     db.commit()
     db.refresh(user)
     
@@ -268,6 +273,33 @@ async def get_activity_logs(
         print(f"Log: id={log.id}, username={log.username}, action={log.action}")
     
     return logs
+
+@router.delete("/activity/clear")
+async def clear_activity_logs(
+    days: int = Query(15, ge=1, le=365),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(has_role("admin"))
+):
+    """
+    Delete activity logs older than the specified number of days.
+    Only admin users can clear activity logs.
+    """
+    # Calculate the cutoff date
+    cutoff_date = datetime.now() - timedelta(days=days)
+    
+    # Delete logs older than the cutoff date
+    deleted = db.query(ActivityLog).filter(ActivityLog.timestamp < cutoff_date).delete()
+    db.commit()
+    
+    # Log this activity
+    log_activity(
+        db=db,
+        username=current_user.username,
+        action="Clear activity logs",
+        details=f"Cleared {deleted} activity logs older than {days} days"
+    )
+    
+    return {"message": f"Successfully cleared {deleted} activity logs older than {days} days"}
 
 @router.post("/activity/log")
 async def log_admin_activity(

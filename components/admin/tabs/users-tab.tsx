@@ -49,6 +49,7 @@ export function UsersTab() {
               <th className="p-3 text-muted-foreground">Role</th>
               <th className="p-3 text-muted-foreground">Status</th>
               <th className="p-3 text-muted-foreground">Created</th>
+              <th className="p-3 text-muted-foreground">Updated</th>
               <th className="p-3 text-muted-foreground">Actions</th>
             </tr>
           </thead>
@@ -82,6 +83,9 @@ export function UsersTab() {
                 </td>
                 <td className="p-3 text-muted-foreground">
                   {user.created_at ? formatDate(user.created_at, false) : "N/A"}
+                </td>
+                <td className="p-3 text-muted-foreground">
+                  {user.updated_at ? formatDate(user.updated_at, false) : "N/A"}
                 </td>
                 <td className="p-3">
                   <div className="flex space-x-2">
@@ -122,4 +126,3 @@ export function UsersTab() {
     </div>
   )
 }
-
