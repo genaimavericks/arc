@@ -23,7 +23,7 @@ import numpy as np
 from pydantic import BaseModel, Field
 
 from .models import User, get_db, ActivityLog, Role, UploadedFile, IngestionJob
-from .auth import get_current_active_user, has_role, has_permission, log_activity
+from .auth import get_current_active_user, has_role, has_permission, log_activity, has_any_permission
 from .data_models import DataSource, DataMetrics, Activity, DashboardData
 from .models import get_db, SessionLocal
 
@@ -1279,7 +1279,7 @@ async def get_ingestion_history(
     source: str = Query(""),
     status: str = Query(""),
     search: str = Query(""),
-    current_user: User = Depends(has_permission("ingestion:read")),  # Ensure this matches the permission in roles
+    current_user: User = Depends(has_any_permission(["ingestion:read", "kginsights:read"])),  # Allow either permission
     db: Session = Depends(get_db)
 ):
     """Get history of ingestion jobs with filtering and pagination"""
@@ -1942,7 +1942,7 @@ async def download_ingestion(
 # Original routes from the template - updated to use database
 @router.get("/sources", response_model=List[DataSource])
 async def get_data_sources(
-    current_user: User = Depends(has_permission("data:read")),
+    current_user: User = Depends(has_any_permission(["data:read", "kginsights:read"])),
     db: Session = Depends(get_db)
 ):
     # Get real data sources from ingestion jobs

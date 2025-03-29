@@ -1,7 +1,7 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from agent.graph_schema_agent import GraphSchemaAgent
+from .agent.graph_schema_agent import GraphSchemaAgent
 from langchain_openai import ChatOpenAI
 import os
 import plotly.graph_objects as go
@@ -9,6 +9,10 @@ import io
 import base64
 import json
 from datetime import datetime
+from sqlalchemy.orm import Session
+from ..models import get_db, IngestionJob
+from ..auth import has_any_permission
+from ..models import User
 
 # Models
 class SchemaResult(BaseModel):
@@ -19,6 +23,9 @@ class SchemaResult(BaseModel):
 class FilePathInput(BaseModel):
     file_path: str
 
+class SourceIdInput(BaseModel):
+    source_id: str
+
 class SaveSchemaInput(BaseModel):
     schema: dict
     output_path: str = None  # Optional output path, if not provided will use default location
@@ -28,7 +35,7 @@ class SaveSchemaResponse(BaseModel):
     file_path: str
 
 # Router
-router = APIRouter(prefix="/api/graphschema", tags=["graphschema"])
+router = APIRouter(prefix="/graphschema", tags=["graphschema"])
 
 # Initialize LLM
 llm = ChatOpenAI(
@@ -132,10 +139,19 @@ async def build_schema_from_path(file_input: FilePathInput):
         cypher = agent_instance.get_cypher() or ""
         
         # Generate graph image if schema is available
+        graph_image = ""
         try:
-            graph_image = generate_graph_image(schema) if schema else ""
+            if schema:
+                # Check if plotly is available for image generation
+                try:
+                    import plotly
+                    graph_image = generate_graph_image(schema) or ""
+                except ImportError:
+                    print("Plotly not available for graph image generation")
+                    graph_image = ""
         except Exception as img_err:
             print(f"Error generating graph image: {str(img_err)}")
+            # Continue without the graph image
             graph_image = ""
         
         # Debug logging
@@ -152,6 +168,99 @@ async def build_schema_from_path(file_input: FilePathInput):
         raise
     except Exception as e:
         print(f"Error in build_schema_from_path: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Schema generation failed: {str(e)}")
+
+@router.post('/build-schema-from-source', response_model=SchemaResult)
+async def build_schema_from_source(
+    source_input: SourceIdInput,
+    current_user: User = Depends(has_any_permission(["kginsights:read", "data:read"])),
+    db: Session = Depends(get_db)
+):
+    """Generate Neo4j schema from a source ID and return the results."""
+    print(f"DEBUG: build_schema_from_source called with source_id: {source_input.source_id}")
+    try:
+        source_id = source_input.source_id
+        
+        # Get the ingestion job
+        job = db.query(IngestionJob).filter(IngestionJob.id == source_id).first()
+        print(f"DEBUG: Found job: {job is not None}")
+        if not job:
+            raise HTTPException(status_code=404, detail=f"Source not found with ID: {source_id}")
+            
+        # Get the file path from the job config
+        config = json.loads(job.config) if job.config else {}
+        print(f"DEBUG: Job config: {config}")
+        
+        if job.type == "file" and "file_id" in config:
+            from ..models import UploadedFile
+            file_id = config["file_id"]
+            file_info = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
+            print(f"DEBUG: Found file info: {file_info is not None}")
+            
+            if not file_info:
+                raise HTTPException(status_code=404, detail=f"File not found for source ID: {source_id}")
+                
+            file_path = file_info.path
+            print(f"DEBUG: File path: {file_path}")
+            
+            # Validate file exists
+            if not os.path.exists(file_path):
+                raise HTTPException(status_code=404, detail=f"File not found at path: {file_path}")
+                
+            # Validate file is a CSV
+            if not file_path.lower().endswith('.csv'):
+                raise HTTPException(status_code=400, detail="Only CSV files are supported")
+        else:
+            raise HTTPException(status_code=400, detail="Only file sources are supported")
+        
+        # Initialize agent with the provided file path
+        agent_instance = GraphSchemaAgent(
+            model=llm,
+            csv_path=file_path,
+            log=True,
+            log_path='logs'
+        )
+        
+        # Generate the schema
+        response = agent_instance.invoke_agent()
+        
+        # Get the generated schema and cypher
+        schema = agent_instance.get_schema()
+        if not schema:
+            raise HTTPException(status_code=404, detail='Schema generation failed')
+            
+        cypher = agent_instance.get_cypher() or ""
+        
+        # Generate graph image if schema is available
+        graph_image = ""
+        try:
+            if schema:
+                # Check if plotly is available for image generation
+                try:
+                    import plotly
+                    graph_image = generate_graph_image(schema) or ""
+                except ImportError:
+                    print("Plotly not available for graph image generation")
+                    graph_image = ""
+        except Exception as img_err:
+            print(f"Error generating graph image: {str(img_err)}")
+            # Continue without the graph image
+            graph_image = ""
+        
+        # Debug logging
+        print(f"Schema: {schema}")
+        print(f"Graph image generated: {bool(graph_image)}")
+        print(f"Image length: {len(graph_image) if graph_image else 0}")
+            
+        return {
+            'schema': schema,
+            'cypher': cypher,
+            'graph_image': graph_image
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error in build_schema_from_source: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Schema generation failed: {str(e)}")
 
 @router.post('/save-schema', response_model=SaveSchemaResponse)

@@ -9,11 +9,11 @@ import os
 from pathlib import Path
 
 from api.models import get_db, User
-from api.auth import router as auth_router
+from api.auth import router as auth_router, has_any_permission
 from api.datapuur import router as datapuur_router
 from api.kginsights import router as kginsights_router
+from api.kginsights.graphschemaapi import router as graphschema_router, build_schema_from_source, SourceIdInput, SchemaResult
 from api.admin import router as admin_router
-from api.graphschemaapi import router as graphschema_router
 from api.middleware import ActivityLoggerMiddleware
 
 # # Run database migrations
@@ -47,8 +47,9 @@ app.add_middleware(ActivityLoggerMiddleware)
 app.include_router(auth_router)
 app.include_router(datapuur_router)
 app.include_router(kginsights_router)
+# Register the graphschema router directly at the /api path
+app.include_router(graphschema_router, prefix="/api")
 app.include_router(admin_router)
-app.include_router(graphschema_router)
 
 # Custom OpenAPI and Swagger UI endpoints
 @app.get("/api/docs", include_in_schema=False)
@@ -139,6 +140,15 @@ async def startup_event():
         print("Updated role permissions")
     except Exception as e:
         print(f"Error updating role permissions: {str(e)}")
+
+# Add direct route for build-schema-from-source
+@app.post("/api/graphschema/build-schema-from-source", response_model=SchemaResult)
+async def direct_build_schema_from_source(
+    source_input: SourceIdInput, 
+    current_user: User = Depends(has_any_permission(["kginsights:read", "data:read"])),
+    db: Session = Depends(get_db)
+):
+    return await build_schema_from_source(source_input, current_user, db)
 
 # Mount static files directory if it exists
 static_dir = Path(__file__).parent / "static"

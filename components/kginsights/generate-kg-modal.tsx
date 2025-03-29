@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-
+import { useRouter } from "next/navigation"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -23,6 +23,7 @@ export function GenerateKGModal({ isOpen, onClose, datasetId, datasetName }: Gen
   const [kgDescription, setKgDescription] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { toast } = useToast()
+  const router = useRouter()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -39,43 +40,20 @@ export function GenerateKGModal({ isOpen, onClose, datasetId, datasetName }: Gen
     try {
       setIsSubmitting(true)
 
-      // Call the API to generate a knowledge graph
-      const response = await fetch("/api/kginsights/generate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-        body: JSON.stringify({
-          dataset_id: datasetId,
-          name: kgName,
-          description: kgDescription,
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error(`Failed to generate knowledge graph: ${response.status}`)
-      }
-
-      const data = await response.json()
-
-      toast({
-        title: "Success",
-        description: `Knowledge Graph "${kgName}" is being generated. Job ID: ${data.job_id}`,
-      })
-
+      // Redirect to the Generate Graph page with the dataset ID and name
+      router.push(`/kginsights/generate?sourceId=${datasetId}&sourceName=${encodeURIComponent(datasetName)}&kgName=${encodeURIComponent(kgName)}&kgDescription=${encodeURIComponent(kgDescription || '')}`)
+      
       // Reset form and close modal
       setKgName("")
       setKgDescription("")
       onClose()
     } catch (error) {
-      console.error("Error generating knowledge graph:", error)
+      console.error("Error navigating to generate graph page:", error)
       toast({
         title: "Error",
-        description: "Failed to generate knowledge graph. Please try again.",
+        description: "Failed to navigate to generate graph page. Please try again.",
         variant: "destructive",
       })
-    } finally {
       setIsSubmitting(false)
     }
   }
@@ -135,4 +113,3 @@ export function GenerateKGModal({ isOpen, onClose, datasetId, datasetName }: Gen
     </Dialog>
   )
 }
-
