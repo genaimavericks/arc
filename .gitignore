@@ -35,3 +35,4 @@ api/static
 out
 package
 rsw-deployment.tar.gz
+.idea/
