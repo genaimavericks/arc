@@ -3,5 +3,8 @@
 from fastapi import APIRouter
 from .graphschemaapi import router as graphschema_router
 
-# Export the GraphSchemaAPI router directly
-router = graphschema_router
+# Create a new router for kginsights
+router = APIRouter()
+
+# Include the graphschema router
+router.include_router(graphschema_router)

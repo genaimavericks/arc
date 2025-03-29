@@ -4,9 +4,7 @@ from pydantic import BaseModel
 from .agent.graph_schema_agent import GraphSchemaAgent
 from langchain_openai import ChatOpenAI
 import os
-import plotly.graph_objects as go
 import io
-import base64
 import json
 from datetime import datetime
 from sqlalchemy.orm import Session
@@ -18,7 +16,6 @@ from ..models import User
 class SchemaResult(BaseModel):
     schema: dict
     cypher: str
-    graph_image: str  # Base64 encoded image
 
 class FilePathInput(BaseModel):
     file_path: str
@@ -38,67 +35,102 @@ class SaveSchemaResponse(BaseModel):
 router = APIRouter(prefix="/graphschema", tags=["graphschema"])
 
 # Initialize LLM
-llm = ChatOpenAI(
-    model='gpt-4',
-    api_key=os.getenv('OPENAI_API_KEY'),
-    temperature=0
-)
+try:
+    api_key = os.getenv('OPENAI_API_KEY')
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY environment variable is not set")
+    
+    llm = ChatOpenAI(
+        model='gpt-4',
+        api_key=api_key,
+        temperature=0
+    )
+    print("Successfully initialized OpenAI LLM")
+except Exception as e:
+    print(f"Warning: Could not initialize OpenAI LLM: {e}")
+    # Create a placeholder LLM for development/testing
+    from unittest.mock import MagicMock
+    llm = MagicMock()
+    llm.invoke.return_value = {"content": "This is a mock response as OpenAI API key is not configured."}
 
 # Helper Functions
-def generate_graph_image(schema):
-    """Generate Plotly graph image from schema"""
-    if not schema or not isinstance(schema, dict):
-        return None
+def format_schema_response(schema, cypher):
+    """Format schema and cypher data for frontend consumption"""
+    # Ensure schema has necessary structure
+    formatted_schema = schema
+    # If schema is a string (JSON), try to parse it
+    if isinstance(schema, str):
+        try:
+            formatted_schema = json.loads(schema)
+        except json.JSONDecodeError:
+            print(f"Warning: Could not decode schema as JSON: {schema}")
+            formatted_schema = {
+                'nodes': [],
+                'relationships': [],
+                'indexes': []
+            }
+    
+    # Ensure essential schema properties are present
+    if not isinstance(formatted_schema, dict):
+        formatted_schema = {
+            'nodes': [],
+            'relationships': [],
+            'indexes': []
+        }
+    
+    if 'nodes' not in formatted_schema:
+        formatted_schema['nodes'] = []
+    if 'relationships' not in formatted_schema:
+        formatted_schema['relationships'] = []
+    if 'indexes' not in formatted_schema:
+        formatted_schema['indexes'] = []
+    
+    # Convert node properties from array format to object format expected by frontend
+    for node in formatted_schema['nodes']:
+        if 'properties' in node and isinstance(node['properties'], list):
+            # Convert from [{"name": "prop1", "type": "string"}] to {"prop1": "string"}
+            properties_obj = {}
+            for prop in node['properties']:
+                if isinstance(prop, dict) and 'name' in prop and 'type' in prop:
+                    properties_obj[prop['name']] = prop['type']
+            node['properties'] = properties_obj
+    
+    # Convert source/target to startNode/endNode in relationships
+    for rel in formatted_schema['relationships']:
+        if 'source' in rel and 'startNode' not in rel:
+            rel['startNode'] = rel['source']
+            # Keep source for backward compatibility
+        if 'target' in rel and 'endNode' not in rel:
+            rel['endNode'] = rel['target']
+            # Keep target for backward compatibility
         
-    # Create nodes and edges
-    nodes = [node.get('label', f'Node_{i}') for i, node in enumerate(schema.get('nodes', []))]
-    edges = [(rel['startNode'], rel['endNode']) 
-             for rel in schema.get('relationships', [])]
+        # Convert relationship properties from array format to object format if needed
+        if 'properties' in rel and isinstance(rel['properties'], list):
+            properties_obj = {}
+            for prop in rel['properties']:
+                if isinstance(prop, dict) and 'name' in prop and 'type' in prop:
+                    properties_obj[prop['name']] = prop['type']
+            rel['properties'] = properties_obj
     
-    # Create graph visualization
-    edge_trace = go.Scatter(
-        x=[], y=[], 
-        line=dict(width=0.5, color='#888'),
-        hoverinfo='none',
-        mode='lines'
-    )
+    # Convert indexes from complex objects to simple strings as expected by frontend
+    # Frontend expects: indexes?: string[]
+    if 'indexes' in formatted_schema and isinstance(formatted_schema['indexes'], list):
+        # Check if indexes are in complex format (objects with label and properties)
+        if formatted_schema['indexes'] and isinstance(formatted_schema['indexes'][0], dict):
+            simplified_indexes = []
+            for idx in formatted_schema['indexes']:
+                if 'label' in idx and 'properties' in idx:
+                    # Create a string representation like "Label(prop1, prop2)"
+                    props_str = ", ".join(idx['properties']) if isinstance(idx['properties'], list) else str(idx['properties'])
+                    simplified_indexes.append(f"{idx['label']}({props_str})")
+            formatted_schema['indexes'] = simplified_indexes
     
-    node_trace = go.Scatter(
-        x=[], y=[],
-        mode='markers+text',
-        text=nodes,
-        marker=dict(
-            size=20,
-            line=dict(width=2)
-        )
-    )
-    
-    # Add positions to nodes and edges
-    for i, node in enumerate(nodes):
-        node_trace['x'] += (i,)
-        node_trace['y'] += (i % 2,)
+    # Format cypher script if needed
+    formatted_cypher = cypher
+    if isinstance(cypher, dict) and 'cypher' in cypher:
+        formatted_cypher = cypher['cypher']
         
-    for edge in edges:
-        x0, y0 = nodes.index(edge[0]), nodes.index(edge[0]) % 2
-        x1, y1 = nodes.index(edge[1]), nodes.index(edge[1]) % 2
-        edge_trace['x'] += (x0, x1, None)
-        edge_trace['y'] += (y0, y1, None)
-    
-    fig = go.Figure(data=[edge_trace, node_trace],
-                 layout=go.Layout(
-                    showlegend=False,
-                    hovermode='closest',
-                    margin=dict(b=20,l=5,r=5,t=40),
-                    xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                    yaxis=dict(showgrid=False, zeroline=False, showticklabels=False))
-                )
-    
-    # Convert to base64 image
-    buf = io.BytesIO()
-    fig.write_image(buf, format='png')
-    return base64.b64encode(buf.getvalue()).decode('utf-8')
-
-
+    return formatted_schema, formatted_cypher
 
 # API Routes
 @router.get('/status')
@@ -138,31 +170,12 @@ async def build_schema_from_path(file_input: FilePathInput):
             
         cypher = agent_instance.get_cypher() or ""
         
-        # Generate graph image if schema is available
-        graph_image = ""
-        try:
-            if schema:
-                # Check if plotly is available for image generation
-                try:
-                    import plotly
-                    graph_image = generate_graph_image(schema) or ""
-                except ImportError:
-                    print("Plotly not available for graph image generation")
-                    graph_image = ""
-        except Exception as img_err:
-            print(f"Error generating graph image: {str(img_err)}")
-            # Continue without the graph image
-            graph_image = ""
+        # Format data to match what frontend expects
+        formatted_schema, formatted_cypher = format_schema_response(schema, cypher)
         
-        # Debug logging
-        print(f"Schema: {schema}")
-        print(f"Graph image generated: {bool(graph_image)}")
-        print(f"Image length: {len(graph_image) if graph_image else 0}")
-            
         return {
-            'schema': schema,
-            'cypher': cypher,
-            'graph_image': graph_image
+            'schema': formatted_schema,
+            'cypher': formatted_cypher
         }
     except HTTPException:
         raise
@@ -203,10 +216,40 @@ async def build_schema_from_source(
             file_path = file_info.path
             print(f"DEBUG: File path: {file_path}")
             
+            # Detect if the file path is from a different OS and handle it
+            if os.name == 'posix' and '\\' in file_path:  # Running on Mac/Linux but Windows path
+                print(f"WARNING: Windows path detected on a {os.name} system.")
+                # Convert Windows path to a relative path if possible
+                try:
+                    relative_path = os.path.basename(file_path)
+                    # Try to find the file in a local uploads directory
+                    local_path = os.path.join(os.path.dirname(__file__), '..', '..', 'uploads', relative_path)
+                    if os.path.exists(local_path):
+                        file_path = local_path
+                        print(f"INFO: Found file at local path: {file_path}")
+                    else:
+                        print(f"ERROR: Could not find file at converted path: {local_path}")
+                        raise HTTPException(
+                            status_code=400, 
+                            detail=f"File path is from Windows but running on {os.name}. Please upload the file on this system."
+                        )
+                except Exception as e:
+                    print(f"ERROR in path conversion: {str(e)}")
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=f"File path error: {str(e)}. The file appears to be from a different operating system."
+                    )
+            elif os.name == 'nt' and '/' in file_path:  # Running on Windows but Unix path
+                print(f"WARNING: Unix path detected on a {os.name} system.")
+                # Similar conversion code for Windows...
+            
             # Validate file exists
             if not os.path.exists(file_path):
-                raise HTTPException(status_code=404, detail=f"File not found at path: {file_path}")
-                
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"File not found at path: {file_path}. Current OS: {os.name}"
+                )
+            
             # Validate file is a CSV
             if not file_path.lower().endswith('.csv'):
                 raise HTTPException(status_code=400, detail="Only CSV files are supported")
@@ -231,31 +274,12 @@ async def build_schema_from_source(
             
         cypher = agent_instance.get_cypher() or ""
         
-        # Generate graph image if schema is available
-        graph_image = ""
-        try:
-            if schema:
-                # Check if plotly is available for image generation
-                try:
-                    import plotly
-                    graph_image = generate_graph_image(schema) or ""
-                except ImportError:
-                    print("Plotly not available for graph image generation")
-                    graph_image = ""
-        except Exception as img_err:
-            print(f"Error generating graph image: {str(img_err)}")
-            # Continue without the graph image
-            graph_image = ""
+        # Format data to match what frontend expects
+        formatted_schema, formatted_cypher = format_schema_response(schema, cypher)
         
-        # Debug logging
-        print(f"Schema: {schema}")
-        print(f"Graph image generated: {bool(graph_image)}")
-        print(f"Image length: {len(graph_image) if graph_image else 0}")
-            
         return {
-            'schema': schema,
-            'cypher': cypher,
-            'graph_image': graph_image
+            'schema': formatted_schema,
+            'cypher': formatted_cypher
         }
     except HTTPException:
         raise

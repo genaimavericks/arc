@@ -7,6 +7,14 @@ from fastapi.openapi.utils import get_openapi
 from sqlalchemy.orm import Session
 import os
 from pathlib import Path
+import dotenv
+
+# Load environment variables from .env file
+dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
+if os.path.exists(dotenv_path):
+    print(f"Loading environment variables from {dotenv_path}")
+    dotenv.load_dotenv(dotenv_path)
+    print(f"OPENAI_API_KEY is {'set' if os.getenv('OPENAI_API_KEY') else 'not set'}")
 
 from api.models import get_db, User
 from api.auth import router as auth_router, has_any_permission
@@ -46,8 +54,8 @@ app.add_middleware(ActivityLoggerMiddleware)
 # Include routers
 app.include_router(auth_router)
 app.include_router(datapuur_router)
-app.include_router(kginsights_router)
-# Register the graphschema router directly at the /api path
+app.include_router(kginsights_router, prefix="/api")
+# The graphschema router should be included with just /api prefix since it already has /graphschema in its routes
 app.include_router(graphschema_router, prefix="/api")
 app.include_router(admin_router)
 
@@ -140,15 +148,6 @@ async def startup_event():
         print("Updated role permissions")
     except Exception as e:
         print(f"Error updating role permissions: {str(e)}")
-
-# Add direct route for build-schema-from-source
-@app.post("/api/graphschema/build-schema-from-source", response_model=SchemaResult)
-async def direct_build_schema_from_source(
-    source_input: SourceIdInput, 
-    current_user: User = Depends(has_any_permission(["kginsights:read", "data:read"])),
-    db: Session = Depends(get_db)
-):
-    return await build_schema_from_source(source_input, current_user, db)
 
 # Mount static files directory if it exists
 static_dir = Path(__file__).parent / "static"

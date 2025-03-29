@@ -7,6 +7,7 @@ import { SparklesCore } from "@/components/sparkles"
 import KGInsightsSidebar from "@/components/kginsights-sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
@@ -14,8 +15,16 @@ import { useToast } from "@/components/ui/use-toast"
 import LoadingSpinner from "@/components/loading-spinner"
 import ProtectedRoute from "@/components/protected-route"
 import { motion } from "framer-motion"
-import { Save } from "lucide-react"
+import { Save, Loader2 } from "lucide-react"
+import { Separator } from "@/components/ui/separator"
 import Image from "next/image"
+import dynamic from 'next/dynamic'
+
+// Import Cytoscape as a client component to avoid SSR issues
+const CytoscapeGraph = dynamic(
+  () => import('@/components/cytoscape-graph'),
+  { ssr: false }
+);
 
 // Define interfaces for our data
 interface DataSource {
@@ -61,7 +70,6 @@ function GenerateGraphContent() {
   const [loadingSources, setLoadingSources] = useState(true)
   const [schema, setSchema] = useState<Schema | null>(null)
   const [cypher, setCypher] = useState<string>("")
-  const [graphImage, setGraphImage] = useState<string>("")
   const [kgName, setKgName] = useState<string>("")
   const [kgDescription, setKgDescription] = useState<string>("")
   const { toast } = useToast()
@@ -125,12 +133,20 @@ function GenerateGraphContent() {
     setSelectedSourceName(source?.name || "")
   }
 
-  const generateSchema = async (sourceId: string) => {
+  const generateSchema = async () => {
+    if (!selectedSource) {
+      toast({
+        title: "Error",
+        description: "Please select a data source",
+        variant: "destructive",
+      })
+      return
+    }
+
     try {
       setLoading(true)
       setSchema(null)
       setCypher("")
-      setGraphImage("")
 
       const response = await fetch("/api/graphschema/build-schema-from-source", {
         method: "POST",
@@ -139,7 +155,7 @@ function GenerateGraphContent() {
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
         body: JSON.stringify({
-          source_id: sourceId
+          source_id: selectedSource
         }),
       })
 
@@ -150,7 +166,6 @@ function GenerateGraphContent() {
       const data = await response.json()
       setSchema(data.schema)
       setCypher(data.cypher)
-      setGraphImage(data.graph_image)
 
       toast({
         title: "Success",
@@ -290,7 +305,7 @@ function GenerateGraphContent() {
                 <div className="flex gap-2">
                   <Button
                     className="bg-primary hover:bg-primary/90 text-primary-foreground"
-                    onClick={() => selectedSource && generateSchema(selectedSource)}
+                    onClick={generateSchema}
                     disabled={!selectedSource || loading}
                   >
                     {loading ? (
@@ -327,64 +342,62 @@ function GenerateGraphContent() {
                       <div className="space-y-6">
                         <h2 className="text-xl font-semibold">Recommended Schema:</h2>
                         
-                        {graphImage ? (
-                          <div className="border rounded-md overflow-hidden bg-background/50 p-4">
-                            <div className="flex justify-center">
-                              <img 
-                                src={`data:image/png;base64,${graphImage}`} 
-                                alt="Graph Schema Visualization" 
-                                className="max-w-full h-auto"
-                              />
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          {/* Schema Details */}
+                          <div className="space-y-4">
+                            <div>
+                              <h3 className="text-lg font-medium mb-2">Nodes:</h3>
+                              <ul className="list-disc pl-5 space-y-1">
+                                {schema.nodes.map((node, index) => (
+                                  <li key={index}>
+                                    <span className="font-medium">{node.label}</span> 
+                                    ({Object.entries(node.properties || {}).map(([key, type]) => `${key}: ${type}`).join(", ")})
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                            
+                            <div>
+                              <h3 className="text-lg font-medium mb-2">Relationships:</h3>
+                              <ul className="list-disc pl-5 space-y-1">
+                                {schema.relationships.map((rel, index) => (
+                                  <li key={index}>
+                                    <span className="font-medium">{rel.startNode}</span> 
+                                    <span className="mx-1">-[{rel.type}]-&gt;</span>
+                                    <span className="font-medium">{rel.endNode}</span>
+                                    {rel.properties && Object.keys(rel.properties).length > 0 && (
+                                      <span className="ml-2">
+                                        ({Object.entries(rel.properties).map(([key, type]) => `${key}: ${type}`).join(", ")})
+                                      </span>
+                                    )}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                            
+                            {schema.indexes && schema.indexes.length > 0 && (
+                              <div>
+                                <h3 className="text-lg font-medium mb-2">Indexes:</h3>
+                                <ul className="list-disc pl-5 space-y-1">
+                                  {schema.indexes.map((index, i) => (
+                                    <li key={i}>{index}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+
+                            <div>
+                              <h3 className="text-lg font-medium mb-2">Cypher Script:</h3>
+                              <pre className="bg-gray-100 p-4 rounded-md overflow-auto max-h-96">
+                                {cypher}
+                              </pre>
                             </div>
                           </div>
-                        ) : (
-                          <div className="border rounded-md overflow-hidden bg-background/50 p-4 text-center py-8">
-                            <p className="text-muted-foreground">Graph visualization not available</p>
-                          </div>
-                        )}
-                        
-                        <div>
-                          <h3 className="text-lg font-medium mb-2">Nodes:</h3>
-                          <ul className="list-disc pl-5 space-y-1">
-                            {schema.nodes.map((node, index) => (
-                              <li key={index}>
-                                <span className="font-medium">{node.label}</span> 
-                                ({Object.entries(node.properties || {}).map(([key, type]) => `${key}: ${type}`).join(", ")})
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                        
-                        <div>
-                          <h3 className="text-lg font-medium mb-2">Relationships:</h3>
-                          <ul className="list-disc pl-5 space-y-1">
-                            {schema.relationships.map((rel, index) => (
-                              <li key={index}>
-                                <span className="font-medium">{rel.type}</span> 
-                                ({rel.startNode} → {rel.endNode})
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                        
-                        {schema.indexes && schema.indexes.length > 0 && (
+                          
+                          {/* Graph Visualization */}
                           <div>
-                            <h3 className="text-lg font-medium mb-2">Indexes:</h3>
-                            <ul className="list-disc pl-5 space-y-1">
-                              {schema.indexes.map((index, i) => (
-                                <li key={i}>{index}</li>
-                              ))}
-                            </ul>
+                            <CytoscapeGraph schema={schema} />
                           </div>
-                        )}
-                        
-                        <div>
-                          <h3 className="text-lg font-medium mb-2">Justification:</h3>
-                          <p className="text-muted-foreground">
-                            This schema is designed to capture the relationships between entities in your dataset
-                            while maintaining data integrity and query performance. The structure allows for
-                            efficient traversal and analysis of your data.
-                          </p>
                         </div>
                       </div>
                     ) : selectedSource ? (
