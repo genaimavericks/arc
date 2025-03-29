@@ -23,7 +23,7 @@ import numpy as np
 from pydantic import BaseModel, Field
 
 from .models import User, get_db, ActivityLog, Role, UploadedFile, IngestionJob
-from .auth import get_current_active_user, has_role, has_permission, log_activity
+from .auth import get_current_active_user, has_role, has_permission, log_activity, has_any_permission
 from .data_models import DataSource, DataMetrics, Activity, DashboardData
 from .models import get_db, SessionLocal
 
@@ -640,12 +640,36 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                             if col in ['MonthlyCharges', 'TotalCharges']:
                                 chunk[col] = pd.to_numeric(chunk[col], errors='coerce')
                         
-                        # Append to parquet file directly instead of reading/writing the whole file
-                        chunk.to_parquet(output_file, index=False, compression='snappy', append=True)
+                        # Append to parquet file using pyarrow instead of unsupported append parameter
+                        import pyarrow as pa
+                        import pyarrow.parquet as pq
+                        
+                        # Check if this is the first append after initial write
+                        if processed_rows == len(first_chunk):
+                            # Read the existing parquet file
+                            existing_table = pq.read_table(output_file)
+                            # Convert chunk to pyarrow table
+                            chunk_table = pa.Table.from_pandas(chunk)
+                            # Concatenate tables
+                            combined_table = pa.concat_tables([existing_table, chunk_table])
+                            # Write back to the file
+                            pq.write_table(combined_table, output_file, compression='snappy')
+                        else:
+                            # For subsequent appends, read the entire file again
+                            try:
+                                existing_table = pq.read_table(output_file)
+                                chunk_table = pa.Table.from_pandas(chunk)
+                                combined_table = pa.concat_tables([existing_table, chunk_table])
+                                pq.write_table(combined_table, output_file, compression='snappy')
+                            except Exception as e:
+                                logger.error(f"Error appending to parquet file: {str(e)}")
+                                raise
+                        
                         processed_rows += len(chunk)
                         
                         # Update progress
                         job.progress = min(int((processed_rows / total_rows) * 100), 99)
+                        job.details = f"Processed {processed_rows} of {total_rows} rows ({job.progress}%)"
                         db_session.commit()
                         
                         # Remove sleep to speed up processing
@@ -1279,7 +1303,7 @@ async def get_ingestion_history(
     source: str = Query(""),
     status: str = Query(""),
     search: str = Query(""),
-    current_user: User = Depends(has_permission("ingestion:read")),  # Ensure this matches the permission in roles
+    current_user: User = Depends(has_any_permission(["ingestion:read", "kginsights:read"])),  # Allow either permission
     db: Session = Depends(get_db)
 ):
     """Get history of ingestion jobs with filtering and pagination"""
@@ -1942,7 +1966,7 @@ async def download_ingestion(
 # Original routes from the template - updated to use database
 @router.get("/sources", response_model=List[DataSource])
 async def get_data_sources(
-    current_user: User = Depends(has_permission("data:read")),
+    current_user: User = Depends(has_any_permission(["data:read", "kginsights:read"])),
     db: Session = Depends(get_db)
 ):
     # Get real data sources from ingestion jobs

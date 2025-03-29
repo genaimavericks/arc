@@ -2,16 +2,22 @@
 
 import { motion } from "framer-motion"
 
-export default function LoadingSpinner() {
+interface LoadingSpinnerProps {
+  size?: "default" | "sm"
+}
+
+export default function LoadingSpinner({ size = "default" }: LoadingSpinnerProps) {
+  const spinnerSize = size === "sm" ? "w-8 h-8 border-2" : "w-16 h-16 border-4"
+  const textSize = size === "sm" ? "text-sm mt-2" : "mt-4"
+  
   return (
     <div className="flex flex-col items-center justify-center">
       <motion.div
-        className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full shadow-[0_0_15px_rgba(26,35,126,0.3)]"
+        className={`${spinnerSize} border-primary border-t-transparent rounded-full shadow-[0_0_15px_rgba(26,35,126,0.3)]`}
         animate={{ rotate: 360 }}
         transition={{ duration: 1, repeat: Number.POSITIVE_INFINITY, ease: "linear" }}
       />
-      <p className="mt-4 text-foreground">Loading data...</p>
+      <p className={`${textSize} text-foreground`}>Loading data...</p>
     </div>
   )
 }
-

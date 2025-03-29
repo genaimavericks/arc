@@ -19,12 +19,14 @@ pip==24.0
 psycopg2-binary==2.9.9
 pyarrow==19.0.1
 pyasn1==0.6.1
-pydantic==2.4.2
-pydantic_core==2.10.1
+pydantic==1.10.8
+# Remove the fixed pydantic_core version to let pip resolve the correct version
+# pydantic_core==2.10.1
 PyJWT==2.8.0
 PyMySQL==1.1.0
 pyodbc==5.0.1
 python-dateutil==2.9.0.post0
+python-dotenv==1.0.0
 python-jose==3.3.0
 python-multipart==0.0.6
 pytz==2023.3
@@ -39,3 +41,11 @@ typing_extensions==4.13.0
 tzdata==2025.2
 urllib3==2.3.0
 uvicorn==0.24.0
+networkx==3.4.2
+plotly==6.0.1
+langchain==0.0.267
+# Comment out these specific versions to let pip resolve the correct dependencies
+# langchain-core==0.0.10
+# langchain-community==0.0.10
+# langgraph==0.3.21
+# langchain_openai==0.3.11

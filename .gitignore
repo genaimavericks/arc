@@ -30,7 +30,11 @@ next-env.d.ts
 .venv
 __pycache__
 _next/*
+package-lock.json
 api/static
 out
 package
 rsw-deployment.tar.gz
+.idea/
+api/static/*
+.rswvenv/

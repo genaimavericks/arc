@@ -200,6 +200,73 @@ def has_permission(permission: str):
     
     return permission_checker
 
+def has_any_permission(permissions: List[str]):
+    """
+    Check if the current user has any of the specified permissions.
+    
+    This function creates a dependency that can be used in FastAPI routes to
+    check if the current user has any of the specified permissions. If the user has
+    at least one of the permissions, the function returns the user object. 
+    Otherwise, it raises an HTTP 403 Forbidden exception.
+    
+    Args:
+        permissions: List of permissions to check for
+        
+    Returns:
+        A dependency function that checks if the current user has any of the permissions
+    """
+    def permission_checker(current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)):
+        # Admin can access everything
+        if current_user.role == "admin":
+            return current_user
+            
+        # Get the role from the database
+        role = db.query(Role).filter(Role.name == current_user.role).first()
+        if not role:
+            # If the role doesn't exist, try to create it with default permissions
+            try:
+                role = validate_role(current_user.role, db)
+            except Exception as e:
+                print(f"Error validating role: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"User has an invalid role: {current_user.role}"
+                )
+        
+        # Check if the role has any of the required permissions
+        try:
+            role_permissions = []
+            if role.permissions:
+                try:
+                    role_permissions = json.loads(role.permissions)
+                except (json.JSONDecodeError, TypeError):
+                    print(f"Error parsing permissions for role {role.name}: {role.permissions}")
+            
+            # Debug output
+            print(f"Checking permissions {permissions} for user '{current_user.username}' with role '{role.name}'")
+            print(f"Role permissions: {role_permissions}")
+            
+            # Special case for researcher role and kginsights permissions
+            if current_user.role == "researcher" and any(perm.startswith("kginsights:") for perm in permissions):
+                return current_user
+                
+            # Check if the user has any of the required permissions
+            for permission in permissions:
+                if permission in role_permissions:
+                    return current_user
+        except Exception as e:
+            print(f"Error checking permissions: {str(e)}")
+            # If there's an error parsing the permissions, deny access
+            pass
+            
+        # If we get here, the user doesn't have any of the required permissions
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"User does not have any of the required permissions: {', '.join(permissions)}"
+        )
+    
+    return permission_checker
+
 def log_activity(
     db: Session, 
     username: str, 
@@ -347,7 +414,7 @@ def initialize_default_roles(db: Session):
         researcher_role = Role(
             name="researcher",
             description="Researcher with data access",
-            permissions=json.dumps(["data:read", "data:write", "schema:read", "ingestion:read"]),
+            permissions=json.dumps(["data:read", "data:write", "schema:read", "ingestion:read", "kginsights:read"]),
             is_system_role=True
         )
         db.add(researcher_role)
@@ -355,16 +422,29 @@ def initialize_default_roles(db: Session):
         # Ensure researcher role has appropriate permissions
         try:
             researcher_permissions = json.loads(researcher_role.permissions) if researcher_role.permissions else []
-            default_permissions = ["data:read", "data:write", "schema:read", "ingestion:read"]
+            default_permissions = ["data:read", "data:write", "schema:read", "ingestion:read", "kginsights:read"]
             for perm in default_permissions:
                 if perm not in researcher_permissions:
                     researcher_permissions.append(perm)
             researcher_role.permissions = json.dumps(researcher_permissions)
         except (json.JSONDecodeError, TypeError):
-            researcher_role.permissions = json.dumps(["data:read", "data:write", "schema:read", "ingestion:read"])
+            researcher_role.permissions = json.dumps(["data:read", "data:write", "schema:read", "ingestion:read", "kginsights:read"])
         
         researcher_role.is_system_role = True
         researcher_role.updated_at = datetime.utcnow()
+    
+    # Ensure that any role with kginsights:read also has ingestion:read
+    roles_with_kginsights = db.query(Role).all()
+    for role in roles_with_kginsights:
+        try:
+            permissions = json.loads(role.permissions) if role.permissions else []
+            if "kginsights:read" in permissions and "ingestion:read" not in permissions:
+                permissions.append("ingestion:read")
+                role.permissions = json.dumps(permissions)
+                role.updated_at = datetime.utcnow()
+                print(f"Added ingestion:read permission to role {role.name} (ID: {role.id})")
+        except (json.JSONDecodeError, TypeError):
+            continue
     
     # Check for any other roles that might have been created with system role names
     # but are not properly marked as system roles

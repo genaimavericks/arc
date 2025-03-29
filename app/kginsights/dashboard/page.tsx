@@ -71,12 +71,12 @@ function KGraphDashboardContent() {
   const [generateKGModalOpen, setGenerateKGModalOpen] = useState(false)
   const [selectedDataset, setSelectedDataset] = useState<{ id: string; name: string } | null>(null)
 
-  // Function to fetch ingestion history data
-  const fetchIngestionHistory = async () => {
+  // Function to fetch available datasets from sources
+  const fetchDataSources = async () => {
     setLoadingDatasets(true)
     try {
-      // Make API call to get ingestion history
-      const response = await fetch("/api/datapuur/ingestion-history", {
+      // Make API call to get data sources
+      const response = await fetch("/api/datapuur/sources", {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
@@ -85,32 +85,29 @@ function KGraphDashboardContent() {
       })
 
       if (!response.ok) {
-        throw new Error(`Failed to fetch ingestion history: ${response.status}`)
+        throw new Error(`Failed to fetch data sources: ${response.status}`)
       }
 
       const data = await response.json()
 
-      // Map the ingestion history data to our dataset format
-      // Only include completed ingestions as available datasets
-      const availableDatasets = data.items
-        .filter((item: any) => item.status === "completed")
-        .map((item: any) => ({
-          id: item.id,
-          name: item.filename,
-          type: item.type,
-          status: item.status,
-        }))
+      // Map the data sources to our dataset format
+      const availableDatasets = data.map((item: any) => ({
+        id: item.id,
+        name: item.name,
+        type: item.type.toLowerCase(),
+        status: "completed",
+      }))
 
       setDatasets(availableDatasets)
       setDatasetsError(null)
     } catch (err) {
-      console.error("Error fetching ingestion history:", err)
+      console.error("Error fetching data sources:", err)
       setDatasetsError("Failed to load available datasets. Using fallback data.")
 
       // Fallback data
       setDatasets([
-        { id: "1", name: "Sales Q1", type: "csv", status: "completed" },
-        { id: "2", name: "HR Data", type: "csv", status: "completed" },
+        { id: "1", name: "Sales Q1", type: "file", status: "completed" },
+        { id: "2", name: "HR Data", type: "file", status: "completed" },
       ])
 
       toast({
@@ -165,8 +162,8 @@ function KGraphDashboardContent() {
         // Fetch knowledge graphs
         await fetchKnowledgeGraphs()
 
-        // Fetch available datasets from ingestion history
-        await fetchIngestionHistory()
+        // Fetch available datasets from sources
+        await fetchDataSources()
 
         setError(null)
       } catch (err) {
@@ -404,7 +401,7 @@ function KGraphDashboardContent() {
                         <Button
                           variant="outline"
                           size="icon"
-                          onClick={fetchIngestionHistory}
+                          onClick={fetchDataSources}
                           disabled={loadingDatasets}
                           title="Refresh datasets"
                         >
@@ -529,4 +526,3 @@ function KGraphDashboardContent() {
     </main>
   )
 }
-

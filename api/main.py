@@ -7,11 +7,20 @@ from fastapi.openapi.utils import get_openapi
 from sqlalchemy.orm import Session
 import os
 from pathlib import Path
+import dotenv
+
+# Load environment variables from .env file
+dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
+if os.path.exists(dotenv_path):
+    print(f"Loading environment variables from {dotenv_path}")
+    dotenv.load_dotenv(dotenv_path)
+    print(f"OPENAI_API_KEY is {'set' if os.getenv('OPENAI_API_KEY') else 'not set'}")
 
 from api.models import get_db, User
-from api.auth import router as auth_router
+from api.auth import router as auth_router, has_any_permission
 from api.datapuur import router as datapuur_router
 from api.kginsights import router as kginsights_router
+from api.kginsights.graphschemaapi import router as graphschema_router, build_schema_from_source, SourceIdInput, SchemaResult
 from api.admin import router as admin_router
 from api.middleware import ActivityLoggerMiddleware
 
@@ -45,7 +54,9 @@ app.add_middleware(ActivityLoggerMiddleware)
 # Include routers
 app.include_router(auth_router)
 app.include_router(datapuur_router)
-app.include_router(kginsights_router)
+app.include_router(kginsights_router, prefix="/api")
+# The graphschema router should be included with just /api prefix since it already has /graphschema in its routes
+app.include_router(graphschema_router, prefix="/api")
 app.include_router(admin_router)
 
 # Custom OpenAPI and Swagger UI endpoints
