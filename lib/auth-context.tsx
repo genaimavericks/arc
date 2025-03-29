@@ -88,8 +88,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         permissions: data.permissions || []
       })
 
-      // Redirect to home page
-      router.push("/")
+      // Check if there's a redirect URL stored in localStorage
+      const redirectUrl = localStorage.getItem("loginRedirectUrl")
+      
+      if (redirectUrl) {
+        // Clear the stored redirect URL
+        localStorage.removeItem("loginRedirectUrl")
+        // Redirect to the stored URL
+        router.push(redirectUrl)
+      } else {
+        // Default redirect to home page if no specific redirect URL
+        router.push("/")
+      }
     } catch (err) {
       console.error("Login error:", err)
       setError(err instanceof Error ? err.message : "Login failed. Please check your credentials.")

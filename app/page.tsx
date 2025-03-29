@@ -16,7 +16,7 @@ export default function Home() {
           maxSize={1.4}
           particleDensity={100}
           className="w-full h-full"
-          particleColor="var(--foreground)"
+          particleColor="#FFFFFF"
         />
       </div>
 
@@ -27,4 +27,3 @@ export default function Home() {
     </main>
   )
 }
-

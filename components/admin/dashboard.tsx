@@ -69,6 +69,16 @@ export default function AdminDashboard() {
     loadData()
   }, [])
 
+  useEffect(() => {
+    if (notification) {
+      const timeoutId = setTimeout(() => {
+        setNotification(null)
+      }, 30000)
+
+      return () => clearTimeout(timeoutId)
+    }
+  }, [notification, setNotification])
+
   const tabs = [
     { id: "dashboard", label: "Dashboard", icon: BarChart },
     { id: "users", label: "Users", icon: Users },
@@ -189,4 +199,3 @@ export default function AdminDashboard() {
 }
 
 import { SparklesCore } from "@/components/sparkles"
-

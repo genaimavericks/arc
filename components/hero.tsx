@@ -60,7 +60,7 @@ export default function Hero() {
             title="KGInsights Platform"
             description="Visualize and explore knowledge graphs with our advanced analytics tools."
             icon={Network}
-            href="/kginsights"
+            href="/kginsights/dashboard"
             color="from-secondary via-primary to-accent"
             features={[
               "Interactive graph visualization",
@@ -106,6 +106,9 @@ function PlatformCard({
   requiresAuth,
   isLoggedIn,
 }: PlatformCardProps) {
+  const { user } = useAuth()
+  const hasKGInsightsAccess = user?.permissions?.includes('kginsights:access') || false
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 30 }}
@@ -119,51 +122,34 @@ function PlatformCard({
           <div className={`w-10 h-10 rounded-full bg-gradient-to-r ${color} flex items-center justify-center mr-3`}>
             <Icon className="w-5 h-5 text-white" />
           </div>
-          <h3 className="text-xl font-bold text-card-foreground">{title}</h3>
+          <h3 className="text-xl font-semibold text-foreground">{title}</h3>
         </div>
-
-        <p className="text-card-foreground mb-4">{description}</p>
-
-        <ul className="space-y-1 mb-5">
+        <p className="text-muted-foreground mb-4">{description}</p>
+        <div className="space-y-2 mb-6">
           {features.map((feature, index) => (
-            <motion.li
-              key={index}
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.3, delay: delay + 0.1 + index * 0.1 }}
-              className="flex items-start"
-            >
-              <div className={`w-1.5 h-1.5 rounded-full mt-1.5 mr-2 bg-gradient-to-r ${color}`} />
-              <span className="text-muted-foreground text-xs">{feature}</span>
-            </motion.li>
+            <div key={index} className="flex items-center text-sm text-muted-foreground">
+              <ArrowRight className="w-4 h-4 mr-2 text-primary" />
+              {feature}
+            </div>
           ))}
-        </ul>
-
+        </div>
         {requiresAuth && !isLoggedIn ? (
-          <div className="flex flex-col space-y-2">
-            <p className="text-amber-600 dark:text-amber-400 text-xs">Login required to access</p>
-            <Link
-              href="/login"
-              className={`inline-flex items-center justify-center px-3 py-1.5 rounded-md bg-gradient-to-r ${color} text-white text-sm font-medium transition-all duration-300 hover:shadow-lg hover:shadow-purple-500/20`}
-            >
-              Sign In to Access
-              <ArrowRight className="w-3 h-3 ml-1.5" />
-            </Link>
-          </div>
+          <div className="text-sm text-muted-foreground">Please login to access this platform</div>
         ) : (
           <Link
-            href={href}
-            className={`inline-flex items-center justify-center w-full px-3 py-1.5 rounded-md bg-gradient-to-r ${color} text-white text-sm font-medium transition-all duration-300 hover:shadow-lg hover:shadow-purple-500/20`}
+            href={title.includes('KGInsights') && !hasKGInsightsAccess ? '/unauthorized' : href}
+            className={`inline-flex items-center justify-center px-4 py-2 rounded-md ${
+              (requiresAuth && !isLoggedIn) || (title.includes('KGInsights') && !hasKGInsightsAccess)
+                ? 'bg-gray-300 cursor-not-allowed'
+                : 'bg-primary hover:bg-primary/90 text-primary-foreground'
+            }`}
           >
-            Explore Platform
-            <ArrowRight className="w-3 h-3 ml-1.5 transition-transform duration-300 group-hover:translate-x-1" />
+            {title.includes('KGInsights') && !hasKGInsightsAccess
+              ? 'Access Restricted'
+              : 'Explore Platform'}
           </Link>
         )}
       </div>
-
-      {/* Animated border on hover */}
-      <div className="h-1 w-full bg-gradient-to-r from-transparent via-border to-transparent transform scale-x-0 group-hover:scale-x-100 transition-transform duration-500" />
     </motion.div>
   )
 }
-
