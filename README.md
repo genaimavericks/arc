@@ -9,7 +9,7 @@ Smart Data Intelligence (SDI) is a powerful application that integrates data ing
 1. **DataPuur** - Focused on intelligent data acquisition, transformation, profiling, and analytics
 2. **KGInsight** - Specialized in knowledge graph generation, management, and exploration
 
-Built with Next.js 15+ (React 19) for the frontend and Python FastAPI for the backend, this application provides a powerful foundation for advanced data intelligence operations.
+Built with Next.js for the frontend and Python FastAPI for the backend, this application provides a powerful foundation for advanced data intelligence operations.
 
 ## Key Features
 
@@ -330,100 +330,33 @@ Caddy is a modern web server with automatic HTTPS certificate provisioning.
 
 ## Creating a Deployable Package
 
-You can create a configurable and deployable package for easier distribution and deployment of the RSW project.
+The RSW project includes a build script that creates a configurable and deployable package for easier distribution and deployment.
 
 ### Building the Package
 
-1. **Create a Configuration Template**
+1. **Using the Automated Build Script**
    ```bash
-   # Create a configuration directory
-   mkdir -p package/config
+   # Make the build script executable
+   chmod +x build-package.sh
    
-   # Copy configuration templates
-   cp .env.example package/config/.env.template
-   cp -r scripts package/scripts
+   # Run the build script
+   ./build-package.sh
    ```
 
-2. **Build Frontend Assets**
-   ```bash
-   # Build optimized frontend
-   npm run build
-   
-   # Copy built assets
-   mkdir -p package/dist
-   cp -r .next package/dist/
-   cp -r public package/dist/
-   ```
+   This script will:
+   - Create a structured package directory
+   - Build optimized frontend assets
+   - Copy backend code and configuration templates
+   - Create deployment and startup scripts
+   - Package everything into a single archive (`rsw-deployment.tar.gz`)
 
-3. **Package Backend Code**
-   ```bash
-   # Create backend directory
-   mkdir -p package/api
-   
-   # Copy API code
-   cp -r api package/api/
-   cp requirements.txt package/
-   
-   # Create virtual environment for distribution (optional)
-   python -m venv package/.venv
-   source package/.venv/bin/activate
-   pip install -r requirements.txt
-   pip freeze > package/requirements-lock.txt
-   deactivate
-   ```
-
-4. **Create Deployment Scripts**
-   ```bash
-   # Create deployment script
-   cat > package/deploy.sh << 'EOF'
-   #!/bin/bash
-   
-   # Configuration
-   APP_DIR=$(pwd)
-   CONFIG_FILE="$APP_DIR/config/.env"
-   
-   # Check if configuration exists
-   if [ ! -f "$CONFIG_FILE" ]; then
-     echo "Creating configuration file from template..."
-     cp "$APP_DIR/config/.env.template" "$CONFIG_FILE"
-     echo "Please edit $CONFIG_FILE with your settings"
-     exit 1
-   fi
-   
-   # Set up Python environment
-   python3 -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
-   
-   # Start the application
-   ./start.sh
-   EOF
-   
-   chmod +x package/deploy.sh
-   ```
-
-5. **Create a Start Script**
-   ```bash
-   # Create start script
-   cat > package/start.sh << 'EOF'
-   #!/bin/bash
-   
-   # Load environment variables
-   export $(grep -v '^#' config/.env | xargs)
-   
-   # Start the application
-   source .venv/bin/activate
-   python -m uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-9090}
-   EOF
-   
-   chmod +x package/start.sh
-   ```
-
-6. **Package Everything**
-   ```bash
-   # Create archive
-   tar -czf rsw-deployment.tar.gz package/
-   ```
+2. **Package Contents**
+   The generated package includes:
+   - Frontend assets (built with Next.js)
+   - Backend API code
+   - Configuration templates
+   - Deployment scripts
+   - Startup scripts
 
 ### Deploying the Package
 
@@ -440,18 +373,25 @@ You can create a configurable and deployable package for easier distribution and
 2. **Extract and Configure**
    ```bash
    # On the server
-   cd /path/to/deployment
-   tar -xzf rsw-deployment.tar.gz
+   mkdir -p /opt/rsw
+   cd /opt/rsw
+   tar -xzf /path/to/rsw-deployment.tar.gz
    cd package
    
-   # Edit configuration
+   # Run the deployment script
+   ./deploy.sh
+   
+   # Edit configuration when prompted
    nano config/.env
+   
+   # Run deploy script again after configuration
+   ./deploy.sh
    ```
 
-3. **Deploy the Application**
+3. **Start the Application**
    ```bash
-   # Run deployment script
-   ./deploy.sh
+   # Start the application
+   ./start.sh
    ```
 
 4. **Set Up as a Service (Optional)**
@@ -468,12 +408,12 @@ You can create a configurable and deployable package for easier distribution and
    
    [Service]
    User=your_user
-   WorkingDirectory=/path/to/deployment/package
-   ExecStart=/path/to/deployment/package/start.sh
+   WorkingDirectory=/opt/rsw/package
+   ExecStart=/opt/rsw/package/start.sh
    Restart=always
    RestartSec=5
-   StandardOutput=syslog
-   StandardError=syslog
+   StandardOutput=journal
+   StandardError=journal
    SyslogIdentifier=rsw
    
    [Install]
@@ -495,6 +435,70 @@ You can create a configurable and deployable package for easier distribution and
    # View logs
    sudo journalctl -u rsw -f
    ```
+
+### Setting Up with Caddy (Recommended)
+
+For production environments, we recommend using Caddy as a reverse proxy with HTTPS.
+
+1. **Install Caddy**
+   ```bash
+   sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
+   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+   sudo apt update
+   sudo apt install caddy
+   ```
+
+2. **Configure Caddy for IP-based Access with External Certificates**
+   ```bash
+   sudo nano /etc/caddy/Caddyfile
+   ```
+   
+   Add the following configuration:
+   ```
+   {
+     # Global options
+     auto_https off  # Disable automatic HTTPS since we're using IP
+   }
+   
+   :443 {
+     # Use external certificates
+     tls /path/to/certificate.crt /path/to/private_key.key
+     
+     # Reverse proxy to the application
+     reverse_proxy localhost:9090
+   }
+   
+   # Redirect HTTP to HTTPS
+   :80 {
+     redir https://{host}{uri} permanent
+   }
+   ```
+
+3. **Start Caddy**
+   ```bash
+   sudo systemctl reload caddy
+   sudo systemctl status caddy
+   ```
+
+### Troubleshooting Common Deployment Issues
+
+1. **Application Won't Start**
+   - Check logs: `sudo journalctl -u rsw -f`
+   - Verify configuration in `config/.env`
+   - Ensure Python dependencies are installed
+
+2. **Module Import Errors**
+   - Ensure the package structure is intact
+   - Check if all required Python packages are installed
+   - Verify Python version (Python 3.10+ recommended)
+
+3. **Permission Issues**
+   - Check ownership: `sudo chown -R your_user:your_user /opt/rsw`
+   - Set proper permissions: `chmod -R 755 /opt/rsw`
+   - Ensure start.sh is executable: `chmod +x start.sh`
+
+For more detailed deployment instructions, refer to the `PACKAGE_README.md` file included in the deployment package.
 
 ## Security Considerations
 
