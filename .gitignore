@@ -28,3 +28,4 @@ next-env.d.ts
 .venv
 __pycache__
 _next/*
+package-lock.json

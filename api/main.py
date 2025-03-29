@@ -11,6 +11,7 @@ from api.auth import router as auth_router
 from api.datapuur import router as datapuur_router
 from api.kginsights import router as kginsights_router
 from api.admin import router as admin_router
+from api.graphschemaapi import router as graphschema_router
 from api.middleware import ActivityLoggerMiddleware
 
 # # Run database migrations
@@ -39,6 +40,7 @@ app.include_router(auth_router)
 app.include_router(datapuur_router)
 app.include_router(kginsights_router)
 app.include_router(admin_router)
+app.include_router(graphschema_router)
 
 # Health check endpoint
 @app.get("/api/health")
