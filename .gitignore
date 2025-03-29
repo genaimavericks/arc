@@ -28,3 +28,7 @@ next-env.d.ts
 .venv
 __pycache__
 _next/*
+api/static
+out
+package
+rsw-deployment.tar.gz
