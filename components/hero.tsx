@@ -137,16 +137,14 @@ function PlatformCard({
           <div className="text-sm text-muted-foreground">Please login to access this platform</div>
         ) : (
           <Link
-            href={title.includes('KGInsights') && !hasKGInsightsAccess ? '/unauthorized' : href}
+            href={href}
             className={`inline-flex items-center justify-center px-4 py-2 rounded-md ${
-              (requiresAuth && !isLoggedIn) || (title.includes('KGInsights') && !hasKGInsightsAccess)
+              (requiresAuth && !isLoggedIn)
                 ? 'bg-gray-300 cursor-not-allowed'
                 : 'bg-primary hover:bg-primary/90 text-primary-foreground'
             }`}
           >
-            {title.includes('KGInsights') && !hasKGInsightsAccess
-              ? 'Access Restricted'
-              : 'Explore Platform'}
+            Explore Platform
           </Link>
         )}
       </div>
