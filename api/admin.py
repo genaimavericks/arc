@@ -75,12 +75,11 @@ class SystemSettings(BaseModel):
     last_backup: str
 
 # In-memory storage for system settings (in a real app, this would be in the database)
-ist = pytz.timezone('Asia/Kolkata')
 system_settings = {
    "maintenance_mode": False,
    "debug_mode": True,
    "api_rate_limiting": True,
-   "last_backup": (datetime.now(ist) - timedelta(days=2)).strftime("%Y-%m-%d %H:%M:%S")
+   "last_backup": (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d %H:%M:%S")
 }
 
 # API Routes
@@ -119,8 +118,7 @@ async def create_user(
     import pytz
 
     hashed_password = User.get_password_hash(user_data["password"])
-    ist = pytz.timezone('Asia/Kolkata')
-    now = datetime.now(ist)
+    now = datetime.now()
     new_user = User(
         username=user_data["username"],
         email=user_data["email"],
@@ -244,17 +242,16 @@ async def get_activity_logs(
         query = query.filter(ActivityLog.page_url == page_url)
     
     # Apply date filters
-    ist = pytz.timezone('Asia/Kolkata')
     if start_date:
         try:
-            start_datetime = datetime.fromisoformat(start_date.replace('Z', '+00:00')).astimezone(ist)
+            start_datetime = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
             query = query.filter(ActivityLog.timestamp >= start_datetime)
         except ValueError:
             pass
     
     if end_date:
         try:
-            end_datetime = datetime.fromisoformat(end_date.replace('Z', '+00:00')).astimezone(ist)
+            end_datetime = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
             query = query.filter(ActivityLog.timestamp <= end_datetime)
         except ValueError:
             pass
@@ -298,9 +295,8 @@ async def get_system_stats(
     db: Session = Depends(get_db),
     current_user: User = Depends(has_role("admin"))
 ):
-    # Get IST timezone
-    ist = pytz.timezone('Asia/Kolkata')
-    now = datetime.now(ist)
+    # Calculate stats
+    now = datetime.now()
     yesterday = now - timedelta(days=1)
     
     # Calculate stats
@@ -517,7 +513,7 @@ async def update_system_settings(
     if settings.api_rate_limiting is not None:
         old_value = system_settings["api_rate_limiting"]
         system_settings["api_rate_limiting"] = settings.api_rate_limiting
-        if old_value != settings.debug_mode:
+        if old_value != settings.api_rate_limiting:
             changes.append(f"api_rate_limiting: {old_value} -> {settings.api_rate_limiting}")
     
     # Log the settings changes
@@ -562,8 +558,7 @@ async def run_backup(
         # Simulate a backup process
         import time
         time.sleep(2)  # Simulate a 2-second backup process
-        ist = pytz.timezone('Asia/Kolkata')
-        system_settings["last_backup"] = datetime.now(ist).strftime("%Y-%m-%d %H:%M:%S")
+        system_settings["last_backup"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         # Log backup completion
         log_activity(

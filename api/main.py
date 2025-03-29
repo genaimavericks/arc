@@ -2,6 +2,8 @@ from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
+from fastapi.openapi.utils import get_openapi
 from sqlalchemy.orm import Session
 import os
 from pathlib import Path
@@ -21,7 +23,13 @@ from api.middleware import ActivityLoggerMiddleware
 # except Exception as e:
 #     print(f"Error running database migrations: {str(e)}")
 
-app = FastAPI(title="Research AI API")
+app = FastAPI(
+    title="Research AI API",
+    description="API for Research AI platform",
+    version="1.0.0",
+    docs_url=None,  # Disable default docs URL
+    redoc_url=None  # Disable default redoc URL
+)
 
 # Configure CORS
 app.add_middleware(
@@ -41,6 +49,33 @@ app.include_router(datapuur_router)
 app.include_router(kginsights_router)
 app.include_router(admin_router)
 app.include_router(graphschema_router)
+
+# Custom OpenAPI and Swagger UI endpoints
+@app.get("/api/docs", include_in_schema=False)
+async def custom_swagger_ui_html():
+    return get_swagger_ui_html(
+        openapi_url="/api/openapi.json",
+        title="Research AI API",
+        swagger_js_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js",
+        swagger_css_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css",
+    )
+
+@app.get("/api/redoc", include_in_schema=False)
+async def redoc_html():
+    return get_redoc_html(
+        openapi_url="/api/openapi.json",
+        title="Research AI API - ReDoc",
+        redoc_js_url="https://cdn.jsdelivr.net/npm/redoc@next/bundles/redoc.standalone.js",
+    )
+
+@app.get("/api/openapi.json", include_in_schema=False)
+async def get_open_api_endpoint():
+    return get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
 
 # Health check endpoint
 @app.get("/api/health")

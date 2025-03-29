@@ -65,6 +65,9 @@ export function DatasetPreviewModal({
 
     // Handle different data structures that might come from the API
     if (data.headers && data.data) {
+      // Ensure data.data is an array
+      const dataArray = Array.isArray(data.data) ? data.data : [data.data];
+      
       // Format: { headers: string[], data: any[][] }
       return (
         <ScrollArea className="h-[400px]">
@@ -77,20 +80,28 @@ export function DatasetPreviewModal({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.data.map((row: any[], rowIndex: number) => (
+              {dataArray.map((row: any[], rowIndex: number) => (
                 <TableRow key={rowIndex}>
-                  {row.map((cell, cellIndex) => (
+                  {Array.isArray(row) ? row.map((cell, cellIndex) => (
                     <TableCell key={cellIndex}>{cell !== null && cell !== undefined ? cell.toString() : ""}</TableCell>
-                  ))}
+                  )) : (
+                    <TableCell>{row !== null && row !== undefined ? String(row) : ""}</TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </ScrollArea>
       )
-    } else if (data.data && Array.isArray(data.data)) {
+    } else if (data.data) {
+      // Ensure data.data is an array
+      const dataArray = Array.isArray(data.data) ? data.data : [data.data];
+      
       // Format: { data: object[] }
-      const headers = data.data.length > 0 ? Object.keys(data.data[0]) : []
+      // Only try to get headers if we have array data with objects
+      const headers = (Array.isArray(data.data) && data.data.length > 0 && typeof data.data[0] === 'object') 
+        ? Object.keys(data.data[0]) 
+        : ['Value'];
 
       return (
         <ScrollArea className="h-[400px]">
@@ -103,13 +114,17 @@ export function DatasetPreviewModal({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.data.map((row: any, rowIndex: number) => (
+              {dataArray.map((row: any, rowIndex: number) => (
                 <TableRow key={rowIndex}>
-                  {headers.map((header, cellIndex) => (
+                  {typeof row === 'object' && row !== null ? headers.map((header, cellIndex) => (
                     <TableCell key={cellIndex}>
                       {row[header] !== null && row[header] !== undefined ? row[header].toString() : ""}
                     </TableCell>
-                  ))}
+                  )) : (
+                    <TableCell>
+                      {row !== null && row !== undefined ? String(row) : ""}
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
@@ -141,4 +156,3 @@ export function DatasetPreviewModal({
     </Dialog>
   )
 }
-

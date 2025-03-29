@@ -5,7 +5,6 @@ from typing import Optional, List
 from datetime import datetime, timedelta
 from jose import jwt
 from pydantic import BaseModel, ConfigDict, Field
-import pytz
 import json
 
 from api.models import User, get_db, ActivityLog, Role, SessionLocal
@@ -214,9 +213,8 @@ def log_activity(
     Log user activity in the database
     """
     try:
-        # Get IST timezone
-        ist = pytz.timezone('Asia/Kolkata')
-        now = datetime.now(ist)
+        # Use system's default time instead of IST
+        now = datetime.now()
         
         # Print debug information
         print(f"Creating activity log: username={username}, action={action}, details={details}")
