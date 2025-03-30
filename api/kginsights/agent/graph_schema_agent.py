@@ -38,6 +38,7 @@ class GraphSchemaAgent:
         self,
         model,
         csv_path: str = None,
+        metadata: str = None,
         human_in_the_loop: bool = False,
         log: bool = False,
         log_path: str = None,
@@ -46,6 +47,7 @@ class GraphSchemaAgent:
         self._params = {
             "model": model,
             "csv_path": csv_path,
+            "metadata": metadata,
             "human_in_the_loop": human_in_the_loop,
             "log": log,
             "log_path": log_path,
@@ -204,6 +206,9 @@ class GraphSchemaAgent:
             prompt = PromptTemplate(
                 template="""You are a Neo4j database expert. Analyze this CSV data and generate an optimal graph schema.
 
+Metadata:
+{metadata_section}
+
 CSV Analysis:
 - Columns: {data_info[columns]}
 - Sample Data (first 5 rows): {data_info[sample_data]}
@@ -248,11 +253,17 @@ Notes:
 - Relationship types should be in UPPERCASE
 - Choose meaningful and descriptive names for entities and relationships
 - Add indexes for properties that will be frequently queried""",
-                input_variables=["data_info"]
+                input_variables=["data_info", "metadata_section"]
             )
             
+            # Prepare metadata section
+            metadata = self._params.get("metadata", "")
+            metadata_section = ""
+            if metadata:
+                metadata_section = f"Metadata about the data:\n{metadata}\n"
+            
             print("\nSending request to LLM...")
-            formatted_prompt = prompt.format(data_info=data_info)
+            formatted_prompt = prompt.format(data_info=data_info, metadata_section=metadata_section)
             print("\nFormatted prompt:")
             print(formatted_prompt)
             
@@ -324,12 +335,49 @@ Notes:
             # Node constraints and indexes
             for node in schema["nodes"]:
                 label = node["label"]
+                # Create node creation statements
+                props_list = []
                 for prop in node["properties"]:
+                    prop_name = prop["name"]
+                    prop_type = prop["type"]
+                    props_list.append(f"{prop_name}: ${prop_name}")
                     if "UNIQUE" in prop.get("constraints", []):
                         cypher.append(
-                            f"CREATE CONSTRAINT {label}_{prop['name']}_unique "
-                            f"IF NOT EXISTS FOR (n:{label}) REQUIRE n.{prop['name']} IS UNIQUE"
+                            f"CREATE CONSTRAINT {label}_{prop_name}_unique "
+                            f"IF NOT EXISTS FOR (n:{label}) REQUIRE n.{prop_name} IS UNIQUE"
                         )
+                
+                # Add CREATE statement for this node type
+                if props_list:
+                    props_str = ", ".join(props_list)
+                    cypher.append(f"// Create {label} nodes\nCREATE (n:{label} {{{props_str}}})")
+            
+            # Relationship creation statements
+            for rel in schema["relationships"]:
+                source = rel["source"]
+                target = rel["target"]
+                rel_type = rel["type"]
+                
+                # Add CREATE statement for this relationship type
+                props_list = []
+                if "properties" in rel and rel["properties"]:
+                    for prop in rel["properties"]:
+                        prop_name = prop["name"]
+                        props_list.append(f"{prop_name}: ${prop_name}")
+                
+                if props_list:
+                    props_str = ", ".join(props_list)
+                    cypher.append(
+                        f"// Create {rel_type} relationships\n"
+                        f"MATCH (a:{source}), (b:{target}) "
+                        f"CREATE (a)-[r:{rel_type} {{{props_str}}}]->(b)"
+                    )
+                else:
+                    cypher.append(
+                        f"// Create {rel_type} relationships\n"
+                        f"MATCH (a:{source}), (b:{target}) "
+                        f"CREATE (a)-[r:{rel_type}]->(b)"
+                    )
             
             # Indexes
             for index in schema["indexes"]:

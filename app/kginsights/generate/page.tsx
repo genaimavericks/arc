@@ -72,6 +72,7 @@ function GenerateGraphContent() {
   const [cypher, setCypher] = useState<string>("")
   const [kgName, setKgName] = useState<string>("")
   const [kgDescription, setKgDescription] = useState<string>("")
+  const [metadata, setMetadata] = useState<string>("")
   const { toast } = useToast()
 
   // Fetch data sources on component mount
@@ -155,7 +156,8 @@ function GenerateGraphContent() {
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
         body: JSON.stringify({
-          source_id: selectedSource
+          source_id: selectedSource,
+          metadata: metadata
         }),
       })
 
@@ -300,6 +302,18 @@ function GenerateGraphContent() {
                       )}
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div className="w-full mb-4">
+                  <Label htmlFor="metadata-input" className="mb-2 block">META:</Label>
+                  <Textarea
+                    id="metadata-input"
+                    placeholder="Meta data about data, like which data it is, which business function it belongs to."
+                    className="w-full"
+                    value={metadata}
+                    onChange={(e) => setMetadata(e.target.value)}
+                    disabled={loading}
+                  />
                 </div>
 
                 <div className="flex gap-2">

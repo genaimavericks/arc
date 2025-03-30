@@ -22,6 +22,7 @@ class FilePathInput(BaseModel):
 
 class SourceIdInput(BaseModel):
     source_id: str
+    metadata: str = None  # Optional metadata about the data
 
 class SaveSchemaInput(BaseModel):
     schema: dict
@@ -286,6 +287,7 @@ async def build_schema_from_source(
         agent_instance = GraphSchemaAgent(
             model=llm,
             csv_path=file_path,
+            metadata=source_input.metadata,
             log=True,
             log_path='logs'
         )
