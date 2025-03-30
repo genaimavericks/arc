@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useAuth } from "@/lib/auth-context"
 import { useSearchParams, useRouter } from "next/navigation"
+import { getApiBaseUrl } from "@/lib/config"
 
 export default function ResetPasswordPage() {
   const [password, setPassword] = useState("")
@@ -58,7 +59,7 @@ export default function ResetPasswordPage() {
       }
 
       // Call the API to reset password
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://172.104.129.10:9090/api"
+      const apiUrl = getApiBaseUrl()
       const response = await fetch(`${apiUrl}/auth/reset-password`, {
         method: "POST",
         headers: {
@@ -232,4 +233,3 @@ export default function ResetPasswordPage() {
     </main>
   )
 }
-

@@ -2,24 +2,52 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { SparklesCore } from "@/components/sparkles"
 import { motion } from "framer-motion"
-import { Bot, Mail, ArrowLeft, CheckCircle, AlertTriangle } from "lucide-react"
+import { Bot, User, ArrowLeft, CheckCircle, AlertTriangle, Lock, KeyRound } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useAuth } from "@/lib/auth-context"
+import { useRouter } from "next/navigation"
 
 export default function ForgotPasswordPage() {
-  const [email, setEmail] = useState("")
+  const [username, setUsername] = useState("")
+  const [password, setPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSubmitted, setIsSubmitted] = useState(false)
+  const [validationError, setValidationError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const { useFallbackMode } = useAuth()
+  const { resetPasswordDirect, useFallbackMode } = useAuth()
+  const router = useRouter()
+
+  // Password validation
+  useEffect(() => {
+    if (password && password.length < 8) {
+      setValidationError("Password must be at least 8 characters long")
+    } else if (password && confirmPassword && password !== confirmPassword) {
+      setValidationError("Passwords do not match")
+    } else {
+      setValidationError(null)
+    }
+  }, [password, confirmPassword])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    // Check password validation
+    if (password.length < 8) {
+      setValidationError("Password must be at least 8 characters long")
+      return
+    }
+    
+    if (password !== confirmPassword) {
+      setValidationError("Passwords do not match")
+      return
+    }
+    
     setIsSubmitting(true)
     setError(null)
 
@@ -32,33 +60,12 @@ export default function ForgotPasswordPage() {
         return
       }
 
-      // Call the API to request password reset
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://172.104.129.10:9090/api"
-      const response = await fetch(`${apiUrl}/auth/forgot-password`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email }),
-      })
-
-      // Check if the response is JSON
-      const contentType = response.headers.get("content-type")
-      if (!contentType || !contentType.includes("application/json")) {
-        const text = await response.text()
-        console.error("Received non-JSON response:", text.substring(0, 200) + "...")
-        throw new Error("Server returned non-JSON response. API might be unavailable.")
-      }
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.detail || "Failed to process request")
-      }
-
+      // Call the direct password reset API
+      await resetPasswordDirect(username, password)
       setIsSubmitted(true)
     } catch (err) {
-      console.error("Password reset request error:", err)
-      setError(err instanceof Error ? err.message : "Failed to process request")
+      console.error("Password reset error:", err)
+      setError(err instanceof Error ? err.message : "Failed to reset password")
 
       // If we get a network error, suggest fallback mode
       if (err instanceof TypeError && err.message === "Failed to fetch") {
@@ -68,6 +75,17 @@ export default function ForgotPasswordPage() {
       setIsSubmitting(false)
     }
   }
+
+  // Redirect to login after success (after 3 seconds delay)
+  useEffect(() => {
+    if (isSubmitted) {
+      const timer = setTimeout(() => {
+        router.push('/login')
+      }, 3000)
+      
+      return () => clearTimeout(timer)
+    }
+  }, [isSubmitted, router])
 
   return (
     <main className="min-h-screen bg-black/[0.96] antialiased bg-grid-white/[0.02] relative overflow-hidden">
@@ -92,7 +110,7 @@ export default function ForgotPasswordPage() {
           className="w-full max-w-md p-8 bg-white/5 backdrop-blur-sm rounded-lg border border-white/10"
         >
           <div className="flex justify-center mb-6">
-            <Bot className="w-12 h-12 text-purple-500" />
+            <KeyRound className="w-12 h-12 text-purple-500" />
           </div>
 
           <h1 className="text-3xl font-bold text-white text-center mb-6">Reset Password</h1>
@@ -116,9 +134,9 @@ export default function ForgotPasswordPage() {
               <div className="flex justify-center mb-4">
                 <CheckCircle className="w-16 h-16 text-green-500" />
               </div>
-              <h2 className="text-xl font-semibold text-white mb-2">Reset Link Sent</h2>
+              <h2 className="text-xl font-semibold text-white mb-2">Password Reset Successful</h2>
               <p className="text-gray-400 mb-6">
-                If an account exists with the email {email}, you will receive password reset instructions.
+                Your password has been successfully reset. Redirecting to login page...
               </p>
               <Link
                 href="/login"
@@ -131,34 +149,75 @@ export default function ForgotPasswordPage() {
           ) : (
             <>
               <p className="text-gray-400 mb-6">
-                Enter your email address and we'll send you instructions to reset your password.
+                Enter your username and new password to reset your account password.
               </p>
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-1">
-                    Email Address
+                  <label htmlFor="username" className="block text-sm font-medium text-gray-300 mb-1">
+                    Username
                   </label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+                    <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                     <Input
-                      id="email"
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      id="username"
+                      type="text"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
                       className="pl-10 bg-white/5 border-white/10 text-white"
-                      placeholder="Enter your email"
+                      placeholder="Enter your username"
                       required
                     />
                   </div>
                 </div>
 
+                <div>
+                  <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-1">
+                    New Password
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+                    <Input
+                      id="password"
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="pl-10 bg-white/5 border-white/10 text-white"
+                      placeholder="Enter new password"
+                      required
+                      minLength={8}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-300 mb-1">
+                    Confirm Password
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+                    <Input
+                      id="confirmPassword"
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="pl-10 bg-white/5 border-white/10 text-white"
+                      placeholder="Confirm new password"
+                      required
+                    />
+                  </div>
+                </div>
+
+                {validationError && (
+                  <div className="text-red-400 text-sm">{validationError}</div>
+                )}
+
                 <Button
                   type="submit"
                   className="w-full bg-violet-600 hover:bg-violet-700 text-white btn-glow"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || !!validationError}
                 >
-                  {isSubmitting ? "Sending..." : "Send Reset Link"}
+                  {isSubmitting ? "Resetting..." : "Reset Password"}
                 </Button>
               </form>
 
@@ -178,4 +237,3 @@ export default function ForgotPasswordPage() {
     </main>
   )
 }
-

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { AlertCircle, CheckCircle, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { getApiBaseUrl } from "@/lib/config"
 
 export default function ApiStatus() {
   const [status, setStatus] = useState<"loading" | "connected" | "error">("loading")
@@ -15,14 +16,13 @@ export default function ApiStatus() {
       setMessage("Checking API connection...")
       setIsRetrying(true)
 
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api"
-      console.log("Checking API status at:", apiUrl)
-
+      const apiBaseUrl = getApiBaseUrl()
+      console.log("Checking API status at:", apiBaseUrl + "/api")
       // Add a timeout to the fetch request
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
 
-      const response = await fetch(`${apiUrl}/health`, {
+      const response = await fetch(`${apiBaseUrl}/api/health`, {
         method: "GET",
         headers: {
           Accept: "application/json",
@@ -39,7 +39,7 @@ export default function ApiStatus() {
         setStatus("error")
         setMessage(`API returned status: ${response.status}`)
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("API connection error:", error)
 
       // Provide more specific error messages
@@ -51,7 +51,7 @@ export default function ApiStatus() {
         setMessage("API connection timed out. Server might be slow or unreachable.")
       } else {
         setStatus("error")
-        setMessage(`Connection error: ${error.message}`)
+        setMessage(`Connection error: ${error.message || 'Unknown error'}`)
       }
     } finally {
       setIsRetrying(false)
@@ -114,4 +114,3 @@ export default function ApiStatus() {
     </div>
   )
 }
-

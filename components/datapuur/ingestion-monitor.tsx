@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { AlertCircle, CheckCircle, Clock, RefreshCw, XCircle, FileText, Database, FolderOpen } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
+import { getApiBaseUrl } from "@/lib/config"
 
 // Define job interface
 interface Job {
@@ -67,7 +68,8 @@ export function IngestionMonitor({ jobs, onJobUpdated, errors = [], isPolling = 
 
       try {
         for (const job of jobsToUpdate) {
-          const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "/api"}/datapuur/job-status/${job.id}`, {
+          const apiBaseUrl = getApiBaseUrl();
+          const response = await fetch(`${apiBaseUrl}/api/datapuur/job-status/${job.id}`, {
             headers: {
               Authorization: `Bearer ${localStorage.getItem("token")}`,
             },
@@ -151,7 +153,8 @@ export function IngestionMonitor({ jobs, onJobUpdated, errors = [], isPolling = 
 
   const cancelJob = async (jobId: string) => {
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "/api"}/datapuur/cancel-job/${jobId}`, {
+      const apiBaseUrl = getApiBaseUrl();
+      const response = await fetch(`${apiBaseUrl}/api/datapuur/cancel-job/${jobId}`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${localStorage.getItem("token")}`,

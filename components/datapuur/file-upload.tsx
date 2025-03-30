@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { motion } from "framer-motion"
+import { getApiBaseUrl } from "@/lib/config"
 
 // Define job interface for type safety
 interface Job {
@@ -180,7 +181,8 @@ export function FileUpload({
             
             try {
               // Send the chunk
-              const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "/api"}/datapuur/upload-chunk`, {
+              const apiBaseUrl = getApiBaseUrl();
+              const response = await fetch(`${apiBaseUrl}/api/datapuur/upload-chunk`, {
                 method: 'POST',
                 headers: {
                   Authorization: `Bearer ${localStorage.getItem("token")}`,
@@ -218,7 +220,8 @@ export function FileUpload({
           }
           
           // Complete the chunked upload
-          const completeResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "/api"}/datapuur/complete-chunked-upload`, {
+          const apiBaseUrl = getApiBaseUrl();
+          const completeResponse = await fetch(`${apiBaseUrl}/api/datapuur/complete-chunked-upload`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -242,7 +245,7 @@ export function FileUpload({
           onStatusChange(`File ${i + 1} uploaded successfully! Processing data...`);
           
           // Continue with ingestion as before
-          const ingestResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "/api"}/datapuur/ingest-file`, {
+          const ingestResponse = await fetch(`${apiBaseUrl}/api/datapuur/ingest-file`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -338,7 +341,8 @@ export function FileUpload({
           })
           
           // Open and send the request
-          xhr.open("POST", `${process.env.NEXT_PUBLIC_API_URL || "/api"}/datapuur/upload`, true)
+          const apiBaseUrl = getApiBaseUrl();
+          xhr.open("POST", `${apiBaseUrl}/api/datapuur/upload`, true)
           xhr.setRequestHeader("Authorization", `Bearer ${localStorage.getItem("token")}`)
           xhr.send(formData)
           
@@ -347,7 +351,7 @@ export function FileUpload({
           onStatusChange(`File ${i + 1} uploaded successfully! Processing data...`)
 
           // Create a new ingestion job
-          const ingestResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "/api"}/datapuur/ingest-file`, {
+          const ingestResponse = await fetch(`${apiBaseUrl}/api/datapuur/ingest-file`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",

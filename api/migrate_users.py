@@ -36,4 +36,4 @@ def migrate():
         print("updated_at column already exists in users table. No migration needed.")
 
 if __name__ == "__main__":
-    migrate()
+    #migrate()

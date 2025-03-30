@@ -1,5 +1,6 @@
 import { useAdminStore } from "./store"
 import { Role } from "./store"
+import { getApiBaseUrl } from '../config'
 
 /**
  * Synchronizes roles between the frontend and backend
@@ -7,14 +8,7 @@ import { Role } from "./store"
  */
 export async function syncRoles() {
   try {
-    const getApiUrl = () => {
-      if (process.env.NEXT_PUBLIC_API_URL) {
-        return process.env.NEXT_PUBLIC_API_URL
-      }
-      return "http://172.104.129.10:9090/api"
-    }
-
-    const apiUrl = getApiUrl()
+    const apiUrl = getApiBaseUrl()
     const token = localStorage.getItem("token")
     const headers = {
       Authorization: `Bearer ${token}`,
@@ -23,7 +17,7 @@ export async function syncRoles() {
     }
 
     // Fetch roles from the backend
-    const response = await fetch(`${apiUrl}/admin/roles`, { headers })
+    const response = await fetch(`${apiUrl}/api/admin/roles`, { headers })
 
     if (!response.ok) {
       throw new Error(`Failed to fetch roles: ${response.statusText}`)
@@ -35,7 +29,7 @@ export async function syncRoles() {
     const { setRoles } = useAdminStore.getState()
 
     // Transform the roles data if needed to match the expected format
-    const formattedRoles = rolesData.map((role) => {
+    const formattedRoles = rolesData.map((role: Role) => {
       // Ensure permissions is properly set from either permissions_list or permissions
       const permissions = Array.isArray(role.permissions_list) 
         ? role.permissions_list 
@@ -100,14 +94,7 @@ export async function syncRoles() {
  */
 export async function syncAvailablePermissions() {
   try {
-    const getApiUrl = () => {
-      if (process.env.NEXT_PUBLIC_API_URL) {
-        return process.env.NEXT_PUBLIC_API_URL
-      }
-      return "http://172.104.129.10:9090/api"
-    }
-
-    const apiUrl = getApiUrl()
+    const apiUrl = getApiBaseUrl()
     const token = localStorage.getItem("token")
     const headers = {
       Authorization: `Bearer ${token}`,
@@ -116,7 +103,7 @@ export async function syncAvailablePermissions() {
     }
 
     // Fetch available permissions from the backend
-    const response = await fetch(`${apiUrl}/admin/permissions`, { headers })
+    const response = await fetch(`${apiUrl}/api/admin/permissions`, { headers })
 
     if (!response.ok) {
       console.warn(`Failed to fetch permissions: ${response.statusText}. Using default permissions.`)
@@ -172,14 +159,7 @@ export async function syncAvailablePermissions() {
  */
 export async function saveRoleToBackend(role: Role) {
   try {
-    const getApiUrl = () => {
-      if (process.env.NEXT_PUBLIC_API_URL) {
-        return process.env.NEXT_PUBLIC_API_URL
-      }
-      return "http://172.104.129.10:9090/api"
-    }
-
-    const apiUrl = getApiUrl()
+    const apiUrl = getApiBaseUrl()
     const token = localStorage.getItem("token")
     const headers = {
       Authorization: `Bearer ${token}`,
@@ -189,7 +169,7 @@ export async function saveRoleToBackend(role: Role) {
 
     const isNewRole = !role.id
     // Update the URL to use the correct endpoint
-    const url = isNewRole ? `${apiUrl}/admin/roles` : `${apiUrl}/admin/roles/${role.id}`
+    const url = isNewRole ? `${apiUrl}/api/admin/roles` : `${apiUrl}/api/admin/roles/${role.id}`
     const method = isNewRole ? "POST" : "PUT"
 
     // Ensure we're sending the permissions in the format the backend expects

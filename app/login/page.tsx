@@ -167,15 +167,6 @@ export default function LoginPage() {
                 Forgot your password?
               </Link>
             </p>
-            <p className="text-gray-400 mt-2">
-              Don't have an account?{" "}
-              <Link
-                href="/register"
-                className="text-primary dark:text-primary hover:text-primary/80 dark:hover:text-primary/80"
-              >
-                Register
-              </Link>
-            </p>
           </div>
         </motion.div>
       </div>

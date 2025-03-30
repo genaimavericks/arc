@@ -7,13 +7,36 @@ import bcrypt
 from typing import Generator
 import pytz
 import json
+import logging
+from sqlalchemy import event
+
+# Configure logging
+logging.basicConfig()
+logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO)
 
 # Create database directory if it doesn't exist
 os.makedirs(os.path.dirname(os.path.abspath(__file__)), exist_ok=True)
 
 # Database setup
 SQLALCHEMY_DATABASE_URL = f"sqlite:///{os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database.db')}"
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL, 
+    connect_args={"check_same_thread": False},
+    echo=True  # Enable SQL query logging
+)
+
+# Add event listeners to log all queries
+@event.listens_for(engine, "before_cursor_execute")
+def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+    conn.info.setdefault('query_start_time', []).append(datetime.utcnow())
+    print(f"\n[SQL Query] {statement}")
+    print(f"[SQL Parameters] {parameters}")
+
+@event.listens_for(engine, "after_cursor_execute")
+def after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+    total = datetime.utcnow() - conn.info['query_start_time'].pop(-1)
+    print(f"[SQL Time] {total.total_seconds():.3f}s\n")
+    
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

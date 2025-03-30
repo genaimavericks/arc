@@ -1,18 +1,5 @@
 // API base URL - change this to your FastAPI server URL in production
-const getApiBaseUrl = () => {
-  // Use the environment variable if available
-  if (process.env.NEXT_PUBLIC_API_URL) {
-    // If we're running in the browser and the URL is relative (starts with /)
-    // then use the current origin
-    if (typeof window !== "undefined" && process.env.NEXT_PUBLIC_API_URL.startsWith("/")) {
-      return `${window.location.origin}${process.env.NEXT_PUBLIC_API_URL}`
-    }
-    return process.env.NEXT_PUBLIC_API_URL
-  }
-
-  // Default fallback
-  return "http://172.104.129.10:9090/api"
-}
+import { getApiBaseUrl } from './config'
 
 const API_BASE_URL = getApiBaseUrl()
 
@@ -111,9 +98,9 @@ async function fetchAPI<T>(endpoint: string, useFallback = true): Promise<T> {
     // If fallback is enabled and we have mock data for this endpoint
     if (useFallback) {
       console.log(`Using fallback data for ${endpoint}`)
-      if (endpoint === "/kginsights/dashboard") {
+      if (endpoint === "/api/kginsights/dashboard") {
         return MOCK_DATA.kgraphDashboard as unknown as T
-      } else if (endpoint === "/datapuur/dashboard") {
+      } else if (endpoint === "/api/datapuur/dashboard") {
         return MOCK_DATA.dataDashboard as unknown as T
       }
     }
@@ -124,19 +111,19 @@ async function fetchAPI<T>(endpoint: string, useFallback = true): Promise<T> {
 
 // DataPuur API calls
 export async function getDataSources() {
-  return fetchAPI("/datapuur/sources")
+  return fetchAPI("/api/datapuur/sources")
 }
 
 export async function getDataMetrics() {
-  return fetchAPI("/datapuur/metrics")
+  return fetchAPI("/api/datapuur/metrics")
 }
 
 export async function getActivities() {
-  return fetchAPI("/datapuur/activities")
+  return fetchAPI("/api/datapuur/activities")
 }
 
 export async function getDashboardData() {
-  return fetchAPI("/datapuur/dashboard")
+  return fetchAPI("/api/datapuur/dashboard")
 }
 
 // Add a function to handle multiple file uploads
@@ -153,7 +140,7 @@ export async function uploadMultipleFiles(
       formData.append("file", files[i])
       formData.append("chunkSize", chunkSize.toString())
 
-      const response = await fetch(`${API_BASE_URL}/datapuur/upload`, {
+      const response = await fetch(`${API_BASE_URL}/api/datapuur/upload`, {
         method: "POST",
         body: formData,
         headers: {
@@ -168,7 +155,7 @@ export async function uploadMultipleFiles(
       const data = await response.json()
 
       // Create ingestion job
-      const ingestResponse = await fetch(`${API_BASE_URL}/datapuur/ingest-file`, {
+      const ingestResponse = await fetch(`${API_BASE_URL}/api/datapuur/ingest-file`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -213,19 +200,19 @@ export async function uploadMultipleFiles(
 
 // KGInsights API calls
 export async function getGraphData() {
-  return fetchAPI("/kginsights/graph")
+  return fetchAPI("/api/kginsights/graph")
 }
 
 export async function getGraphMetrics() {
-  return fetchAPI("/kginsights/metrics")
+  return fetchAPI("/api/kginsights/metrics")
 }
 
 export async function getGraphUpdates() {
-  return fetchAPI("/kginsights/updates")
+  return fetchAPI("/api/kginsights/updates")
 }
 
 export async function getKGraphDashboard() {
-  return fetchAPI("/kginsights/dashboard")
+  return fetchAPI("/api/kginsights/dashboard")
 }
 
 // Types
@@ -295,4 +282,3 @@ export interface KGraphDashboard {
   metrics: GraphMetrics
   updates: { action: string; time: string }[]
 }
-

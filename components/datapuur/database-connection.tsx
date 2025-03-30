@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { getApiBaseUrl } from "@/lib/config"
 
 export function DatabaseConnection({
   onSchemaDetected,
@@ -83,7 +84,8 @@ export function DatabaseConnection({
     onStatusChange("Testing database connection...")
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "/api"}/datapuur/test-connection`, {
+      const apiBaseUrl = getApiBaseUrl()
+      const response = await fetch(`${apiBaseUrl}/api/datapuur/test-connection`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -101,11 +103,11 @@ export function DatabaseConnection({
       }
 
       onStatusChange("Connection successful! Database is accessible.")
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error testing connection:", error)
       setError(error.message || "Failed to connect to database")
       onStatusChange("")
-      if (onError) onError(error)
+      if (onError) onError({ message: error.message || "Failed to connect to database" })
     } finally {
       setIsProcessing(false)
     }
@@ -124,7 +126,8 @@ export function DatabaseConnection({
     onStatusChange("Connecting to database and fetching schema...")
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "/api"}/datapuur/db-schema`, {
+      const apiBaseUrl = getApiBaseUrl()
+      const response = await fetch(`${apiBaseUrl}/api/datapuur/db-schema`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -145,11 +148,11 @@ export function DatabaseConnection({
       const data = await response.json()
       onSchemaDetected(data.schema)
       onStatusChange("Schema fetched successfully!")
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching schema:", error)
       setError(error.message || "Failed to fetch schema")
       onStatusChange("")
-      if (onError) onError(error)
+      if (onError) onError({ message: error.message || "Failed to fetch schema" })
     } finally {
       setIsProcessing(false)
     }
@@ -168,7 +171,8 @@ export function DatabaseConnection({
     onStatusChange("Starting database ingestion...")
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "/api"}/datapuur/ingest-db`, {
+      const apiBaseUrl = getApiBaseUrl()
+      const response = await fetch(`${apiBaseUrl}/api/datapuur/ingest-db`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -184,13 +188,14 @@ export function DatabaseConnection({
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.detail || "Failed to start ingestion")
+        throw new Error(errorData.detail || "Failed to start database ingestion")
       }
 
       const data = await response.json()
+      onStatusChange("Database ingestion started!")
 
-      // Create a new job object
-      const newJob = {
+      // Create a job object for monitoring
+      const job = {
         id: data.job_id,
         name: connectionName || `${connectionType}-${connectionConfig.database}-${connectionConfig.table}`,
         type: "database",
@@ -198,21 +203,15 @@ export function DatabaseConnection({
         progress: 0,
         startTime: new Date().toISOString(),
         endTime: null,
-        details: `DB: ${connectionConfig.database}.${connectionConfig.table}`,
-        config: {
-          type: connectionType,
-          database: connectionConfig.database,
-          table: connectionConfig.table,
-        },
+        details: `Starting ingestion for ${connectionConfig.database}.${connectionConfig.table}`,
       }
 
-      if (onJobCreated) onJobCreated(newJob)
-      onStatusChange(`Ingestion job started with ID: ${data.job_id}`)
-    } catch (error) {
+      onJobCreated(job)
+    } catch (error: any) {
       console.error("Error starting ingestion:", error)
-      setError(error.message || "Failed to start ingestion")
+      setError(error.message || "Failed to start database ingestion")
       onStatusChange("")
-      if (onError) onError(error)
+      if (onError) onError({ message: error.message || "Failed to start database ingestion" })
     } finally {
       setIsProcessing(false)
     }
@@ -466,4 +465,3 @@ export function DatabaseConnection({
     </div>
   )
 }
-

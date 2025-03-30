@@ -24,6 +24,7 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { motion } from "framer-motion"
 import { formatDistanceToNow, format } from "date-fns"
+import { getApiBaseUrl } from "@/lib/config"
 
 // Update the FileHistoryItem interface to include schema and statistics
 interface FileHistoryItem {
@@ -88,10 +89,10 @@ export function HistoryTab() {
     setError(null)
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api"
+      const apiBaseUrl = getApiBaseUrl()
       // Use the updated endpoint that fetches from the SQLite database
       const response = await fetch(
-        `${apiUrl}/datapuur/ingestion-history?page=${page}&limit=${itemsPerPage}&sort=${sortOrder}&type=${fileTypeFilter !== "all" ? fileTypeFilter : ""}&source=${sourceTypeFilter !== "all" ? sourceTypeFilter : ""}&status=${statusFilter !== "all" ? statusFilter : ""}&search=${encodeURIComponent(searchQuery)}`,
+        `${apiBaseUrl}/api/datapuur/ingestion-history?page=${page}&limit=${itemsPerPage}&sort=${sortOrder}&type=${fileTypeFilter !== "all" ? fileTypeFilter : ""}&source=${sourceTypeFilter !== "all" ? sourceTypeFilter : ""}&status=${statusFilter !== "all" ? statusFilter : ""}&search=${encodeURIComponent(searchQuery)}`,
         {
           headers: {
             Authorization: `Bearer ${localStorage.getItem("token")}`,
@@ -124,8 +125,8 @@ export function HistoryTab() {
   // Add a function to fetch schema data for a specific ingestion
   const fetchSchemaData = async (ingestionId: string) => {
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api"
-      const response = await fetch(`${apiUrl}/datapuur/ingestion-schema/${ingestionId}`, {
+      const apiBaseUrl = getApiBaseUrl()
+      const response = await fetch(`${apiBaseUrl}/api/datapuur/ingestion-schema/${ingestionId}`, {
         headers: {
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
@@ -145,8 +146,8 @@ export function HistoryTab() {
   // Add a function to fetch preview data for a specific ingestion
   const fetchPreviewData = async (ingestionId: string) => {
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api"
-      const response = await fetch(`${apiUrl}/datapuur/ingestion-preview/${ingestionId}`, {
+      const apiBaseUrl = getApiBaseUrl()
+      const response = await fetch(`${apiBaseUrl}/api/datapuur/ingestion-preview/${ingestionId}`, {
         headers: {
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
@@ -166,8 +167,8 @@ export function HistoryTab() {
   // Add a function to fetch statistics for a specific ingestion
   const fetchStatisticsData = async (ingestionId: string) => {
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api"
-      const response = await fetch(`${apiUrl}/datapuur/ingestion-statistics/${ingestionId}`, {
+      const apiBaseUrl = getApiBaseUrl()
+      const response = await fetch(`${apiBaseUrl}/api/datapuur/ingestion-statistics/${ingestionId}`, {
         headers: {
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },

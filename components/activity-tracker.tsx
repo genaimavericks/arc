@@ -3,6 +3,7 @@
 import { useEffect } from "react"
 import { usePathname } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
+import { getApiBaseUrl } from "@/lib/config"
 
 export function ActivityTracker() {
   const pathname = usePathname()
@@ -14,12 +15,12 @@ export function ActivityTracker() {
 
     const logPageVisit = async () => {
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api"
+        const apiBaseUrl = getApiBaseUrl()
         const token = localStorage.getItem("token")
 
         if (!token) return
 
-        await fetch(`${apiUrl}/admin/activity/log`, {
+        await fetch(`${apiBaseUrl}/api/admin/activity/log`, {
           method: "POST",
           headers: {
             Authorization: `Bearer ${token}`,
@@ -49,4 +50,3 @@ export function ActivityTracker() {
   // This is a utility component that doesn't render anything
   return null
 }
-

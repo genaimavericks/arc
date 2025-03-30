@@ -1,3 +1,6 @@
+// Import at the top level of the module
+import { getApiBaseUrl } from '../config';
+
 export async function fetchAdminData(): Promise<{
   stats: any;
   users: any;
@@ -6,14 +9,7 @@ export async function fetchAdminData(): Promise<{
 }> {
   try {
     // Get API base URL
-    const getApiUrl = () => {
-      if (process.env.NEXT_PUBLIC_API_URL) {
-        return process.env.NEXT_PUBLIC_API_URL;
-      }
-      return "http://172.104.129.10:9090/api";
-    };
-
-    const apiUrl = getApiUrl();
+    const apiUrl = getApiBaseUrl();
     const token = localStorage.getItem("token");
     const headers = {
       Authorization: `Bearer ${token}`,
@@ -22,13 +18,13 @@ export async function fetchAdminData(): Promise<{
     };
 
     // Fetch system stats
-    const statsResponse = await fetch(`${apiUrl}/admin/stats`, { headers });
+    const statsResponse = await fetch(`${apiUrl}/api/admin/stats`, { headers });
     
     // Fetch users
-    const usersResponse = await fetch(`${apiUrl}/admin/users`, { headers });
+    const usersResponse = await fetch(`${apiUrl}/api/admin/users`, { headers });
     
     // Fetch system settings
-    const settingsResponse = await fetch(`${apiUrl}/admin/settings`, { headers });
+    const settingsResponse = await fetch(`${apiUrl}/api/admin/settings`, { headers });
     
     // Check if main responses are OK before proceeding
     if (!statsResponse.ok || !usersResponse.ok || !settingsResponse.ok) {
@@ -49,7 +45,7 @@ export async function fetchAdminData(): Promise<{
     let activityData = [];
     try {
       const timestamp = new Date().getTime();
-      const activityResponse = await fetch(`${apiUrl}/admin/activity?limit=50&_t=${timestamp}`, { headers });
+      const activityResponse = await fetch(`${apiUrl}/api/admin/activity?limit=50&_t=${timestamp}`, { headers });
       if (activityResponse.ok) {
         activityData = await activityResponse.json();
         
@@ -163,14 +159,7 @@ export async function fetchAdminData(): Promise<{
 
 export async function createUser(userData: any): Promise<any> {
   try {
-    const getApiUrl = () => {
-      if (process.env.NEXT_PUBLIC_API_URL) {
-        return process.env.NEXT_PUBLIC_API_URL;
-      }
-      return "http://172.104.129.10:9090/api";
-    };
-
-    const apiUrl = getApiUrl();
+    const apiUrl = getApiBaseUrl();
     const token = localStorage.getItem("token");
     const headers = {
       Authorization: `Bearer ${token}`,
@@ -178,7 +167,7 @@ export async function createUser(userData: any): Promise<any> {
       "Content-Type": "application/json",
     };
 
-    const response = await fetch(`${apiUrl}/admin/users`, {
+    const response = await fetch(`${apiUrl}/api/admin/users`, {
       method: "POST",
       headers: headers,
       body: JSON.stringify(userData),
@@ -203,14 +192,7 @@ export async function createUser(userData: any): Promise<any> {
 
 export async function updateUser(userId: number, userData: any): Promise<any> {
   try {
-    const getApiUrl = () => {
-      if (process.env.NEXT_PUBLIC_API_URL) {
-        return process.env.NEXT_PUBLIC_API_URL;
-      }
-      return "http://172.104.129.10:9090/api";
-    };
-
-    const apiUrl = getApiUrl();
+    const apiUrl = getApiBaseUrl();
     const token = localStorage.getItem("token");
     const headers = {
       Authorization: `Bearer ${token}`,
@@ -218,7 +200,7 @@ export async function updateUser(userId: number, userData: any): Promise<any> {
       "Content-Type": "application/json",
     };
 
-    const response = await fetch(`${apiUrl}/admin/users/${userId}`, {
+    const response = await fetch(`${apiUrl}/api/admin/users/${userId}`, {
       method: "PUT",
       headers: headers,
       body: JSON.stringify(userData),
@@ -238,14 +220,7 @@ export async function updateUser(userId: number, userData: any): Promise<any> {
 
 export async function deleteUser(userId: number): Promise<void> {
   try {
-    const getApiUrl = () => {
-      if (process.env.NEXT_PUBLIC_API_URL) {
-        return process.env.NEXT_PUBLIC_API_URL;
-      }
-      return "http://172.104.129.10:9090/api";
-    };
-
-    const apiUrl = getApiUrl();
+    const apiUrl = getApiBaseUrl();
     const token = localStorage.getItem("token");
     const headers = {
       Authorization: `Bearer ${token}`,
@@ -253,7 +228,7 @@ export async function deleteUser(userId: number): Promise<void> {
       "Content-Type": "application/json",
     };
 
-    const response = await fetch(`${apiUrl}/admin/users/${userId}`, {
+    const response = await fetch(`${apiUrl}/api/admin/users/${userId}`, {
       method: "DELETE",
       headers: headers,
     });
@@ -272,14 +247,7 @@ export async function deleteUser(userId: number): Promise<void> {
 
 export async function updateSystemSetting(setting: string, value: any): Promise<any> {
   try {
-    const getApiUrl = () => {
-      if (process.env.NEXT_PUBLIC_API_URL) {
-        return process.env.NEXT_PUBLIC_API_URL;
-      }
-      return "http://172.104.129.10:9090/api";
-    };
-
-    const apiUrl = getApiUrl();
+    const apiUrl = getApiBaseUrl();
     const token = localStorage.getItem("token");
     const headers = {
       Authorization: `Bearer ${token}`,
@@ -287,7 +255,7 @@ export async function updateSystemSetting(setting: string, value: any): Promise<
       "Content-Type": "application/json",
     };
 
-    const response = await fetch(`${apiUrl}/admin/settings`, {
+    const response = await fetch(`${apiUrl}/api/admin/settings`, {
       method: "PUT",
       headers: headers,
       body: JSON.stringify({ [setting]: value }),
@@ -307,14 +275,7 @@ export async function updateSystemSetting(setting: string, value: any): Promise<
 
 export async function runBackup(): Promise<any> {
   try {
-    const getApiUrl = () => {
-      if (process.env.NEXT_PUBLIC_API_URL) {
-        return process.env.NEXT_PUBLIC_API_URL;
-      }
-      return "http://172.104.129.10:9090/api";
-    };
-
-    const apiUrl = getApiUrl();
+    const apiUrl = getApiBaseUrl();
     const token = localStorage.getItem("token");
     const headers = {
       Authorization: `Bearer ${token}`,
@@ -322,7 +283,7 @@ export async function runBackup(): Promise<any> {
       "Content-Type": "application/json",
     };
 
-    const response = await fetch(`${apiUrl}/admin/backup`, {
+    const response = await fetch(`${apiUrl}/api/admin/backup`, {
       method: "POST",
       headers: headers,
     });
@@ -341,14 +302,7 @@ export async function runBackup(): Promise<any> {
 
 export async function exportData(): Promise<any> {
   try {
-    const getApiUrl = () => {
-      if (process.env.NEXT_PUBLIC_API_URL) {
-        return process.env.NEXT_PUBLIC_API_URL;
-      }
-      return "http://172.104.129.10:9090/api";
-    };
-
-    const apiUrl = getApiUrl();
+    const apiUrl = getApiBaseUrl();
     const token = localStorage.getItem("token");
     const headers = {
       Authorization: `Bearer ${token}`,
@@ -356,7 +310,7 @@ export async function exportData(): Promise<any> {
       "Content-Type": "application/json",
     };
 
-    const response = await fetch(`${apiUrl}/admin/export-data`, {
+    const response = await fetch(`${apiUrl}/api/admin/export-data`, {
       method: "POST",
       headers: headers,
     });
@@ -375,14 +329,7 @@ export async function exportData(): Promise<any> {
 
 export async function clearActivityLogs(days: number): Promise<void> {
   try {
-    const getApiUrl = () => {
-      if (process.env.NEXT_PUBLIC_API_URL) {
-        return process.env.NEXT_PUBLIC_API_URL;
-      }
-      return "http://172.104.129.10:9090/api";
-    };
-
-    const apiUrl = getApiUrl();
+    const apiUrl = getApiBaseUrl();
     const token = localStorage.getItem("token");
     const headers = {
       Authorization: `Bearer ${token}`,
@@ -390,7 +337,7 @@ export async function clearActivityLogs(days: number): Promise<void> {
       "Content-Type": "application/json",
     };
 
-    const response = await fetch(`${apiUrl}/admin/activity/clear${days ? `?days=${days}` : ""}`, {
+    const response = await fetch(`${apiUrl}/api/admin/activity/clear${days ? `?days=${days}` : ""}`, {
       method: "DELETE",
       headers: headers,
     });
@@ -409,14 +356,7 @@ export async function clearActivityLogs(days: number): Promise<void> {
 
 export async function cleanupData(): Promise<any> {
   try {
-    const getApiUrl = () => {
-      if (process.env.NEXT_PUBLIC_API_URL) {
-        return process.env.NEXT_PUBLIC_API_URL;
-      }
-      return "http://172.104.129.10:9090/api";
-    };
-
-    const apiUrl = getApiUrl();
+    const apiUrl = getApiBaseUrl();
     const token = localStorage.getItem("token");
     const headers = {
       Authorization: `Bearer ${token}`,
@@ -424,7 +364,7 @@ export async function cleanupData(): Promise<any> {
       "Content-Type": "application/json",
     };
 
-    const response = await fetch(`${apiUrl}/admin/cleanup-data`, {
+    const response = await fetch(`${apiUrl}/api/admin/cleanup-data`, {
       method: "POST",
       headers: headers,
     });

@@ -7,6 +7,7 @@ import { RoboAnimation } from "@/components/robo-animation"
 import { Database, Network, ArrowRight } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/lib/auth-context"
+import { useRouter } from "next/navigation"
 
 export default function Hero() {
   const { user } = useAuth()
@@ -107,7 +108,16 @@ function PlatformCard({
   isLoggedIn,
 }: PlatformCardProps) {
   const { user } = useAuth()
+  const router = useRouter()
   const hasKGInsightsAccess = user?.permissions?.includes('kginsights:access') || false
+
+  const handleLoginRedirect = (e: React.MouseEvent) => {
+    e.preventDefault()
+    // Store the intended destination URL for post-login redirection
+    localStorage.setItem("loginRedirectUrl", href)
+    // Redirect to login page
+    router.push("/login")
+  }
 
   return (
     <motion.div
@@ -134,7 +144,12 @@ function PlatformCard({
           ))}
         </div>
         {requiresAuth && !isLoggedIn ? (
-          <div className="text-sm text-muted-foreground">Please login to access this platform</div>
+          <button
+            onClick={handleLoginRedirect}
+            className="inline-flex items-center justify-center px-4 py-2 rounded-md text-sm text-primary-foreground bg-primary/80 hover:bg-primary/90 transition-colors"
+          >
+            Please login to access this platform
+          </button>
         ) : (
           <Link
             href={href}

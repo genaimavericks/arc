@@ -67,6 +67,13 @@ class RoleResponse(BaseModel):
     
     model_config = ConfigDict(from_attributes=True)
 
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class DirectPasswordResetRequest(BaseModel):
+    username: str
+    password: str
+
 # Predefined permissions
 AVAILABLE_PERMISSIONS = [
     # Data permissions
@@ -893,6 +900,77 @@ async def get_admin_permissions(
     Users with the 'role:read' permission can access this endpoint.
     """
     return AVAILABLE_PERMISSIONS
+
+# Password reset endpoints
+@router.post("/forgot-password", status_code=status.HTTP_200_OK)
+def request_password_reset(request_data: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    """
+    Request a password reset link to be sent to the user's email.
+    
+    This endpoint sends a password reset link to the user's email if the account exists.
+    For security reasons, it always returns a 200 OK status even if the email is not found.
+    """
+    # Check if user exists
+    user = db.query(User).filter(User.email == request_data.email).first()
+    
+    if user:
+        # In a real implementation, you would:
+        # 1. Generate a secure token
+        # 2. Store token with expiration in a database
+        # 3. Send email with reset link
+        # For demo purposes, we just log the action
+        print(f"Password reset requested for user: {user.username}")
+        log_activity(
+            db=db,
+            username=user.username,
+            action="PASSWORD_RESET_REQUESTED",
+            details=f"Password reset requested for {user.email}"
+        )
+    
+    # Always return OK for security (don't leak whether email exists)
+    return {"message": "If the email exists, a password reset link has been sent"}
+
+@router.post("/reset-password-direct", status_code=status.HTTP_200_OK)
+def reset_password_direct(
+    reset_data: DirectPasswordResetRequest, 
+    db: Session = Depends(get_db)
+):
+    """
+    Directly reset a user's password using their username.
+    
+    This endpoint allows resetting a password with just the username and new password.
+    It is intended for internal use in controlled environments where email-based
+    reset flows are not required or practical.
+    """
+    # Find the user
+    user = db.query(User).filter(User.username == reset_data.username).first()
+    
+    if not user:
+        # For security, use same response time even if user doesn't exist
+        import time
+        time.sleep(1)  # Simulate the time it would take to hash a password
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Username not found"
+        )
+    
+    # Update the user's password
+    from passlib.context import CryptContext
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    hashed_password = pwd_context.hash(reset_data.password)
+    
+    user.hashed_password = hashed_password
+    db.commit()
+    
+    # Log the activity
+    log_activity(
+        db=db,
+        username=user.username,
+        action="PASSWORD_RESET_DIRECT",
+        details="Password reset via direct username method"
+    )
+    
+    return {"message": "Password has been reset successfully"}
 
 # Initialize default roles
 def startup_event():

@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
+import { getApiBaseUrl } from "./config"
 
 interface User {
   username: string
@@ -15,9 +16,11 @@ interface AuthContextType {
   register: (username: string, email: string, password: string, role?: string) => Promise<void>
   forgotPassword: (email: string) => Promise<void>
   resetPassword: (token: string, password: string) => Promise<void>
+  resetPasswordDirect: (username: string, password: string) => Promise<void>
   logout: () => void
   isLoading: boolean
   error: string | null
+  useFallbackMode?: boolean
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -26,6 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [useFallbackMode, setUseFallbackMode] = useState(false)
   const router = useRouter()
 
   // Check if user is already logged in
@@ -47,9 +51,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setError(null)
 
     try {
-      // Get API base URL
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api"
-      const loginUrl = `${apiUrl}/auth/token`
+      // Get API base URL - now returns the base URL without /api suffix
+      const apiBaseUrl = getApiBaseUrl()
+      const loginUrl = `${apiBaseUrl}/api/auth/token`
 
       console.log("Attempting to login at:", loginUrl)
 
@@ -113,8 +117,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setError(null)
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api"
-      const registerUrl = `${apiUrl}/auth/register`
+      const apiBaseUrl = getApiBaseUrl()
+      const registerUrl = `${apiBaseUrl}/api/auth/register`
 
       console.log("Attempting to register at:", registerUrl)
 
@@ -150,8 +154,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setError(null)
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api"
-      const forgotPasswordUrl = `${apiUrl}/auth/forgot-password`
+      const apiBaseUrl = getApiBaseUrl()
+      const forgotPasswordUrl = `${apiBaseUrl}/api/auth/forgot-password`
 
       console.log("Requesting password reset at:", forgotPasswordUrl)
 
@@ -180,8 +184,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setError(null)
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api"
-      const resetPasswordUrl = `${apiUrl}/auth/reset-password`
+      const apiBaseUrl = getApiBaseUrl()
+      const resetPasswordUrl = `${apiBaseUrl}/api/auth/reset-password`
 
       console.log("Resetting password at:", resetPasswordUrl)
 
@@ -199,6 +203,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (err) {
       console.error("Reset password error:", err)
+      setError(err instanceof Error ? err.message : "Failed to reset password")
+      throw err
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const resetPasswordDirect = async (username: string, password: string) => {
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const apiBaseUrl = getApiBaseUrl()
+      const resetPasswordUrl = `${apiBaseUrl}/api/auth/reset-password-direct`
+
+      console.log("Directly resetting password at:", resetPasswordUrl)
+
+      const response = await fetch(resetPasswordUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ username, password }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.detail || "Failed to reset password")
+      }
+    } catch (err) {
+      console.error("Direct password reset error:", err)
       setError(err instanceof Error ? err.message : "Failed to reset password")
       throw err
     } finally {
@@ -227,9 +262,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         register,
         forgotPassword,
         resetPassword,
+        resetPasswordDirect,
         logout,
         isLoading,
         error,
+        useFallbackMode,
       }}
     >
       {children}

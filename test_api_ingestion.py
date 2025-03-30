@@ -1,10 +1,20 @@
 import requests
 import json
 import time
+import os
 
 # Configuration
-API_URL = "http://172.104.129.10:9090/api/datapuur"
-MOCK_API_URL = "http://172.104.129.10:3001/api/users"
+# Get API URL from environment variable or use a default value for development
+DEFAULT_API_HOST = "localhost"
+DEFAULT_API_PORT = "9090"
+
+# Get host and port from environment variables
+API_HOST = os.environ.get("API_HOST", DEFAULT_API_HOST)
+API_PORT = os.environ.get("API_PORT", DEFAULT_API_PORT)
+API_BASE_URL = f"http://{API_HOST}:{API_PORT}/api"
+
+API_URL = f"{API_BASE_URL}/datapuur"
+MOCK_API_URL = f"http://{API_HOST}:3001/api/users"  # Adjust mock port if needed
 
 # First, let's get a token by logging in
 def get_auth_token():
@@ -12,7 +22,7 @@ def get_auth_token():
     try:
         # The API uses OAuth2 with form data for authentication
         login_response = requests.post(
-            "http://172.104.129.10:9090/api/auth/token",
+            f"{API_BASE_URL}/auth/token",
             data={"username": "admin", "password": "admin123"},  # Using the default admin credentials
             headers={"Content-Type": "application/x-www-form-urlencoded"}
         )
