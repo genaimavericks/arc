@@ -24,6 +24,11 @@ else
   touch package/config/.env.template
 fi
 
+# Copy .env.production.sample if it exists
+if [ -f .env.production.sample ]; then
+  cp .env.production.sample package/config/.env.production.sample
+fi
+
 # Copy scripts if they exist
 if [ -d scripts ]; then
   cp -r scripts package/scripts
@@ -52,35 +57,7 @@ if [ -d api ]; then
   # Create the package with the correct structure
   cp -r api package/
   
-  # Check if main.py exists in the api directory
-  if [ ! -f api/main.py ]; then
-    echo "WARNING: main.py not found in api directory. Creating a basic one."
-    cat > package/api/main.py << 'EOF'
-from fastapi import FastAPI
-import os
-import sys
-
-# Add the parent directory to the path so we can import from api
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-app = FastAPI(title="RSW API", description="Smart Data Intelligence Platform API")
-
-# Import and include routers
-try:
-    from api.datapuur import router as datapuur_router
-    app.include_router(datapuur_router, prefix="/api/datapuur", tags=["datapuur"])
-except ImportError as e:
-    print(f"Warning: Could not import datapuur router: {e}")
-
-@app.get("/")
-async def root():
-    return {"message": "Welcome to RSW API"}
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "9090")))
-EOF
-  fi
+ 
 else
   echo "ERROR: API directory not found."
   exit 1
@@ -114,7 +91,7 @@ fi
 
 # Set up Python environment
 echo "Setting up Python environment..."
-python3.11 -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
@@ -145,41 +122,29 @@ grep -v '^#' config/.env | grep -v '^$' | while IFS='=' read -r key value; do
 done
 set +a
 
+# Set default environment variables if not in .env
+export HOST=${HOST:-0.0.0.0}
+export PORT=${PORT:-9090}
+export NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-"http://${HOST}:${PORT}"}
+
 # Start the application
 echo "Starting RSW application..."
 source .venv/bin/activate
 
 # Check if we're in the right directory structure
 if [ -d "api" ]; then
-  python -m uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-9090}
+  python -m uvicorn api.main:app --host "$HOST" --port "$PORT"
 else
   # If we're already in the package directory
   cd ..
-  python -m uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-9090}
+  python -m uvicorn api.main:app --host "$HOST" --port "$PORT"
 fi
 EOF
 
 chmod +x package/start.sh
 
 # Create systemd service template
-# cat > package/rsw.service.template << 'EOF'
-# [Unit]
-# Description=RSW Application
-# After=network.target
 
-# [Service]
-# User=REPLACE_WITH_YOUR_USER
-# WorkingDirectory=REPLACE_WITH_FULL_PATH_TO_PACKAGE
-# ExecStart=REPLACE_WITH_FULL_PATH_TO_PACKAGE/start.sh
-# Restart=always
-# RestartSec=5
-# StandardOutput=syslog
-# StandardError=syslog
-# SyslogIdentifier=rsw
-
-# [Install]
-# WantedBy=multi-user.target
-# EOF
 
 # Copy package README
 cp PACKAGE_README.md package/README.md

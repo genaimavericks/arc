@@ -17,7 +17,8 @@ if os.path.exists(dotenv_path):
     dotenv.load_dotenv(dotenv_path)
     print(f"OPENAI_API_KEY is {'set' if os.getenv('OPENAI_API_KEY') else 'not set'}")
 
-from api.models import get_db, User
+from api.models import User
+from api.db_config import get_db, init_db
 from api.auth import router as auth_router, has_any_permission
 from api.datapuur import router as datapuur_router
 from api.kginsights import router as kginsights_router
@@ -34,8 +35,8 @@ from api.middleware import ActivityLoggerMiddleware
 #     print(f"Error running database migrations: {str(e)}")
 
 app = FastAPI(
-    title="Research AI API",
-    description="API for Research AI platform",
+    title="RSW API",
+    description="API for RSW platform",
     version="1.0.0",
     docs_url=None,  # Disable default docs URL
     redoc_url=None  # Disable default redoc URL
@@ -101,8 +102,8 @@ async def health_check():
 # Create initial admin user if it doesn't exist
 @app.on_event("startup")
 async def startup_event():
-    # Run database migrations
-    #migrate_database() # Moved to before app instantiation
+    # Initialize the database
+    init_db()
     
     db = next(get_db())
     
