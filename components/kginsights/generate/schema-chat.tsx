@@ -18,6 +18,11 @@ export interface ChatMessage {
   metadata?: {
     schema?: any
     cypher?: string
+    changes?: Array<{
+      type: string
+      entity: string
+      details: string
+    }>
   }
 }
 
@@ -38,6 +43,7 @@ export function SchemaChat({
 }: SchemaChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [message, setMessage] = useState("")
+  const [currentSchema, setCurrentSchema] = useState<any>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
   const { toast } = useToast()
@@ -148,6 +154,9 @@ export function SchemaChat({
       // Call the callback to update the parent component
       onSchemaGenerated(data.schema, data.cypher)
       
+      // Store the current schema for refinement
+      setCurrentSchema(data.schema)
+      
       toast({
         title: "Success",
         description: "Schema generated successfully!",
@@ -175,11 +184,137 @@ export function SchemaChat({
     }
   }
   
+  // Handle sending message for schema refinement
+  const handleRefinement = async () => {
+    if (!message.trim() || loading) return
+    
+    if (!selectedSource) {
+      toast({
+        title: "Error",
+        description: "Please select a data source first",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!currentSchema) {
+      toast({
+        title: "Error",
+        description: "No schema to refine. Please generate a schema first.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Create a new user message
+    const userMessage: ChatMessage = {
+      id: `user-${Date.now()}`,
+      role: "user",
+      content: message,
+      timestamp: new Date()
+    }
+    
+    // Update messages with user message
+    setMessages((prevMessages) => [...prevMessages, userMessage])
+    
+    // Clear the input
+    setMessage("")
+    
+    // Show loading state
+    setLoading(true)
+    
+    try {
+      // Send request to API for schema refinement
+      const response = await fetch("/api/graphschema/refine-schema", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: JSON.stringify({
+          source_id: selectedSource,
+          current_schema: currentSchema,
+          feedback: message
+        }),
+      })
+      
+      if (!response.ok) {
+        throw new Error(`Failed to refine schema: ${response.status}`)
+      }
+      
+      const data = await response.json()
+      
+      // Create assistant message from response
+      const assistantMessage: ChatMessage = {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        content: `I've refined the schema based on your feedback. The changes are now visible in the visualization.`,
+        timestamp: new Date(),
+        metadata: {
+          schema: data.schema,
+          cypher: data.cypher,
+          changes: data.schema.changes || []
+        }
+      }
+      
+      // Update messages with assistant response
+      setMessages((prevMessages) => [...prevMessages, assistantMessage])
+      
+      // Remove the changes array from the schema before updating the visualization
+      // This is necessary because the visualization component doesn't expect this property
+      if (data.schema.changes) {
+        const schemaForVisualization = { ...data.schema };
+        delete schemaForVisualization.changes;
+        
+        // Call the callback to update the parent component with the cleaned schema
+        onSchemaGenerated(schemaForVisualization, data.cypher);
+        
+        // Update the current schema for future refinements
+        setCurrentSchema(schemaForVisualization);
+      } else {
+        // Call the callback to update the parent component
+        onSchemaGenerated(data.schema, data.cypher);
+        
+        // Update the current schema for future refinements
+        setCurrentSchema(data.schema);
+      }
+      
+      toast({
+        title: "Success",
+        description: "Schema refined successfully!",
+      })
+    } catch (error) {
+      console.error("Error refining schema:", error)
+      
+      // Add error message
+      const errorMessage: ChatMessage = {
+        id: `error-${Date.now()}`,
+        role: "system",
+        content: "Sorry, I encountered an error refining the schema. Please try again.",
+        timestamp: new Date(),
+      }
+      
+      setMessages((prevMessages) => [...prevMessages, errorMessage])
+      
+      toast({
+        title: "Error",
+        description: "Failed to refine schema. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+  
   // Handle keyboard shortcuts
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
-      handleSendMessage()
+      if (currentSchema) {
+        handleRefinement()
+      } else {
+        handleSendMessage()
+      }
     }
   }
 
@@ -221,6 +356,25 @@ export function SchemaChat({
                     <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap">
                       {message.content}
                     </div>
+                    
+                    {message.metadata?.changes && message.metadata.changes.length > 0 && (
+                      <div className="mt-3 p-3 bg-muted/30 rounded-md">
+                        <h4 className="text-sm font-medium mb-1">Changes Made:</h4>
+                        <ul className="list-disc pl-5 text-xs space-y-1">
+                          {message.metadata.changes.map((change, idx) => (
+                            <li key={idx} className={
+                              change.type === 'added' 
+                                ? 'text-green-600 dark:text-green-400' 
+                                : change.type === 'removed' 
+                                  ? 'text-red-600 dark:text-red-400'
+                                  : 'text-blue-600 dark:text-blue-400'
+                            }>
+                              {change.type === 'added' ? 'Added' : change.type === 'removed' ? 'Removed' : 'Modified'} {change.entity}: {change.details}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 </Card>
                 
@@ -264,7 +418,7 @@ export function SchemaChat({
           />
           <Button
             className="flex-shrink-0"
-            onClick={handleSendMessage}
+            onClick={currentSchema ? handleRefinement : handleSendMessage}
             disabled={!message.trim() || loading || !selectedSource}
           >
             {loading ? (
@@ -272,7 +426,7 @@ export function SchemaChat({
             ) : (
               <Send className="h-4 w-4" />
             )}
-            <span className="ml-2 hidden md:inline">Generate</span>
+            <span className="ml-2 hidden md:inline">{currentSchema ? "Refine" : "Generate"}</span>
           </Button>
         </div>
       </div>
