@@ -40,3 +40,4 @@ api/static/*
 .rswvenv/
 
 settings.json
+db.logs

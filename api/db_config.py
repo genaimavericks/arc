@@ -7,8 +7,35 @@ import logging
 from typing import Generator
 
 # Configure logging
-logging.basicConfig()
-logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO)
+logging.basicConfig(level=logging.ERROR)  # Set root logger to ERROR level
+
+# Set up file logging for SQL queries
+sql_logger = logging.getLogger('sql_queries')
+sql_logger.setLevel(logging.INFO)
+log_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'db.logs')
+file_handler = logging.FileHandler(log_file_path)
+file_handler.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(message)s')
+file_handler.setFormatter(formatter)
+sql_logger.addHandler(file_handler)
+sql_logger.propagate = False  # Prevent logs from being sent to parent loggers
+
+# Completely disable SQLAlchemy's built-in logging
+sqlalchemy_loggers = [
+    'sqlalchemy',
+    'sqlalchemy.engine',
+    'sqlalchemy.engine.base',
+    'sqlalchemy.dialects',
+    'sqlalchemy.pool',
+    'sqlalchemy.orm'
+]
+
+for logger_name in sqlalchemy_loggers:
+    logger = logging.getLogger(logger_name)
+    logger.setLevel(logging.ERROR)  # Set to ERROR instead of WARNING
+    logger.propagate = False  # Prevent propagation to parent loggers
+    # Add file handler to redirect logs to file instead of console
+    logger.addHandler(file_handler)
 
 # Base declarative class
 Base = declarative_base()
@@ -37,20 +64,20 @@ else:
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
     connect_args=connect_args,
-    echo=True  # Enable SQL query logging
+    echo=False  # Disable SQL query logging through SQLAlchemy's built-in mechanism
 )
 
 # Add event listeners to log all queries
 @event.listens_for(engine, "before_cursor_execute")
 def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
     conn.info.setdefault('query_start_time', []).append(datetime.utcnow())
-    print(f"\n[SQL Query] {statement}")
-    print(f"[SQL Parameters] {parameters}")
+    sql_logger.info(f"[SQL Query] {statement}")
+    sql_logger.info(f"[SQL Parameters] {parameters}")
 
 @event.listens_for(engine, "after_cursor_execute")
 def after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
     total = datetime.utcnow() - conn.info['query_start_time'].pop(-1)
-    print(f"[SQL Time] {total.total_seconds():.3f}s\n")
+    sql_logger.info(f"[SQL Time] {total.total_seconds():.3f}s\n")
 
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

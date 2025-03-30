@@ -5,7 +5,7 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { SparklesCore } from "@/components/sparkles"
 import { motion } from "framer-motion"
-import { Bot, User, ArrowLeft, CheckCircle, AlertTriangle, Lock, KeyRound } from "lucide-react"
+import { Bot, User, ArrowLeft, CheckCircle, AlertTriangle, Lock, KeyRound, Check, X } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -23,23 +23,78 @@ export default function ForgotPasswordPage() {
   const { resetPasswordDirect, useFallbackMode } = useAuth()
   const router = useRouter()
 
+  // Password validation state
+  const [passwordValidation, setPasswordValidation] = useState({
+    valid: false,
+    length: false,
+    hasUpperCase: false,
+    hasLowerCase: false,
+    hasNumber: false,
+    hasSpecial: false
+  })
+  
+  // Confirm password validation
+  const [passwordsMatch, setPasswordsMatch] = useState(false)
+
   // Password validation
   useEffect(() => {
-    if (password && password.length < 8) {
-      setValidationError("Password must be at least 8 characters long")
-    } else if (password && confirmPassword && password !== confirmPassword) {
-      setValidationError("Passwords do not match")
-    } else {
+    if (!password) {
+      setPasswordValidation({
+        valid: false,
+        length: false,
+        hasUpperCase: false,
+        hasLowerCase: false,
+        hasNumber: false,
+        hasSpecial: false
+      })
+      return
+    }
+    
+    const length = password.length >= 8
+    const hasUpperCase = /[A-Z]/.test(password)
+    const hasLowerCase = /[a-z]/.test(password)
+    const hasNumber = /[0-9]/.test(password)
+    const hasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)
+    
+    const isValid = length && hasUpperCase && hasLowerCase && hasNumber
+    
+    setPasswordValidation({
+      valid: isValid,
+      length,
+      hasUpperCase,
+      hasLowerCase,
+      hasNumber,
+      hasSpecial
+    })
+    
+    // Clear validation error if password is valid
+    if (isValid) {
       setValidationError(null)
     }
-  }, [password, confirmPassword])
+  }, [password])
+  
+  // Check if passwords match
+  useEffect(() => {
+    if (confirmPassword === '') {
+      setPasswordsMatch(false)
+      return
+    }
+    setPasswordsMatch(password === confirmPassword)
+    
+    // Update validation error for password match
+    if (password && confirmPassword && password !== confirmPassword) {
+      setValidationError("Passwords do not match")
+    } else if (validationError === "Passwords do not match") {
+      setValidationError(null)
+    }
+  }, [password, confirmPassword, validationError])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
     // Check password validation
-    if (password.length < 8) {
-      setValidationError("Password must be at least 8 characters long")
+    if (!passwordValidation.valid) {
+      setValidationError("Password does not meet the requirements")
       return
     }
     
@@ -182,12 +237,50 @@ export default function ForgotPasswordPage() {
                       type="password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="pl-10 bg-white/5 border-white/10 text-white"
+                      className={`pl-10 pr-10 bg-white/5 border-white/10 text-white ${
+                        password && !passwordValidation.valid ? "border-red-500" : ""
+                      }`}
                       placeholder="Enter new password"
                       required
-                      minLength={8}
                     />
+                    {password && (
+                      <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                        {passwordValidation.valid ? (
+                          <Check className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <X className="h-4 w-4 text-red-500" />
+                        )}
+                      </div>
+                    )}
                   </div>
+                  
+                  {password && (
+                    <div className="mt-2 space-y-1">
+                      <p className="text-xs font-medium text-gray-300">Password must contain:</p>
+                      <ul className="space-y-1">
+                        <li className={`text-xs flex items-center ${passwordValidation.length ? "text-green-500" : "text-gray-400"}`}>
+                          {passwordValidation.length ? <Check className="h-3 w-3 mr-1" /> : <X className="h-3 w-3 mr-1" />}
+                          At least 8 characters
+                        </li>
+                        <li className={`text-xs flex items-center ${passwordValidation.hasUpperCase ? "text-green-500" : "text-gray-400"}`}>
+                          {passwordValidation.hasUpperCase ? <Check className="h-3 w-3 mr-1" /> : <X className="h-3 w-3 mr-1" />}
+                          At least one uppercase letter
+                        </li>
+                        <li className={`text-xs flex items-center ${passwordValidation.hasLowerCase ? "text-green-500" : "text-gray-400"}`}>
+                          {passwordValidation.hasLowerCase ? <Check className="h-3 w-3 mr-1" /> : <X className="h-3 w-3 mr-1" />}
+                          At least one lowercase letter
+                        </li>
+                        <li className={`text-xs flex items-center ${passwordValidation.hasNumber ? "text-green-500" : "text-gray-400"}`}>
+                          {passwordValidation.hasNumber ? <Check className="h-3 w-3 mr-1" /> : <X className="h-3 w-3 mr-1" />}
+                          At least one number
+                        </li>
+                        <li className={`text-xs flex items-center ${passwordValidation.hasSpecial ? "text-green-500" : "text-gray-400"}`}>
+                          {passwordValidation.hasSpecial ? <Check className="h-3 w-3 mr-1" /> : <X className="h-3 w-3 mr-1" />}
+                          Special character (recommended)
+                        </li>
+                      </ul>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -201,10 +294,21 @@ export default function ForgotPasswordPage() {
                       type="password"
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
-                      className="pl-10 bg-white/5 border-white/10 text-white"
+                      className={`pl-10 pr-10 bg-white/5 border-white/10 text-white ${
+                        confirmPassword && !passwordsMatch ? "border-red-500" : ""
+                      }`}
                       placeholder="Confirm new password"
                       required
                     />
+                    {confirmPassword && (
+                      <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                        {passwordsMatch ? (
+                          <Check className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <X className="h-4 w-4 text-red-500" />
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -215,7 +319,7 @@ export default function ForgotPasswordPage() {
                 <Button
                   type="submit"
                   className="w-full bg-violet-600 hover:bg-violet-700 text-white btn-glow"
-                  disabled={isSubmitting || !!validationError}
+                  disabled={isSubmitting || !passwordValidation.valid || !passwordsMatch || !username}
                 >
                   {isSubmitting ? "Resetting..." : "Reset Password"}
                 </Button>

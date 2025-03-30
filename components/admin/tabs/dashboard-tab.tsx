@@ -2,7 +2,7 @@
 
 import { useAdminStore } from "@/lib/admin/store"
 import { motion } from "framer-motion"
-import { Users, Database, Activity } from "lucide-react"
+import { Users, Activity } from "lucide-react"
 
 export function DashboardTab() {
   const { stats, activity } = useAdminStore()
@@ -58,46 +58,13 @@ export function DashboardTab() {
               <span className="text-muted-foreground">Active Users:</span>
               <span className="text-foreground font-medium">{stats?.active_users || 0}</span>
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">Researchers:</span>
-              <span className="text-foreground font-medium">{stats?.researchers || 0}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">Regular Users:</span>
-              <span className="text-foreground font-medium">{stats?.regular_users || 0}</span>
-            </div>
           </div>
         </motion.div>
 
         <motion.div
           variants={item}
           whileHover={{ scale: 1.02 }}
-          className="bg-card/80 backdrop-blur-sm p-6 rounded-lg border border-border shadow-md hover:shadow-lg transition-shadow duration-300"
-        >
-          <h3 className="text-lg font-medium text-foreground mb-4 flex items-center">
-            <Database className="h-5 w-5 mr-2 text-secondary" />
-            System Status
-          </h3>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">Uptime:</span>
-              <span className="text-foreground font-medium">{stats?.system_uptime || "N/A"}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">Database Size:</span>
-              <span className="text-foreground font-medium">{stats?.database_size || "N/A"}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">Status:</span>
-              <span className="text-primary font-medium">Operational</span>
-            </div>
-          </div>
-        </motion.div>
-
-        <motion.div
-          variants={item}
-          whileHover={{ scale: 1.02 }}
-          className="bg-card/80 backdrop-blur-sm p-6 rounded-lg border border-border shadow-md hover:shadow-lg transition-shadow duration-300"
+          className="bg-card/80 backdrop-blur-sm p-6 rounded-lg border border-border shadow-md hover:shadow-lg transition-shadow duration-300 md:col-span-2"
         >
           <h3 className="text-lg font-medium text-foreground mb-4 flex items-center">
             <Activity className="h-5 w-5 mr-2 text-primary" />
@@ -126,4 +93,3 @@ export function DashboardTab() {
     </motion.div>
   )
 }
-
