@@ -59,6 +59,34 @@ SECRET_KEY=your_secure_secret_key
 JWT_SECRET=your_secure_jwt_secret
 ```
 
+### 3.1. Production Environment Configuration
+
+If you're deploying to a production environment, you should also set up the production environment file:
+
+```bash
+# Copy and edit production configuration
+cp config/.env.production.sample config/.env.production
+nano config/.env.production
+```
+
+Required production settings:
+
+```
+# API URL for frontend to connect to the backend
+NEXT_PUBLIC_API_URL=http://<your_server_ip>:9090
+
+# OpenAI API Key for Knowledge Graph features
+OPENAI_API_KEY=<your_openai_api_key>
+
+# Neo4j Database Configuration
+NEO4J_USERNAME=neo4j
+NEO4J_DB=neo4j
+NEO4J_URI=bolt://<neo4j_host>:<neo4j_port>
+NEO4J_PASSWORD=<neo4j_password>
+```
+
+Replace placeholder values with your actual configuration.
+
 ### 4. Deploy the Application
 
 ```bash
@@ -196,8 +224,6 @@ sudo systemctl status caddy
    - Ensure firewall allows traffic on configured ports
 
 ## Updating the Application
-
-To update to a new version:
 
 1. Stop the service: `sudo systemctl stop rsw`
 2. Back up your configuration: `cp /opt/rsw/package/config/.env /tmp/rsw-env-backup`

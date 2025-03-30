@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
-from api.models import Role, User, get_db, SessionLocal
+from api.models import Role, User
+from api.db_config import SessionLocal
 
 def migrate_database():
     """
