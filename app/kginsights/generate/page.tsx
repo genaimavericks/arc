@@ -15,7 +15,7 @@ import { useToast } from "@/components/ui/use-toast"
 import LoadingSpinner from "@/components/loading-spinner"
 import ProtectedRoute from "@/components/protected-route"
 import { motion } from "framer-motion"
-import { Save, Loader2 } from "lucide-react"
+import { Save, Loader2, MessageSquare } from "lucide-react"
 import { Separator } from "@/components/ui/separator"
 import Image from "next/image"
 import dynamic from 'next/dynamic'
@@ -25,6 +25,9 @@ const CytoscapeGraph = dynamic(
   () => import('@/components/cytoscape-graph'),
   { ssr: false }
 );
+
+// Import SchemaChat component
+import { SchemaChat } from "@/components/kginsights/generate/schema-chat"
 
 // Define interfaces for our data
 interface DataSource {
@@ -73,6 +76,7 @@ function GenerateGraphContent() {
   const [kgName, setKgName] = useState<string>("")
   const [kgDescription, setKgDescription] = useState<string>("")
   const [metadata, setMetadata] = useState<string>("")
+  const [showChat, setShowChat] = useState(true)
   const { toast } = useToast()
 
   // Fetch data sources on component mount
@@ -144,45 +148,14 @@ function GenerateGraphContent() {
       return
     }
 
-    try {
-      setLoading(true)
-      setSchema(null)
-      setCypher("")
+    // Focus on the chat input
+    document.getElementById('schema-chat-input')?.focus()
+  }
 
-      const response = await fetch("/api/graphschema/build-schema-from-source", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-        body: JSON.stringify({
-          source_id: selectedSource,
-          metadata: metadata
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error(`Failed to generate schema: ${response.status}`)
-      }
-
-      const data = await response.json()
-      setSchema(data.schema)
-      setCypher(data.cypher)
-
-      toast({
-        title: "Success",
-        description: "Schema generated successfully!",
-      })
-    } catch (error) {
-      console.error("Error generating schema:", error)
-      toast({
-        title: "Error",
-        description: "Failed to generate schema. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setLoading(false)
-    }
+  // Handle schema generated from chat
+  const handleSchemaGenerated = (generatedSchema: Schema, generatedCypher: string) => {
+    setSchema(generatedSchema)
+    setCypher(generatedCypher)
   }
 
   const handleSaveSchema = async () => {
@@ -304,32 +277,14 @@ function GenerateGraphContent() {
                   </Select>
                 </div>
 
-                <div className="w-full mb-4">
-                  <Label htmlFor="metadata-input" className="mb-2 block">META:</Label>
-                  <Textarea
-                    id="metadata-input"
-                    placeholder="Meta data about data, like which data it is, which business function it belongs to."
-                    className="w-full"
-                    value={metadata}
-                    onChange={(e) => setMetadata(e.target.value)}
-                    disabled={loading}
-                  />
-                </div>
-
                 <div className="flex gap-2">
                   <Button
-                    className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                    className="bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-2"
                     onClick={generateSchema}
                     disabled={!selectedSource || loading}
                   >
-                    {loading ? (
-                      <>
-                        <LoadingSpinner size="sm" />
-                        <span className="ml-2">Generating...</span>
-                      </>
-                    ) : (
-                      "Generate Schema"
-                    )}
+                    <MessageSquare className="h-4 w-4" />
+                    {loading ? "Generating..." : "Generate Schema"}
                   </Button>
                   
                   <Button
@@ -343,8 +298,26 @@ function GenerateGraphContent() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-6">
-                {/* Schema Visualization and Details */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Left column - Chat Interface */}
+                <Card className="bg-card/80 backdrop-blur-sm border border-border">
+                  <CardContent className="p-6">
+                    <div className="flex flex-col gap-2 mb-4">
+                      <h2 className="text-xl font-semibold">GenAI Bot</h2>
+                    </div>
+                    <div className="h-[600px]">
+                      <SchemaChat 
+                        selectedSource={selectedSource}
+                        selectedSourceName={selectedSourceName}
+                        onSchemaGenerated={handleSchemaGenerated}
+                        loading={loading}
+                        setLoading={setLoading}
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+                
+                {/* Right column - Schema Visualization and Details */}
                 <Card className="bg-card/80 backdrop-blur-sm border border-border">
                   <CardContent className="p-6">
                     {loading ? (
@@ -356,7 +329,12 @@ function GenerateGraphContent() {
                       <div className="space-y-6">
                         <h2 className="text-xl font-semibold">Recommended Schema:</h2>
                         
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-6">
+                          {/* Graph Visualization */}
+                          <div className="border rounded-md p-4 bg-background/50">
+                            <CytoscapeGraph schema={schema} />
+                          </div>
+                          
                           {/* Schema Details */}
                           <div className="space-y-4">
                             <div>
@@ -399,24 +377,20 @@ function GenerateGraphContent() {
                                 </ul>
                               </div>
                             )}
-
+                            
                             <div>
-                              <h3 className="text-lg font-medium mb-2">Cypher Script:</h3>
-                              <pre className="bg-gray-100 p-4 rounded-md overflow-auto max-h-96">
-                                {cypher}
-                              </pre>
+                              <h3 className="text-lg font-medium mb-2">Justification:</h3>
+                              <p className="text-muted-foreground">
+                                This schema captures the relationships between the entities in your data 
+                                while maintaining appropriate properties and constraints for optimal graph traversal.
+                              </p>
                             </div>
-                          </div>
-                          
-                          {/* Graph Visualization */}
-                          <div>
-                            <CytoscapeGraph schema={schema} />
                           </div>
                         </div>
                       </div>
                     ) : selectedSource ? (
                       <div className="flex flex-col items-center justify-center py-12">
-                        <p className="text-muted-foreground">Click "Generate Schema" to create a recommended graph schema.</p>
+                        <p className="text-muted-foreground">Use the chat to generate a recommended graph schema.</p>
                       </div>
                     ) : (
                       <div className="flex flex-col items-center justify-center py-12">
