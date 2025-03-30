@@ -1,3 +1,4 @@
+print("*******Checking if main this is getting called!")
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -20,6 +21,7 @@ from api.models import get_db, User
 from api.auth import router as auth_router, has_any_permission
 from api.datapuur import router as datapuur_router
 from api.kginsights import router as kginsights_router
+from api.kgdatainsights.data_insights_api import router as kgdatainsights_router
 from api.kginsights.graphschemaapi import router as graphschema_router, build_schema_from_source, SourceIdInput, SchemaResult
 from api.admin import router as admin_router
 from api.middleware import ActivityLoggerMiddleware
@@ -48,15 +50,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Add activity logger middleware
+# Add middlewares - order matters in FastAPI (first added = outermost in the chain)
+#app.add_middleware(APIDebugMiddleware)  # Add debug middleware first so it logs all requests
 app.add_middleware(ActivityLoggerMiddleware)
 
 # Include routers
+
 app.include_router(auth_router)
 app.include_router(datapuur_router)
 app.include_router(kginsights_router, prefix="/api")
 # The graphschema router should be included with just /api prefix since it already has /graphschema in its routes
 app.include_router(graphschema_router, prefix="/api")
+app.include_router(kgdatainsights_router, prefix="/api")
+
 app.include_router(admin_router)
 
 # Custom OpenAPI and Swagger UI endpoints
@@ -89,7 +95,8 @@ async def get_open_api_endpoint():
 # Health check endpoint
 @app.get("/api/health")
 async def health_check():
-    return {"status": "ok"}
+    print("Health check endpoint called")
+    return {"status": "ok234"}
 
 # Create initial admin user if it doesn't exist
 @app.on_event("startup")
