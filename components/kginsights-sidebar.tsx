@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { BarChart, Settings, GitBranch } from "lucide-react"
+import { BarChart, Settings, GitBranch, MessageSquare } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { motion } from "framer-motion"
 
@@ -14,6 +14,11 @@ export default function KGInsightsSidebar() {
       name: "KGraph Dashboard",
       href: "/kginsights/dashboard",
       icon: BarChart,
+    },
+    {
+      name: "KGraph Insights",
+      href: "/kginsights/insights",
+      icon: MessageSquare,
     },
     {
       name: "Generate Graph",

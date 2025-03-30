@@ -1,0 +1,58 @@
+[
+  {
+    "id": "1_1743316325",
+    "source_id": "default",
+    "query": "return average defect for product",
+    "result": "There is no available data on the average defect rate for products in Category A, Category B, and Category C.",
+    "timestamp": "2025-03-29T23:32:05.303042"
+  },
+  {
+    "id": "2_1743316375",
+    "source_id": "default",
+    "query": "Find me average product defects",
+    "result": "The average product defect rate is approximately 6.91%.",
+    "timestamp": "2025-03-29T23:32:55.745183"
+  },
+  {
+    "id": "3_1743316414",
+    "source_id": "default",
+    "query": "Plot factory profit margin year 2023",
+    "result": "The average profit margins for the factory in the year 2023 are as follows: \n\n- January: 21.30%\n- February: 21.21%\n- March: 21.68%\n- April: 21.54%\n- May: 21.20%\n- June: 21.48%\n- July: 21.50%\n- August: 21.46%\n- September: 21.06%\n- October: 21.22%\n\nPlease note that these values are rounded to two decimal places.",
+    "timestamp": "2025-03-29T23:33:34.847718"
+  },
+  {
+    "id": "4_1743316917",
+    "source_id": "default",
+    "query": "Give me details of factory that have highest carbon footprint",
+    "result": "The factory with the highest carbon footprint is Factory 1, with a total of 4,505,306 units of CO2 emissions.",
+    "timestamp": "2025-03-29T23:41:57.417356"
+  },
+  {
+    "id": "5_1743316936",
+    "source_id": "default",
+    "query": "Show me the most connected nodes in the graph",
+    "result": "An error occurred while processing your query: {code: Neo.ClientError.Procedure.ProcedureNotFound} {message: There is no procedure with the name `apoc.cypher.run` registered for this database instance. Please ensure you've spelled the procedure name correctly and that the procedure is properly deployed.}. Please try again or contact support.",
+    "timestamp": "2025-03-29T23:42:16.063786"
+  },
+  {
+    "id": "6_1743317045",
+    "source_id": "default",
+    "query": "What insights can you provide about this data?",
+    "result": "The data provides insights into the performance of five factories. \n\nFactory 4 has an average profit margin of 19.59%, a machine utilization rate of 77.29%, a defect rate of 6.93%, an average energy consumption of 627.61 units, CO2 emissions of 644.86 mass units, a downtime cost of $10,803.34, an average of 3.38 breakdowns, and 2.31 safety incidents.\n\nFactory 1 has an average profit margin of 20.02%, a machine utilization rate of 56.37%, a defect rate of 6.90%, an average energy consumption of 823.75 units, CO2 emissions of 821.99 mass units, a downtime cost of $10,228.77, an average of 4.59 breakdowns, and 3.26 safety incidents.\n\nFactory 5 has an average profit margin of 20.54%, a machine utilization rate of 80.92%, a defect rate of 6.91%, an average energy consumption of 576.50 units, CO2 emissions of 662.55 mass units, a downtime cost of $17,608.19, an average of 3.40 breakdowns, and 2.32 safety incidents.\n\nFactory 3 has an average profit margin of 22.55%, a machine utilization rate of 72.76%, a defect rate of 6.86%, an average energy consumption of 664.64 units, CO2 emissions of 699.14 mass units, no downtime cost, an average of 3.85 breakdowns, and 2.55 safety incidents.\n\nFactory 2 has an average profit margin of 24.43%, a machine utilization rate of 80.66%, a defect rate of 6.94%, an average energy consumption of 571.13 units, CO2 emissions of 653.72 mass units, a downtime cost of $10,291.91, an average of 3.40 breakdowns, and 2.16 safety incidents.",
+    "timestamp": "2025-03-29T23:44:05.765168"
+  },
+  {
+    "id": "7_1743319119",
+    "source_id": "default",
+    "query": "Plot factory profit margin year 2023",
+    "result": "The average profit margins for the factory in the year 2023 are as follows: \n\n- January: 21.30%\n- February: 21.21%\n- March: 21.68%\n- April: 21.54%\n- May: 21.20%\n- June: 21.48%\n- July: 21.50%\n- August: 21.46%\n- September: 21.06%\n- October: 21.22%\n\nPlease note that these values are rounded to two decimal places.",
+    "timestamp": "2025-03-30T00:18:39.232752"
+  },
+  {
+    "id": "8_1743319429",
+    "source_id": "default",
+    "query": "Plot factory profit margin year 2023\n",
+    "result": "In the year 2023, the average profit margins for the factories were as follows:\n\n- Factory 2 had an average profit margin of approximately 25.49 and 25.19.\n- Factory 5 had an average profit margin of approximately 21.17 and 21.11.\n- Factory 3 had an average profit margin of approximately 19.52 and 22.55.\n- Factory 1 had an average profit margin of approximately 20.00 and 17.40.\n- Factory 4 had an average profit margin of approximately 24.64 and 15.41.",
+    "timestamp": "2025-03-30T00:23:46.095688"
+  }
+]
