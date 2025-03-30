@@ -241,7 +241,33 @@ async def build_schema_from_source(
                     )
             elif os.name == 'nt' and '/' in file_path:  # Running on Windows but Unix path
                 print(f"WARNING: Unix path detected on a {os.name} system.")
-                # Similar conversion code for Windows...
+                # Convert Unix path to Windows path
+                try:
+                    # Extract the filename from the Unix path
+                    relative_path = os.path.basename(file_path.replace('/', '\\'))
+                    # Try to find the file in a local uploads directory
+                    local_path = os.path.join(os.path.dirname(__file__), '..', 'uploads', relative_path)
+                    if os.path.exists(local_path):
+                        file_path = local_path
+                        print(f"INFO: Found file at local path: {file_path}")
+                    else:
+                        # Try alternative path
+                        alt_path = os.path.join(os.getcwd(), 'api', 'uploads', relative_path)
+                        if os.path.exists(alt_path):
+                            file_path = alt_path
+                            print(f"INFO: Found file at alternative path: {file_path}")
+                        else:
+                            print(f"ERROR: Could not find file at converted paths: {local_path} or {alt_path}")
+                            raise HTTPException(
+                                status_code=404, 
+                                detail=f"File not found. Could not locate {relative_path} in uploads directory."
+                            )
+                except Exception as e:
+                    print(f"ERROR in path conversion: {str(e)}")
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=f"File path error: {str(e)}. The file appears to be from a different operating system."
+                    )
             
             # Validate file exists
             if not os.path.exists(file_path):

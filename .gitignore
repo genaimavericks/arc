@@ -38,3 +38,6 @@ rsw-deployment.tar.gz
 .idea/
 api/static/*
 .rswvenv/
+.env
+api/.env
+npm

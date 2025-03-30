@@ -258,10 +258,17 @@ Notes:
             
             try:
                 result = llm.invoke(formatted_prompt)
-                print(f"\nRaw LLM Response:\n{result.content}")
+                
+                # Handle different response formats (dict or object with content attribute)
+                if isinstance(result, dict):
+                    result_content = result.get("content", json.dumps(result))
+                else:
+                    result_content = result.content
+                
+                print(f"\nRaw LLM Response:\n{result_content}")
                 
                 # Validate schema is valid JSON
-                schema = json.loads(result.content)
+                schema = json.loads(result_content)
                 
                 # Validate schema structure
                 required_keys = ["nodes", "relationships", "indexes"]
