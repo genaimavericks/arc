@@ -8,7 +8,7 @@ import io
 import json
 from datetime import datetime
 from sqlalchemy.orm import Session
-from ..models import get_db, IngestionJob
+from ..models import get_db, IngestionJob, UploadedFile
 from ..auth import has_any_permission
 from ..models import User
 
@@ -22,6 +22,7 @@ class FilePathInput(BaseModel):
 
 class SourceIdInput(BaseModel):
     source_id: str
+    metadata: str = None  # Optional metadata about the data
 
 class SaveSchemaInput(BaseModel):
     schema: dict
@@ -30,6 +31,11 @@ class SaveSchemaInput(BaseModel):
 class SaveSchemaResponse(BaseModel):
     message: str
     file_path: str
+
+class RefineSchemaInput(BaseModel):
+    source_id: str
+    current_schema: dict
+    feedback: str
 
 # Router
 router = APIRouter(prefix="/graphschema", tags=["graphschema"])
@@ -205,7 +211,6 @@ async def build_schema_from_source(
         print(f"DEBUG: Job config: {config}")
         
         if job.type == "file" and "file_id" in config:
-            from ..models import UploadedFile
             file_id = config["file_id"]
             file_info = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
             print(f"DEBUG: Found file info: {file_info is not None}")
@@ -216,32 +221,22 @@ async def build_schema_from_source(
             file_path = file_info.path
             print(f"DEBUG: File path: {file_path}")
             
-            # Detect if the file path is from a different OS and handle it
-            if os.name == 'posix' and '\\' in file_path:  # Running on Mac/Linux but Windows path
-                print(f"WARNING: Windows path detected on a {os.name} system.")
-                # Convert Windows path to a relative path if possible
-                try:
-                    relative_path = os.path.basename(file_path)
-                    # Try to find the file in a local uploads directory
-                    local_path = os.path.join(os.path.dirname(__file__), '..', '..', 'uploads', relative_path)
-                    if os.path.exists(local_path):
-                        file_path = local_path
-                        print(f"INFO: Found file at local path: {file_path}")
-                    else:
-                        print(f"ERROR: Could not find file at converted path: {local_path}")
-                        raise HTTPException(
-                            status_code=400, 
-                            detail=f"File path is from Windows but running on {os.name}. Please upload the file on this system."
-                        )
-                except Exception as e:
-                    print(f"ERROR in path conversion: {str(e)}")
-                    raise HTTPException(
-                        status_code=400, 
-                        detail=f"File path error: {str(e)}. The file appears to be from a different operating system."
-                    )
-            elif os.name == 'nt' and '/' in file_path:  # Running on Windows but Unix path
-                print(f"WARNING: Unix path detected on a {os.name} system.")
-                # Similar conversion code for Windows...
+            # Handle different OS path formats
+            try:
+                if os.name == 'nt' and file_path.startswith('/'):
+                    # This is a Unix path but we're on Windows
+                    # Extract the filename and use the local uploads directory
+                    filename = os.path.basename(file_path)
+                    file_path = os.path.join(os.path.abspath("api/uploads"), filename)
+                    print(f"DEBUG: Converted path for Windows: {file_path}")
+                elif os.name != 'nt' and '\\' in file_path:
+                    # Convert Windows path to Unix path if needed
+                    file_path = file_path.replace('\\', '/')
+            except Exception as e:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"File path error: {str(e)}. The file appears to be from a different operating system."
+                )
             
             # Validate file exists
             if not os.path.exists(file_path):
@@ -260,6 +255,7 @@ async def build_schema_from_source(
         agent_instance = GraphSchemaAgent(
             model=llm,
             csv_path=file_path,
+            metadata=source_input.metadata,
             log=True,
             log_path='logs'
         )
@@ -269,11 +265,15 @@ async def build_schema_from_source(
         
         # Get the generated schema and cypher
         schema = agent_instance.get_schema()
+        cypher = agent_instance.get_cypher()
+        
         if not schema:
             raise HTTPException(status_code=404, detail='Schema generation failed')
             
-        cypher = agent_instance.get_cypher() or ""
-        
+        # Ensure cypher is a string
+        if cypher is None:
+            cypher = ""
+            
         # Format data to match what frontend expects
         formatted_schema, formatted_cypher = format_schema_response(schema, cypher)
         
@@ -286,6 +286,121 @@ async def build_schema_from_source(
     except Exception as e:
         print(f"Error in build_schema_from_source: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Schema generation failed: {str(e)}")
+
+@router.post('/refine-schema', response_model=SchemaResult)
+async def refine_schema(
+    refine_input: RefineSchemaInput,
+    current_user: User = Depends(has_any_permission(["kginsights:read", "data:read"])),
+    db: Session = Depends(get_db)
+):
+    """Refine an existing Neo4j schema based on user feedback."""
+    print(f"DEBUG: refine_schema called with source_id: {refine_input.source_id}")
+    try:
+        source_id = refine_input.source_id
+        
+        # Get the ingestion job
+        job = db.query(IngestionJob).filter(IngestionJob.id == source_id).first()
+        print(f"DEBUG: Found job: {job is not None}")
+        if not job:
+            raise HTTPException(status_code=404, detail=f"Source not found with ID: {source_id}")
+            
+        # Get the file path from the job config
+        config = json.loads(job.config) if job.config else {}
+        print(f"DEBUG: Job config: {config}")
+        
+        # Currently only supporting file sources
+        if job.type == "file":
+            # Get the file path
+            file_id = config.get("file_id")
+            if not file_id:
+                raise HTTPException(status_code=400, detail="No file ID found in job config")
+                
+            # Get the file record
+            file_record = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
+            if not file_record:
+                raise HTTPException(status_code=404, detail=f"File not found with ID: {file_id}")
+                
+            # Build the file path
+            file_path = file_record.path
+            print(f"DEBUG: File path: {file_path}")
+            
+            # Handle different OS path formats
+            try:
+                if os.name == 'nt' and file_path.startswith('/'):
+                    # This is a Unix path but we're on Windows
+                    # Extract the filename and use the local uploads directory
+                    filename = os.path.basename(file_path)
+                    file_path = os.path.join(os.path.abspath("api/uploads"), filename)
+                    print(f"DEBUG: Converted path for Windows: {file_path}")
+                elif os.name != 'nt' and '\\' in file_path:
+                    # Convert Windows path to Unix path if needed
+                    file_path = file_path.replace('\\', '/')
+            except Exception as e:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"File path error: {str(e)}. The file appears to be from a different operating system."
+                )
+            
+            # Validate file exists
+            if not os.path.exists(file_path):
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"File not found at path: {file_path}. Current OS: {os.name}"
+                )
+            
+            # Validate file is a CSV
+            if not file_path.lower().endswith('.csv'):
+                raise HTTPException(status_code=400, detail="Only CSV files are supported")
+        else:
+            raise HTTPException(status_code=400, detail="Only file sources are supported")
+        
+        # Initialize OpenAI model
+        openai_api_key = os.environ.get("OPENAI_API_KEY")
+        if not openai_api_key:
+            raise HTTPException(status_code=500, detail="OpenAI API key not found in environment variables")
+            
+        llm = ChatOpenAI(
+            model="gpt-4o",
+            temperature=0.2,
+            openai_api_key=openai_api_key
+        )
+        
+        # Initialize agent with the provided file path and current schema
+        agent_instance = GraphSchemaAgent(
+            model=llm,
+            csv_path=file_path,
+            metadata=refine_input.feedback,
+            current_schema=refine_input.current_schema,
+            log=True,
+            log_path='logs'
+        )
+        
+        # Run the agent to refine the schema
+        agent_instance.invoke_agent()
+        
+        # Get the refined schema and Cypher
+        schema = agent_instance.get_schema()
+        cypher = agent_instance.get_cypher()
+        
+        if not schema:
+            raise HTTPException(status_code=500, detail="Failed to refine schema")
+            
+        # Ensure cypher is a string
+        if cypher is None:
+            cypher = ""
+            
+        # Format data to match what frontend expects
+        formatted_schema, formatted_cypher = format_schema_response(schema, cypher)
+            
+        return {
+            "schema": formatted_schema,
+            "cypher": formatted_cypher
+        }
+    except HTTPException as e:
+        raise
+    except Exception as e:
+        print(f"Error in refine_schema: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Schema refinement failed: {str(e)}")
 
 @router.post('/save-schema', response_model=SaveSchemaResponse)
 async def save_schema(save_input: SaveSchemaInput):
