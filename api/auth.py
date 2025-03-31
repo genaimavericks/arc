@@ -76,12 +76,9 @@ class DirectPasswordResetRequest(BaseModel):
 
 # Predefined permissions
 AVAILABLE_PERMISSIONS = [
-    # Data permissions
-    "data:read", "data:write", "data:delete", "data:upload",
-    # Ingestion permissions
-    "ingestion:create", "ingestion:read", "ingestion:update", "ingestion:delete",
-    # Schema permissions
-    "schema:read", "schema:write",
+    # DataPuur permissions - simplified hierarchy
+    "datapuur:read", "datapuur:write", "datapuur:manage", 
+    
     # Database permissions
     "database:connect", "database:read", "database:write",
     # User management permissions
@@ -158,16 +155,22 @@ def has_permission(permission: str):
         A dependency function that checks if the current user has the permission
     """
     def permission_checker(current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)):
+        print(f"\n==== PERMISSION CHECK ====")
+        print(f"Checking if user '{current_user.username}' with role '{current_user.role}' has permission '{permission}'")
+        
         # Admin can access everything
         if current_user.role == "admin":
+            print(f"User is admin, granting permission")
             return current_user
             
         # Get the role from the database
         role = db.query(Role).filter(Role.name == current_user.role).first()
         if not role:
+            print(f"Role '{current_user.role}' not found in database")
             # If the role doesn't exist, try to create it with default permissions
             try:
                 role = validate_role(current_user.role, db)
+                print(f"Created role '{current_user.role}' with default permissions")
             except Exception as e:
                 print(f"Error validating role: {str(e)}")
                 raise HTTPException(
@@ -178,28 +181,48 @@ def has_permission(permission: str):
         # Check if the role has the required permission
         try:
             role_permissions = []
-            if role.permissions:
+            # Extract permissions from the description field (stored as JSON)
+            if role.description:
+                print(f"Role {role.name} description: {role.description}")
+                
                 try:
-                    role_permissions = json.loads(role.permissions)
-                except (json.JSONDecodeError, TypeError):
-                    print(f"Error parsing permissions for role {role.name}: {role.permissions}")
+                    # Try to parse as JSON even if it doesn't start with {
+                    if role.description.strip() and (role.description.strip()[0] == '{' or role.description.strip()[0] == '['):
+                        description_data = json.loads(role.description)
+                        if isinstance(description_data, dict):
+                            role_permissions = description_data.get("permissions", [])
+                            print(f"Extracted permissions from JSON dict: {role_permissions}")
+                        elif isinstance(description_data, list):
+                            # Handle case where description is a direct list of permissions
+                            role_permissions = description_data
+                            print(f"Extracted permissions from JSON list: {role_permissions}")
+                    else:
+                        # Not JSON format, check if it's a comma-separated list
+                        if ',' in role.description:
+                            role_permissions = [p.strip() for p in role.description.split(',')]
+                            print(f"Extracted permissions from comma-separated list: {role_permissions}")
+                except (json.JSONDecodeError, TypeError) as e:
+                    print(f"Error parsing description JSON for role {role.name}: {e}")
+                    print(f"Description content: {role.description}")
             
             # Debug output
             print(f"Checking permission '{permission}' for user '{current_user.username}' with role '{role.name}'")
             print(f"Role permissions: {role_permissions}")
             
-            # Special case for researcher role and kginsights permissions
-            if current_user.role == "researcher" and permission.startswith("kginsights:"):
-                return current_user
-                
+            # Check directly if the role has the required permission
             if permission in role_permissions:
+                print(f"Permission '{permission}' found in role permissions")
                 return current_user
+            else:
+                print(f"Permission '{permission}' NOT found in role permissions")
         except Exception as e:
             print(f"Error checking permissions: {str(e)}")
             # If there's an error parsing the permissions, deny access
             pass
             
         # If we get here, the user doesn't have the required permission
+        print(f"ACCESS DENIED: User does not have permission '{permission}'")
+        print(f"==== END PERMISSION CHECK ====\n")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"User does not have the required permission: {permission}"
@@ -243,24 +266,34 @@ def has_any_permission(permissions: List[str]):
         # Check if the role has any of the required permissions
         try:
             role_permissions = []
-            if role.permissions:
+            # Extract permissions from the description field (stored as JSON)
+            if role.description:
+                print(f"Role {role.name} description: {role.description}")
+                
                 try:
-                    role_permissions = json.loads(role.permissions)
-                except (json.JSONDecodeError, TypeError):
-                    print(f"Error parsing permissions for role {role.name}: {role.permissions}")
+                    # Try to parse as JSON even if it doesn't start with {
+                    if role.description.strip() and (role.description.strip()[0] == '{' or role.description.strip()[0] == '['):
+                        description_data = json.loads(role.description)
+                        if isinstance(description_data, dict):
+                            role_permissions = description_data.get("permissions", [])
+                        elif isinstance(description_data, list):
+                            # Handle case where description is a direct list of permissions
+                            role_permissions = description_data
+                    else:
+                        # Not JSON format, check if it's a comma-separated list
+                        if ',' in role.description:
+                            role_permissions = [p.strip() for p in role.description.split(',')]
+                except (json.JSONDecodeError, TypeError) as e:
+                    print(f"Error parsing description JSON for role {role.name}: {e}")
+                    print(f"Description content: {role.description}")
             
             # Debug output
             print(f"Checking permissions {permissions} for user '{current_user.username}' with role '{role.name}'")
             print(f"Role permissions: {role_permissions}")
             
-            # Special case for researcher role and kginsights permissions
-            if current_user.role == "researcher" and any(perm.startswith("kginsights:") for perm in permissions):
+            # Check if the role has any of the required permissions
+            if any(p in role_permissions for p in permissions):
                 return current_user
-                
-            # Check if the user has any of the required permissions
-            for permission in permissions:
-                if permission in role_permissions:
-                    return current_user
         except Exception as e:
             print(f"Error checking permissions: {str(e)}")
             # If there's an error parsing the permissions, deny access
@@ -269,7 +302,7 @@ def has_any_permission(permissions: List[str]):
         # If we get here, the user doesn't have any of the required permissions
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"User does not have any of the required permissions: {', '.join(permissions)}"
+            detail=f"User does not have any of the required permissions: {permissions}"
         )
     
     return permission_checker
@@ -345,16 +378,20 @@ def validate_role(role_name: str, db: Session):
             permissions = AVAILABLE_PERMISSIONS
         elif role_name == "user":
             # Regular user has basic data read permissions
-            permissions = ["data:read"]
+            permissions = ["datapuur:read"]
         else:
             # Other roles have no permissions by default
             permissions = []
             
-        # Create role
+        # Create role with proper JSON format in description
+        description_data = {
+            "text": f"Default {role_name} role",
+            "permissions": permissions
+        }
+        
         role = Role(
             name=role_name,
-            description=f"Default {role_name} role",
-            permissions=json.dumps(permissions),
+            description=json.dumps(description_data),
             is_system_role=(role_name in ["admin", "user", "researcher"])
         )
         
@@ -362,6 +399,8 @@ def validate_role(role_name: str, db: Session):
         db.add(role)
         db.commit()
         db.refresh(role)
+        
+        print(f"Created new role {role_name} with permissions: {permissions}")
         
     return role
 
@@ -376,83 +415,127 @@ def initialize_default_roles(db: Session):
     
     If the roles already exist, it ensures they have the correct permissions and system role flag.
     """
+    print("Initializing default roles")
+    
     # Create admin role if it doesn't exist
     admin_role = db.query(Role).filter(Role.name == "admin").first()
     if not admin_role:
+        description_data = {
+            "text": "Administrator with full access",
+            "permissions": AVAILABLE_PERMISSIONS
+        }
         admin_role = Role(
             name="admin",
-            description="Administrator with full access",
-            permissions=json.dumps(AVAILABLE_PERMISSIONS),
+            description=json.dumps(description_data),
             is_system_role=True
         )
         db.add(admin_role)
+        print("Created admin role with all permissions")
     else:
         # Update existing admin role to ensure it has all permissions
-        admin_role.permissions = json.dumps(AVAILABLE_PERMISSIONS)
-        admin_role.is_system_role = True
-        admin_role.updated_at = datetime.utcnow()
+        try:
+            if admin_role.description and admin_role.description.startswith('{'):
+                description_data = json.loads(admin_role.description)
+                description_data["permissions"] = AVAILABLE_PERMISSIONS
+            else:
+                description_data = {
+                    "text": admin_role.description or "Administrator with full access",
+                    "permissions": AVAILABLE_PERMISSIONS
+                }
+            
+            admin_role.description = json.dumps(description_data)
+            admin_role.is_system_role = True
+            admin_role.updated_at = datetime.utcnow()
+            print("Updated admin role with all permissions")
+        except Exception as e:
+            print(f"Error updating admin role: {str(e)}")
     
     # Create user role if it doesn't exist
     user_role = db.query(Role).filter(Role.name == "user").first()
     if not user_role:
+        permissions = ["datapuur:read"]
+        description_data = {
+            "text": "Regular user with limited access",
+            "permissions": permissions
+        }
+        
         user_role = Role(
             name="user",
-            description="Regular user with limited access",
-            permissions=json.dumps(["data:read"]),
+            description=json.dumps(description_data),
             is_system_role=True
         )
         db.add(user_role)
+        print("Created user role with basic permissions")
     else:
-        # Ensure user role has basic permissions
+        # Update existing user role to ensure it has correct permissions
         try:
-            user_permissions = json.loads(user_role.permissions) if user_role.permissions else []
-            if "data:read" not in user_permissions:
-                user_permissions.append("data:read")
-            user_role.permissions = json.dumps(user_permissions)
-        except (json.JSONDecodeError, TypeError):
-            user_role.permissions = json.dumps(["data:read"])
-        
-        user_role.is_system_role = True
-        user_role.updated_at = datetime.utcnow()
+            if user_role.description and user_role.description.startswith('{'):
+                description_data = json.loads(user_role.description)
+                description_data["permissions"] = ["datapuur:read"]
+            else:
+                description_data = {
+                    "text": user_role.description or "Regular user with limited access",
+                    "permissions": ["datapuur:read"]
+                }
+            
+            user_role.description = json.dumps(description_data)
+            user_role.is_system_role = True
+            user_role.updated_at = datetime.utcnow()
+            print("Updated user role with basic permissions")
+        except Exception as e:
+            print(f"Error updating user role: {str(e)}")
     
     # Create researcher role if it doesn't exist
     researcher_role = db.query(Role).filter(Role.name == "researcher").first()
     if not researcher_role:
+        permissions = ["datapuur:read", "datapuur:write", "kginsights:read"]
+        description_data = {
+            "text": "Researcher with data access",
+            "permissions": permissions
+        }
+        
         researcher_role = Role(
             name="researcher",
-            description="Researcher with data access",
-            permissions=json.dumps(["data:read", "data:write", "schema:read", "ingestion:read", "kginsights:read"]),
+            description=json.dumps(description_data),
             is_system_role=True
         )
         db.add(researcher_role)
+        db.commit()
+        print("Created researcher role with data access permissions")
     else:
-        # Ensure researcher role has appropriate permissions
+        # Update existing researcher role to ensure it has the right permissions
         try:
-            researcher_permissions = json.loads(researcher_role.permissions) if researcher_role.permissions else []
-            default_permissions = ["data:read", "data:write", "schema:read", "ingestion:read", "kginsights:read"]
-            for perm in default_permissions:
-                if perm not in researcher_permissions:
-                    researcher_permissions.append(perm)
-            researcher_role.permissions = json.dumps(researcher_permissions)
-        except (json.JSONDecodeError, TypeError):
-            researcher_role.permissions = json.dumps(["data:read", "data:write", "schema:read", "ingestion:read", "kginsights:read"])
-        
-        researcher_role.is_system_role = True
-        researcher_role.updated_at = datetime.utcnow()
-    
-    # Ensure that any role with kginsights:read also has ingestion:read
+            if researcher_role.description and researcher_role.description.startswith('{'):
+                description_data = json.loads(researcher_role.description)
+                description_data["permissions"] = ["datapuur:read", "datapuur:write", "kginsights:read"]
+            else:
+                description_data = {
+                    "text": researcher_role.description or "Researcher with data access",
+                    "permissions": ["datapuur:read", "datapuur:write", "kginsights:read"]
+                }
+            
+            researcher_role.description = json.dumps(description_data)
+            db.commit()
+        except Exception as e:
+            print(f"Error updating researcher role: {e}")
+
+    # Ensure that any role with kginsights:read also has datapuur:read
     roles_with_kginsights = db.query(Role).all()
     for role in roles_with_kginsights:
         try:
-            permissions = json.loads(role.permissions) if role.permissions else []
-            if "kginsights:read" in permissions and "ingestion:read" not in permissions:
-                permissions.append("ingestion:read")
-                role.permissions = json.dumps(permissions)
-                role.updated_at = datetime.utcnow()
-                print(f"Added ingestion:read permission to role {role.name} (ID: {role.id})")
-        except (json.JSONDecodeError, TypeError):
-            continue
-    
+            if role.description and role.description.startswith('{'):
+                description_data = json.loads(role.description)
+                if "permissions" in description_data:
+                    permissions = description_data["permissions"]
+                    if "kginsights:read" in permissions and "datapuur:read" not in permissions:
+                        permissions.append("datapuur:read")
+                        description_data["permissions"] = permissions
+                        role.description = json.dumps(description_data)
+                        db.commit()
+                        print(f"Added datapuur:read permission to role {role.name} with kginsights:read")
+        except Exception as e:
+            print(f"Error updating role {role.name}: {e}")
+
     # Check for any other roles that might have been created with system role names
     # but are not properly marked as system roles
     system_role_names = ["admin", "user", "researcher"]
@@ -630,7 +713,7 @@ async def get_roles(
     # Convert permissions from JSON string to list
     for role in roles:
         try:
-            role.permissions_list = json.loads(role.permissions) if role.permissions else []
+            role.permissions_list = json.loads(role.description).get("permissions", []) if role.description else []
         except json.JSONDecodeError:
             role.permissions_list = []
     
@@ -652,7 +735,7 @@ async def get_role(
     
     # Convert permissions from JSON string to list
     try:
-        role.permissions_list = json.loads(role.permissions) if role.permissions else []
+        role.permissions_list = json.loads(role.description).get("permissions", []) if role.description else []
     except json.JSONDecodeError:
         role.permissions_list = []
     
@@ -695,10 +778,13 @@ async def create_role(
     # Create the role
     try:
         # Create new role
+        description_data = {
+            "text": role_create.description,
+            "permissions": role_create.permissions
+        }
         new_role = Role(
             name=role_create.name,
-            description=role_create.description,
-            permissions=json.dumps(role_create.permissions) if role_create.permissions else json.dumps([]),
+            description=json.dumps(description_data),
             is_system_role=False,  # Custom roles are never system roles
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow(),
@@ -754,7 +840,9 @@ async def update_role(
         try:
             # Update permissions if provided
             if role_update.permissions is not None:
-                role.permissions = json.dumps(role_update.permissions)
+                description_data = json.loads(role.description)
+                description_data["permissions"] = role_update.permissions
+                role.description = json.dumps(description_data)
                 role.updated_at = datetime.utcnow()
                 db.commit()
                 db.refresh(role)
@@ -794,11 +882,15 @@ async def update_role(
             role.name = role_update.name
         
         if role_update.description is not None:
-            role.description = role_update.description
+            description_data = json.loads(role.description)
+            description_data["text"] = role_update.description
+            role.description = json.dumps(description_data)
         
         # Update permissions if provided
         if role_update.permissions is not None:
-            role.permissions = json.dumps(role_update.permissions)
+            description_data = json.loads(role.description)
+            description_data["permissions"] = role_update.permissions
+            role.description = json.dumps(description_data)
         
         # Update timestamp
         role.updated_at = datetime.utcnow()

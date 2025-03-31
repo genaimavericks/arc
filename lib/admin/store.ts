@@ -79,6 +79,68 @@ export interface AdminState {
   removeNotification: (id: string) => void
 }
 
+// Default built-in roles
+export const defaultRoles: Role[] = [
+  {
+    id: 1,
+    name: "admin",
+    description: "Administrator with full access",
+    permissions: ["datapuur:read", "datapuur:write", "datapuur:manage", "user:read", "user:create", "user:update", "user:delete", "role:read", "role:create", "role:update", "role:delete", "kginsights:read", "kginsights:write", "kginsights:manage"],
+    is_system_role: true
+  },
+  {
+    id: 2,
+    name: "user",
+    description: "Regular user with limited access",
+    permissions: ["datapuur:read"],
+    is_system_role: true
+  },
+  {
+    id: 3,
+    name: "researcher",
+    description: "Researcher with data access",
+    permissions: ["datapuur:read", "datapuur:write", "kginsights:read"],
+    is_system_role: true
+  },
+]
+
+// All available permissions for the system
+export const availablePermissions = [
+  // DataPuur permissions
+  "datapuur:read", "datapuur:write", "datapuur:manage",
+  
+  // Database permissions
+  "database:connect", "database:read", "database:write",
+  
+  // User management permissions
+  "user:read", "user:create", "user:update", "user:delete",
+  
+  // Role management permissions
+  "role:read", "role:create", "role:update", "role:delete",
+  
+  // KGInsights permissions
+  "kginsights:read", "kginsights:write", "kginsights:manage"
+]
+
+// Permission categories for the UI
+export const permissionCategories = {
+  "DataPuur Platform": [
+    "datapuur:read", "datapuur:write", "datapuur:manage"
+  ],
+  "Knowledge Graph Insights": [
+    "kginsights:read", "kginsights:write", "kginsights:manage"
+  ],
+  "Database Access": [
+    "database:connect", "database:read", "database:write"
+  ],
+  "User Management": [
+    "user:read", "user:create", "user:update", "user:delete"
+  ],
+  "Role Management": [
+    "role:read", "role:create", "role:update", "role:delete"
+  ]
+}
+
 export const useAdminStore = create<AdminState>((set) => ({
   loading: false,
   setLoading: (loading) => set({ loading }),
@@ -101,29 +163,7 @@ export const useAdminStore = create<AdminState>((set) => ({
   systemSettings: null,
   setSystemSettings: (systemSettings) => set({ systemSettings }),
 
-  roles: [
-    {
-      id: 1,
-      name: "admin",
-      description: "Administrator with full access",
-      permissions: ["data:read", "data:write", "user:read", "user:write", "role:read", "role:write"],
-      is_system_role: true
-    },
-    {
-      id: 2,
-      name: "user",
-      description: "Regular user with limited access",
-      permissions: ["data:read"],
-      is_system_role: true
-    },
-    {
-      id: 3,
-      name: "researcher",
-      description: "Researcher with data access",
-      permissions: ["data:read", "data:write", "schema:read", "ingestion:read"],
-      is_system_role: true
-    },
-  ],
+  roles: defaultRoles,
   setRoles: (roles) => set({ roles }),
   
   addRole: (role) => set((state) => ({ 
@@ -160,18 +200,7 @@ export const useAdminStore = create<AdminState>((set) => ({
     return state;
   }),
 
-  availablePermissions: [
-    "data:read",
-    "data:write",
-    "user:read",
-    "user:write",
-    "role:read",
-    "role:write",
-    "schema:read",
-    "schema:write",
-    "ingestion:read",
-    "ingestion:write"
-  ],
+  availablePermissions: availablePermissions,
   setAvailablePermissions: (permissions) => set({ availablePermissions: permissions }),
 
   isProcessing: false,

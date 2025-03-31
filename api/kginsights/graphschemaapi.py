@@ -192,7 +192,7 @@ async def build_schema_from_path(file_input: FilePathInput):
 @router.post('/build-schema-from-source', response_model=SchemaResult)
 async def build_schema_from_source(
     source_input: SourceIdInput,
-    current_user: User = Depends(has_any_permission(["kginsights:read", "data:read"])),
+    current_user: User = Depends(has_any_permission(["kginsights:read", "datapuur:read"])),
     db: Session = Depends(get_db)
 ):
     """Generate Neo4j schema from a source ID and return the results."""
@@ -290,7 +290,7 @@ async def build_schema_from_source(
 @router.post('/refine-schema', response_model=SchemaResult)
 async def refine_schema(
     refine_input: RefineSchemaInput,
-    current_user: User = Depends(has_any_permission(["kginsights:read", "data:read"])),
+    current_user: User = Depends(has_any_permission(["kginsights:read", "datapuur:read"])),
     db: Session = Depends(get_db)
 ):
     """Refine an existing Neo4j schema based on user feedback."""
@@ -466,7 +466,7 @@ async def save_schema(
 
 @router.get('/schemas', response_model=list)
 async def get_schemas(
-    current_user: User = Depends(has_any_permission(["kginsights:read"])),
+    current_user: User = Depends(has_any_permission(["kginsights:read", "datapuur:read"])),
     db: Session = Depends(get_db)
 ):
     """Get all saved schemas from the database."""
@@ -500,7 +500,7 @@ async def get_schemas(
 @router.get('/schemas/{schema_id}', response_model=dict)
 async def get_schema_by_id(
     schema_id: int,
-    current_user: User = Depends(has_any_permission(["kginsights:read"])),
+    current_user: User = Depends(has_any_permission(["kginsights:read", "datapuur:read"])),
     db: Session = Depends(get_db)
 ):
     """Get a specific schema by ID from the database."""

@@ -2,9 +2,7 @@
 
 import { useEffect, useState, useRef } from "react"
 import { useSearchParams } from "next/navigation"
-import Navbar from "@/components/navbar"
 import { SparklesCore } from "@/components/sparkles"
-import KGInsightsSidebar from "@/components/kginsights-sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -13,12 +11,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/use-toast"
 import LoadingSpinner from "@/components/loading-spinner"
-import ProtectedRoute from "@/components/protected-route"
 import { motion } from "framer-motion"
 import { Save, Loader2, MessageSquare } from "lucide-react"
 import { Separator } from "@/components/ui/separator"
 import Image from "next/image"
 import dynamic from 'next/dynamic'
+import { KGInsightsLayout } from "@/components/kginsights/kginsights-layout"
+import KGInsightsSidebar from "@/components/kginsights-sidebar"
 
 // Import Cytoscape as a client component to avoid SSR issues
 const CytoscapeGraph = dynamic(
@@ -58,9 +57,9 @@ interface Schema {
 
 export default function GenerateGraphPage() {
   return (
-    <ProtectedRoute requiredPermission="kginsights:read">
+    <KGInsightsLayout>
       <GenerateGraphContent />
-    </ProtectedRoute>
+    </KGInsightsLayout>
   )
 }
 
@@ -245,209 +244,184 @@ function GenerateGraphContent() {
   }
 
   return (
-    <main className="min-h-screen bg-background antialiased relative overflow-hidden">
-      {/* Ambient background with moving particles */}
-      <div className="h-full w-full absolute inset-0 z-0">
-        <SparklesCore
-          id="tsparticlesfullpage"
-          background="transparent"
-          minSize={0.6}
-          maxSize={1.4}
-          particleDensity={100}
-          className="w-full h-full"
-          particleColor="var(--foreground)"
-        />
-      </div>
+    <div className="flex-1 p-6 overflow-y-auto">
+      <div className="max-w-6xl mx-auto">
+        <div className="flex flex-col gap-4 mb-6">
+          <h1 className="text-3xl font-bold">Generate Knowledge Graph</h1>
+          <p className="text-muted-foreground max-w-3xl">
+            Convert your structured data into a knowledge graph. Select a data source, generate a schema using AI, and create your knowledge graph.
+          </p>
+        </div>
 
-      <div className="relative z-10">
-        <Navbar />
-
-        <div className="flex">
-          <KGInsightsSidebar />
-
-          <div className="flex-1 p-8">
-            <div className="max-w-7xl mx-auto">
-              <motion.h1
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5 }}
-                className="text-4xl font-bold text-foreground mb-6"
+        <div className="flex justify-between items-center mb-8">
+          <div className="space-y-4">
+            <div className="w-64">
+              <Label htmlFor="dataset-select" className="mb-2 block">Select Dataset:</Label>
+              <Select
+                value={selectedSource}
+                onValueChange={handleSourceChange}
+                disabled={loadingSources || loading}
               >
-                Generate Graph
-              </motion.h1>
-
-              <div className="flex justify-between items-center mb-8">
-                <div className="space-y-4">
-                  <div className="w-64">
-                    <Label htmlFor="dataset-select" className="mb-2 block">Select Dataset:</Label>
-                    <Select
-                      value={selectedSource}
-                      onValueChange={handleSourceChange}
-                      disabled={loadingSources || loading}
-                    >
-                      <SelectTrigger id="dataset-select" className="w-full">
-                        <SelectValue placeholder="Select a dataset" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {loadingSources ? (
-                          <div className="flex justify-center p-2">
-                            <LoadingSpinner size="sm" />
-                          </div>
-                        ) : sources.length > 0 ? (
-                          sources.map((source) => (
-                            <SelectItem key={source.id} value={source.id}>
-                              {source.name}
-                            </SelectItem>
-                          ))
-                        ) : (
-                          <div className="p-2 text-center text-muted-foreground">
-                            No datasets available
-                          </div>
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  
-                  <div className="w-64">
-                    <Label htmlFor="schema-name" className="mb-2 block">Schema Name:</Label>
-                    <Input
-                      id="schema-name"
-                      value={kgName}
-                      onChange={(e) => setKgName(e.target.value)}
-                      placeholder="Enter schema name"
-                      disabled={loading}
-                      className="w-full"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex gap-2">
-                  <Button
-                    className="bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-2"
-                    onClick={generateSchema}
-                    disabled={!selectedSource || loading}
-                  >
-                    <MessageSquare className="h-4 w-4" />
-                    {loading ? "Generating..." : "Generate Schema"}
-                  </Button>
-                  
-                  <Button
-                    className="bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-2"
-                    onClick={handleSaveSchema}
-                    disabled={loading || (!schema && !selectedSource)}
-                  >
-                    <Save className="w-4 h-4" />
-                    {loading ? "Saving..." : "Save Schema Version"}
-                  </Button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Left column - Chat Interface */}
-                <Card className="bg-card/80 backdrop-blur-sm border border-border">
-                  <CardContent className="p-6">
-                    <div className="flex flex-col gap-2 mb-4">
-                      <h2 className="text-xl font-semibold">GenAI Bot</h2>
+                <SelectTrigger id="dataset-select" className="w-full">
+                  <SelectValue placeholder="Select a dataset" />
+                </SelectTrigger>
+                <SelectContent>
+                  {loadingSources ? (
+                    <div className="flex justify-center p-2">
+                      <LoadingSpinner size="sm" />
                     </div>
-                    <div className="h-[600px]">
-                      <SchemaChat 
-                        selectedSource={selectedSource}
-                        selectedSourceName={selectedSourceName}
-                        onSchemaGenerated={handleSchemaGenerated}
-                        loading={loading}
-                        setLoading={setLoading}
-                      />
+                  ) : sources.length > 0 ? (
+                    sources.map((source) => (
+                      <SelectItem key={source.id} value={source.id}>
+                        {source.name}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <div className="p-2 text-center text-muted-foreground">
+                      No datasets available
                     </div>
-                  </CardContent>
-                </Card>
-                
-                {/* Right column - Schema Visualization and Details */}
-                <Card className="bg-card/80 backdrop-blur-sm border border-border">
-                  <CardContent className="p-6">
-                    {loading ? (
-                      <div className="flex flex-col items-center justify-center py-12">
-                        <LoadingSpinner />
-                        <p className="mt-4 text-muted-foreground">Generating schema...</p>
-                      </div>
-                    ) : schema ? (
-                      <div className="space-y-6">
-                        <h2 className="text-xl font-semibold">Recommended Schema:</h2>
-                        
-                        <div className="space-y-6">
-                          {/* Graph Visualization */}
-                          <div className="border rounded-md p-4 bg-background/50">
-                            <CytoscapeGraph schema={schema} />
-                          </div>
-                          
-                          {/* Schema Details */}
-                          <div className="space-y-4">
-                            <div>
-                              <h3 className="text-lg font-medium mb-2">Nodes:</h3>
-                              <ul className="list-disc pl-5 space-y-1">
-                                {schema.nodes.map((node, index) => (
-                                  <li key={index}>
-                                    <span className="font-medium">{node.label}</span> 
-                                    ({Object.entries(node.properties || {}).map(([key, type]) => `${key}: ${type}`).join(", ")})
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                            
-                            <div>
-                              <h3 className="text-lg font-medium mb-2">Relationships:</h3>
-                              <ul className="list-disc pl-5 space-y-1">
-                                {schema.relationships.map((rel, index) => (
-                                  <li key={index}>
-                                    <span className="font-medium">{rel.startNode}</span> 
-                                    <span className="mx-1">-[{rel.type}]-&gt;</span>
-                                    <span className="font-medium">{rel.endNode}</span>
-                                    {rel.properties && Object.keys(rel.properties).length > 0 && (
-                                      <span className="ml-2">
-                                        ({Object.entries(rel.properties).map(([key, type]) => `${key}: ${type}`).join(", ")})
-                                      </span>
-                                    )}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                            
-                            {schema.indexes && schema.indexes.length > 0 && (
-                              <div>
-                                <h3 className="text-lg font-medium mb-2">Indexes:</h3>
-                                <ul className="list-disc pl-5 space-y-1">
-                                  {schema.indexes.map((index, i) => (
-                                    <li key={i}>{index}</li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-                            
-                            <div>
-                              <h3 className="text-lg font-medium mb-2">Justification:</h3>
-                              <p className="text-muted-foreground">
-                                This schema captures the relationships between the entities in your data 
-                                while maintaining appropriate properties and constraints for optimal graph traversal.
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ) : selectedSource ? (
-                      <div className="flex flex-col items-center justify-center py-12">
-                        <p className="text-muted-foreground">Use the chat to generate a recommended graph schema.</p>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center justify-center py-12">
-                        <p className="text-muted-foreground">Select a dataset to get started.</p>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="w-64">
+              <Label htmlFor="schema-name" className="mb-2 block">Schema Name:</Label>
+              <Input
+                id="schema-name"
+                value={kgName}
+                onChange={(e) => setKgName(e.target.value)}
+                placeholder="Enter schema name"
+                disabled={loading}
+                className="w-full"
+              />
             </div>
           </div>
+
+          <div className="flex gap-2">
+            <Button
+              className="bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-2"
+              onClick={generateSchema}
+              disabled={!selectedSource || loading}
+            >
+              <MessageSquare className="h-4 w-4" />
+              {loading ? "Generating..." : "Generate Schema"}
+            </Button>
+            
+            <Button
+              className="bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-2"
+              onClick={handleSaveSchema}
+              disabled={loading || (!schema && !selectedSource)}
+            >
+              <Save className="w-4 h-4" />
+              {loading ? "Saving..." : "Save Schema Version"}
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Left column - Chat Interface */}
+          <Card className="bg-card/80 backdrop-blur-sm border border-border">
+            <CardContent className="p-6">
+              <div className="flex flex-col gap-2 mb-4">
+                <h2 className="text-xl font-semibold">GenAI Bot</h2>
+              </div>
+              <div className="h-[600px]">
+                <SchemaChat 
+                  selectedSource={selectedSource}
+                  selectedSourceName={selectedSourceName}
+                  onSchemaGenerated={handleSchemaGenerated}
+                  loading={loading}
+                  setLoading={setLoading}
+                />
+              </div>
+            </CardContent>
+          </Card>
+          
+          {/* Right column - Schema Visualization and Details */}
+          <Card className="bg-card/80 backdrop-blur-sm border border-border">
+            <CardContent className="p-6">
+              {loading ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <LoadingSpinner />
+                  <p className="mt-4 text-muted-foreground">Generating schema...</p>
+                </div>
+              ) : schema ? (
+                <div className="space-y-6">
+                  <h2 className="text-xl font-semibold">Recommended Schema:</h2>
+                  
+                  <div className="space-y-6">
+                    {/* Graph Visualization */}
+                    <div className="border rounded-md p-4 bg-background/50">
+                      <CytoscapeGraph schema={schema} />
+                    </div>
+                    
+                    {/* Schema Details */}
+                    <div className="space-y-4">
+                      <div>
+                        <h3 className="text-lg font-medium mb-2">Nodes:</h3>
+                        <ul className="list-disc pl-5 space-y-1">
+                          {schema.nodes.map((node, index) => (
+                            <li key={index}>
+                              <span className="font-medium">{node.label}</span> 
+                              ({Object.entries(node.properties || {}).map(([key, type]) => `${key}: ${type}`).join(", ")})
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      
+                      <div>
+                        <h3 className="text-lg font-medium mb-2">Relationships:</h3>
+                        <ul className="list-disc pl-5 space-y-1">
+                          {schema.relationships.map((rel, index) => (
+                            <li key={index}>
+                              <span className="font-medium">{rel.startNode}</span> 
+                              <span className="mx-1">-[{rel.type}]-&gt;</span>
+                              <span className="font-medium">{rel.endNode}</span>
+                              {rel.properties && Object.keys(rel.properties).length > 0 && (
+                                <span className="ml-2">
+                                  ({Object.entries(rel.properties).map(([key, type]) => `${key}: ${type}`).join(", ")})
+                                </span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      
+                      {schema.indexes && schema.indexes.length > 0 && (
+                        <div>
+                          <h3 className="text-lg font-medium mb-2">Indexes:</h3>
+                          <ul className="list-disc pl-5 space-y-1">
+                            {schema.indexes.map((index, i) => (
+                              <li key={i}>{index}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      
+                      <div>
+                        <h3 className="text-lg font-medium mb-2">Justification:</h3>
+                        <p className="text-muted-foreground">
+                          This schema captures the relationships between the entities in your data 
+                          while maintaining appropriate properties and constraints for optimal graph traversal.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : selectedSource ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <p className="text-muted-foreground">Use the chat to generate a recommended graph schema.</p>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <p className="text-muted-foreground">Select a dataset to get started.</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
       </div>
-    </main>
+    </div>
   )
 }

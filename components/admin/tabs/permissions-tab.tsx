@@ -1,13 +1,23 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
-import { UserPlus } from "lucide-react"
+import { UserPlus, Edit, Trash2, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useAdminStore } from "@/lib/admin/store"
 import { EditRoleDialog } from "@/components/admin/dialogs/edit-role-dialog"
 import { AddRoleDialog } from "@/components/admin/dialogs/add-role-dialog"
-import { syncRoles, syncAvailablePermissions, saveRoleToBackend } from "@/lib/admin/sync-roles"
+import { syncRoles, syncAvailablePermissions, saveRoleToBackend, deleteRole } from "@/lib/admin/sync-roles"
 import { Role } from "@/lib/admin/store"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 export function PermissionsTab() {
   const { roles, availablePermissions, setNotification } = useAdminStore()
@@ -15,6 +25,9 @@ export function PermissionsTab() {
   const [addRoleDialog, setAddRoleDialog] = useState(false)
   const [currentRole, setCurrentRole] = useState<Role | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [roleToDelete, setRoleToDelete] = useState<Role | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   const openEditRoleDialog = (role: Role) => {
     // Create a copy of the role with properly formatted permissions
@@ -32,6 +45,29 @@ export function PermissionsTab() {
     setCurrentRole(formattedRole);
     setEditRoleDialog(true);
   }
+
+  const handleDeleteRole = async () => {
+    if (!roleToDelete || typeof roleToDelete.id !== 'number') return;
+    
+    setIsDeleting(true);
+    try {
+      const success = await deleteRole(roleToDelete.id);
+      if (success) {
+        // Success notification is handled in the deleteRole function
+        setDeleteDialogOpen(false);
+      }
+    } catch (error) {
+      console.error("Error in delete handler:", error);
+    } finally {
+      setIsDeleting(false);
+      setRoleToDelete(null);
+    }
+  };
+
+  const openDeleteDialog = (role: Role) => {
+    setRoleToDelete(role);
+    setDeleteDialogOpen(true);
+  };
 
   // Fetch roles when the component mounts
   useEffect(() => {
@@ -104,16 +140,35 @@ export function PermissionsTab() {
                         ))}
                     </div>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="border-violet-600 text-violet-600 hover:bg-violet-600/20 text-xs h-7"
-                    onClick={() => openEditRoleDialog(role)}
-                    disabled={role.is_system_role}
-                    title={role.is_system_role ? "System roles cannot be modified" : "Edit role"}
-                  >
-                    Edit Role
-                  </Button>
+                  <div className="flex gap-2">
+                    {/* Don't show edit button for admin role */}
+                    {role.name !== "admin" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-violet-600 text-violet-600 hover:bg-violet-600/20 text-xs h-7"
+                        onClick={() => openEditRoleDialog(role)}
+                        disabled={role.is_system_role}
+                        title={role.is_system_role ? "System roles cannot be modified" : "Edit role"}
+                      >
+                        <Edit className="h-3.5 w-3.5 mr-1" />
+                        Edit
+                      </Button>
+                    )}
+                    {/* Don't show delete button for admin role */}
+                    {role.name !== "admin" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-red-600 text-red-600 hover:bg-red-600/20 text-xs h-7"
+                        onClick={() => openDeleteDialog(role)}
+                        disabled={role.is_system_role}
+                        title={role.is_system_role ? "System roles cannot be deleted" : "Delete role"}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
@@ -128,6 +183,41 @@ export function PermissionsTab() {
       {currentRole && (
         <EditRoleDialog open={editRoleDialog} onOpenChange={setEditRoleDialog} role={currentRole} />
       )}
+
+      {/* Delete Role Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {roleToDelete ? (
+                <>
+                  This will permanently delete the role <strong>{roleToDelete.name}</strong>.
+                  <br />
+                  <div className="flex items-center mt-2 p-2 bg-amber-50 border border-amber-200 rounded-md text-amber-700 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-300">
+                    <AlertCircle className="h-4 w-4 mr-2 flex-shrink-0" />
+                    <span className="text-sm">
+                      If any users are assigned to this role, deletion will fail. Make sure to reassign users first.
+                    </span>
+                  </div>
+                </>
+              ) : (
+                'This will permanently delete the selected role.'
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteRole}
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+              disabled={isDeleting}
+            >
+              {isDeleting ? 'Deleting...' : 'Delete Role'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

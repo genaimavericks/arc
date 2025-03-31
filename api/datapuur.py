@@ -898,7 +898,7 @@ def process_db_ingestion_with_db(job_id, db_type, db_config, chunk_size, db):
 async def upload_file(
     file: UploadFile = File(...),
     chunkSize: int = Form(1000),
-    current_user: User = Depends(has_permission("data:upload")),  # Ensure this matches the permission in roles
+    current_user: User = Depends(has_permission("datapuur:write")),  # Updated permission
     db: Session = Depends(get_db)
 ):
     """Upload a file for data ingestion"""
@@ -1083,7 +1083,7 @@ async def get_database_schema(
 async def ingest_file(
     request: FileIngestionRequest,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(has_permission("ingestion:create")),
+    current_user: User = Depends(has_permission("datapuur:write")),  # Updated permission
     db: Session = Depends(get_db)
 ):
     """Start file ingestion job"""
@@ -1144,7 +1144,7 @@ async def ingest_file(
 async def ingest_database(
     request: DatabaseConfig,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(has_permission("ingestion:create")),
+    current_user: User = Depends(has_permission("datapuur:write")),  # Updated permission
     db: Session = Depends(get_db)
 ):
     """Start database ingestion job"""
@@ -1207,7 +1207,7 @@ async def ingest_database(
 @router.get("/job-status/{job_id}", response_model=JobStatus)
 async def get_job_status(
     job_id: str,
-    current_user: User = Depends(has_permission("ingestion:read")),
+    current_user: User = Depends(has_permission("datapuur:read")),  # Updated permission
     db: Session = Depends(get_db)
 ):
     """Get status of an ingestion job"""
@@ -1238,7 +1238,7 @@ async def get_job_status(
 @router.post("/cancel-job/{job_id}", status_code=status.HTTP_200_OK)
 async def cancel_job(
     job_id: str,
-    current_user: User = Depends(has_permission("ingestion:create")),
+    current_user: User = Depends(has_permission("datapuur:write")),  # Updated permission
     db: Session = Depends(get_db)
 ):
     """Cancel an ingestion job"""
@@ -1303,7 +1303,7 @@ async def get_ingestion_history(
     source: str = Query(""),
     status: str = Query(""),
     search: str = Query(""),
-    current_user: User = Depends(has_any_permission(["ingestion:read", "kginsights:read"])),  # Allow either permission
+    current_user: User = Depends(has_permission("datapuur:read")),  # Updated permission
     db: Session = Depends(get_db)
 ):
     """Get history of ingestion jobs with filtering and pagination"""
@@ -1408,7 +1408,7 @@ async def get_ingestion_history(
 @router.get("/ingestion-preview/{ingestion_id}", response_model=PreviewResponse)
 async def get_ingestion_preview(
     ingestion_id: str,
-    current_user: User = Depends(has_permission("ingestion:read")),
+    current_user: User = Depends(has_permission("datapuur:read")),  # Updated permission
     db: Session = Depends(get_db)
 ):
     """Get preview data for an ingestion"""
@@ -1555,9 +1555,9 @@ async def get_ingestion_preview(
                     if pd.isna(value):
                         clean_record[key] = None
                     elif isinstance(value, (np.integer, np.floating)):
-                        clean_record[key] = value.item()
+                        clean_record[key] = value.item()  # Convert NumPy scalar to Python native type
                     elif isinstance(value, np.bool_):
-                        clean_record[key] = bool(value)
+                        clean_record[key] = bool(value)  # Convert NumPy boolean to Python boolean
                     else:
                         clean_record[key] = value
                 records.append(clean_record)
@@ -1600,7 +1600,7 @@ async def get_ingestion_preview(
 @router.get("/ingestion-schema/{ingestion_id}", response_model=SchemaResponse)
 async def get_ingestion_schema(
     ingestion_id: str,
-    current_user: User = Depends(has_permission("schema:read")),
+    current_user: User = Depends(has_permission("datapuur:read")),  # Updated permission
     db: Session = Depends(get_db)
 ):
     """Get schema for an ingestion"""
@@ -1717,7 +1717,7 @@ async def get_ingestion_schema(
 @router.get("/debug-schema/{ingestion_id}")
 async def debug_schema(
     ingestion_id: str,
-    current_user: User = Depends(has_permission("schema:read")),
+    current_user: User = Depends(has_permission("datapuur:read")),  # Updated permission
     db: Session = Depends(get_db)
 ):
     """Debug endpoint to check schema data directly"""
@@ -1790,7 +1790,7 @@ async def debug_schema(
 @router.get("/ingestion-statistics/{ingestion_id}", response_model=StatisticsResponse)
 async def get_ingestion_statistics(
     ingestion_id: str,
-    current_user: User = Depends(has_permission("schema:read")),
+    current_user: User = Depends(has_permission("datapuur:read")),  # Updated permission
     db: Session = Depends(get_db)
 ):
     """Get statistics for an ingestion"""
@@ -1895,7 +1895,7 @@ async def get_ingestion_statistics(
 async def download_ingestion(
     ingestion_id: str,
     format: str = Query("csv", regex="^(csv|json|parquet)$"),
-    current_user: User = Depends(has_permission("ingestion:read")),
+    current_user: User = Depends(has_permission("datapuur:read")),  # Updated permission
     db: Session = Depends(get_db)
 ):
     """Download ingestion data in specified format"""
@@ -1966,7 +1966,7 @@ async def download_ingestion(
 # Original routes from the template - updated to use database
 @router.get("/sources", response_model=List[DataSource])
 async def get_data_sources(
-    current_user: User = Depends(has_any_permission(["data:read", "kginsights:read"])),
+    current_user: User = Depends(has_any_permission(["datapuur:read", "kginsights:read"])),
     db: Session = Depends(get_db)
 ):
     # Get real data sources from ingestion jobs
@@ -1995,7 +1995,7 @@ async def get_data_sources(
 
 @router.get("/metrics", response_model=DataMetrics)
 async def get_data_metrics(
-    current_user: User = Depends(has_permission("data:read")),
+    current_user: User = Depends(has_permission("datapuur:read")),  # Updated permission
     db: Session = Depends(get_db)
 ):
     # Calculate real metrics from ingestion jobs
@@ -2024,11 +2024,12 @@ async def get_data_metrics(
             try:
                 # Parse duration string like "0:00:05.123456"
                 duration_parts = job.duration.split(":")
-                hours = int(duration_parts[0])
-                minutes = int(duration_parts[1])
-                seconds = float(duration_parts[2])
-                job_time = hours * 3600 + minutes * 60 + seconds
-                processing_time += job_time
+                if len(duration_parts) >= 3:
+                    hours = int(duration_parts[0])
+                    minutes = int(duration_parts[1])
+                    seconds = float(duration_parts[2])
+                    job_time = hours * 3600 + minutes * 60 + seconds
+                    processing_time += job_time
             except:
                 pass
     
@@ -2059,7 +2060,7 @@ async def get_data_metrics(
 
 @router.get("/activities", response_model=List[Activity])
 async def get_activities(
-    current_user: User = Depends(has_permission("data:read")),
+    current_user: User = Depends(has_permission("datapuur:read")),  # Updated permission
     db: Session = Depends(get_db)
 ):
     # Get real activities from ingestion jobs
@@ -2092,7 +2093,7 @@ async def get_activities(
 
 @router.get("/dashboard", response_model=Dict[str, Any])
 async def get_dashboard_data(
-    current_user: User = Depends(has_permission("data:read")),
+    current_user: User = Depends(has_permission("datapuur:read")),  # Updated permission
     db: Session = Depends(get_db)
 ):
     # Get real metrics and activities
@@ -2159,7 +2160,7 @@ async def get_dashboard_data(
 async def get_file_history(
     page: int = Query(1, ge=1),
     limit: int = Query(10, ge=1, le=100),
-    current_user: User = Depends(has_permission("data:read")),
+    current_user: User = Depends(has_permission("datapuur:read")),  # Updated permission
     db: Session = Depends(get_db)
 ):
     """Get history of uploaded files"""
@@ -2218,7 +2219,7 @@ async def get_file_history(
 @router.get("/preview/{file_id}", status_code=status.HTTP_200_OK)
 async def preview_file(
     file_id: str,
-    current_user: User = Depends(has_permission("data:read")),
+    current_user: User = Depends(has_permission("datapuur:read")),  # Updated permission
     db: Session = Depends(get_db)
 ):
     """Preview a file"""
@@ -2343,7 +2344,7 @@ async def preview_file(
 @router.get("/download/{file_id}", status_code=status.HTTP_200_OK)
 async def download_file(
     file_id: str,
-    current_user: User = Depends(has_permission("data:read")),
+    current_user: User = Depends(has_permission("datapuur:read")),  # Updated permission
     db: Session = Depends(get_db)
 ):
     """Download a file"""
@@ -2391,7 +2392,7 @@ async def upload_chunk(
     chunkIndex: int = Form(...),
     totalChunks: int = Form(...),
     uploadId: str = Form(...),
-    current_user: User = Depends(has_permission("data:upload")),
+    current_user: User = Depends(has_permission("datapuur:write")),  # Updated permission
     db: Session = Depends(get_db)
 ):
     """Upload a chunk of a large file"""
@@ -2417,7 +2418,7 @@ async def upload_chunk(
 @router.post("/complete-chunked-upload", status_code=status.HTTP_200_OK)
 async def complete_chunked_upload(
     request: Request,
-    current_user: User = Depends(has_permission("data:upload")),
+    current_user: User = Depends(has_permission("datapuur:write")),  # Updated permission
     db: Session = Depends(get_db)
 ):
     """Complete a chunked upload by combining all chunks into a single file"""
@@ -2501,13 +2502,13 @@ async def complete_chunked_upload(
 @router.delete("/delete-dataset/{dataset_id}")
 def delete_dataset_endpoint(
     dataset_id: str,
-    current_user: User = Depends(has_permission("data:delete")),  # Requires delete permission
+    current_user: User = Depends(has_permission("datapuur:manage")),  # Updated permission
     db: Session = Depends(get_db)
 ):
     """
     Delete a dataset and all its associated data.
     
-    This endpoint requires the 'data:delete' permission, which should be restricted
+    This endpoint requires the 'datapuur:manage' permission, which should be restricted
     to admin and researcher roles.
     """
     # Log the activity

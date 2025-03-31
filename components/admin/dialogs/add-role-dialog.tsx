@@ -39,6 +39,7 @@ export function AddRoleDialog({ open, onOpenChange }: AddRoleDialogProps) {
     }
   }, [open]);
 
+  // Function to toggle a single permission
   const togglePermission = (permission: string) => {
     setNewRole((prev) => {
       const updatedPermissions = prev.permissions.includes(permission)
@@ -51,6 +52,41 @@ export function AddRoleDialog({ open, onOpenChange }: AddRoleDialogProps) {
       };
     });
   }
+
+  // Function to toggle all permissions in a category
+  const toggleCategory = (category: string, permissions: string[]) => {
+    setNewRole((prev) => {
+      // Check if all permissions in this category are already selected
+      const allSelected = permissions.every(permission => 
+        prev.permissions.includes(permission)
+      );
+      
+      let updatedPermissions;
+      if (allSelected) {
+        // If all are selected, unselect all in this category
+        updatedPermissions = prev.permissions.filter(
+          p => !permissions.includes(p)
+        );
+      } else {
+        // Otherwise, select all missing permissions in this category
+        const missingPermissions = permissions.filter(
+          p => !prev.permissions.includes(p)
+        );
+        updatedPermissions = [...prev.permissions, ...missingPermissions];
+      }
+      
+      return {
+        ...prev,
+        permissions: updatedPermissions
+      };
+    });
+  }
+
+  // Group permissions by category
+  const permissionCategories = {
+    "DataPuur Platform": availablePermissions.filter(p => p.startsWith("datapuur:")),
+    "Knowledge Graph Insights": availablePermissions.filter(p => p.startsWith("kginsights:"))
+  };
 
   const handleAddRole = async () => {
     if (!newRole.name) {
@@ -152,17 +188,39 @@ export function AddRoleDialog({ open, onOpenChange }: AddRoleDialogProps) {
           </div>
           <div className="space-y-2">
             <Label>Permissions</Label>
-            <div className="space-y-2 border border-border rounded-md p-4 max-h-48 overflow-y-auto">
-              {availablePermissions.map((permission) => (
-                <div key={permission} className="flex items-center space-x-2">
-                  <Checkbox
-                    id={`permission-${permission}`}
-                    checked={newRole.permissions.includes(permission)}
-                    onCheckedChange={() => togglePermission(permission)}
-                  />
-                  <Label htmlFor={`permission-${permission}`} className="font-normal cursor-pointer">
-                    {permission}
-                  </Label>
+            <div className="space-y-4 border border-border rounded-md p-4 max-h-60 overflow-y-auto">
+              {Object.entries(permissionCategories).map(([category, permissions]) => (
+                <div key={category} className="space-y-2">
+                  <div className="flex items-center space-x-2 pb-1 border-b border-border">
+                    <Checkbox
+                      id={`category-${category}`}
+                      checked={permissions.every(p => newRole.permissions.includes(p))}
+                      onCheckedChange={() => toggleCategory(category, permissions)}
+                    />
+                    <Label 
+                      htmlFor={`category-${category}`} 
+                      className="font-semibold cursor-pointer"
+                    >
+                      {category} ({permissions.length})
+                    </Label>
+                  </div>
+                  <div className="ml-6 grid grid-cols-1 md:grid-cols-2 gap-1">
+                    {permissions.map((permission) => (
+                      <div key={permission} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`permission-${permission}`}
+                          checked={newRole.permissions.includes(permission)}
+                          onCheckedChange={() => togglePermission(permission)}
+                        />
+                        <Label 
+                          htmlFor={`permission-${permission}`} 
+                          className="font-normal cursor-pointer text-sm"
+                        >
+                          {permission.split(":")[1]}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>

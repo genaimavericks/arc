@@ -1,8 +1,8 @@
 print("*******Checking if main this is getting called!")
-from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi import FastAPI, HTTPException, Depends, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
 from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.openapi.utils import get_openapi
 from sqlalchemy.orm import Session
@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import dotenv
 import datetime
+from typing import Optional
 
 # Load environment variables from .env file
 dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -23,7 +24,7 @@ from api.db_config import get_db, init_db
 from api.auth import router as auth_router, has_any_permission
 from api.datapuur import router as datapuur_router
 from api.kginsights import router as kginsights_router
-from api.kgdatainsights.data_insights_api import router as kgdatainsights_router
+from api.kgdatainsights.data_insights_api import router as kgdatainsights_router, get_query_history, get_predefined_queries
 from api.kginsights.graphschemaapi import router as graphschema_router, build_schema_from_source, SourceIdInput, SchemaResult
 from api.admin import router as admin_router
 from api.middleware import ActivityLoggerMiddleware
@@ -56,8 +57,33 @@ app.add_middleware(
 #app.add_middleware(APIDebugMiddleware)  # Add debug middleware first so it logs all requests
 app.add_middleware(ActivityLoggerMiddleware)
 
-# Include routers
+# Direct datainsights API endpoint routes with authentication - must be defined before including the router
 
+# Direct route specifically for datainsights query history
+@app.get("/api/datainsights/{source_id}/query/history", include_in_schema=True)
+async def datainsights_history_direct(
+    source_id: str, 
+    limit: int = Query(10, ge=1, le=100),
+    current_user: User = Depends(has_any_permission(["kginsights:read"]))
+):
+    """Direct route for datainsights query history with authentication"""
+    print(f"Direct route for datainsights/{source_id}/query/history called with limit={limit}")
+    result = await get_query_history(source_id=source_id, limit=limit, current_user=current_user)
+    return result
+
+# Direct route specifically for datainsights canned queries
+@app.get("/api/datainsights/{source_id}/query/canned", include_in_schema=True)
+async def datainsights_canned_direct(
+    source_id: str, 
+    category: Optional[str] = None,
+    current_user: User = Depends(has_any_permission(["kginsights:read"]))
+):
+    """Direct route for datainsights canned queries with authentication"""
+    print(f"Direct route for datainsights/{source_id}/query/canned called with category={category}")
+    result = await get_predefined_queries(source_id=source_id, category=category, current_user=current_user)
+    return result
+
+# Register routers after defining all direct routes
 app.include_router(auth_router)
 app.include_router(datapuur_router)
 app.include_router(kginsights_router, prefix="/api")
@@ -66,6 +92,27 @@ app.include_router(graphschema_router, prefix="/api")
 app.include_router(kgdatainsights_router, prefix="/api")
 
 app.include_router(admin_router)
+
+# Compatibility routes for KGInsights - directly call datainsights endpoints
+@app.get("/api/kg/insights/{source_id}/query/history")
+async def kg_insights_history_compat(
+    source_id: str, 
+    limit: int = 10,
+    current_user: User = Depends(has_any_permission(["kginsights:read"]))
+):
+    """Compatibility route for KGInsights query history - calls datainsights endpoint"""
+    # Directly call the datainsights API function instead of redirecting
+    return await get_query_history(source_id=source_id, limit=limit, current_user=current_user)
+
+@app.get("/api/kg/insights/{source_id}/query/canned")
+async def kg_insights_canned_compat(
+    source_id: str, 
+    category: Optional[str] = None,
+    current_user: User = Depends(has_any_permission(["kginsights:read"]))
+):
+    """Compatibility route for KGInsights canned queries - calls datainsights endpoint"""
+    # Directly call the datainsights API function instead of redirecting
+    return await get_predefined_queries(source_id=source_id, category=category, current_user=current_user)
 
 # Custom OpenAPI and Swagger UI endpoints
 @app.get("/api/docs", include_in_schema=False)

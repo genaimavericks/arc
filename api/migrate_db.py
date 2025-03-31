@@ -1,6 +1,8 @@
 from sqlalchemy.orm import Session
 from api.models import Role, User
-from api.db_config import SessionLocal
+from api.db_config import SessionLocal, engine, get_db
+import json
+from api.auth import AVAILABLE_PERMISSIONS
 
 def migrate_database():
     """
@@ -16,15 +18,64 @@ def migrate_database():
 
 def setup_default_role_permissions(db: Session):
     """
-    Set up default roles and their permissions.
-    This function is called from the auth.py startup_event function.
+    Ensure all roles have properly formatted permissions in the description field.
+    This migrates old roles to the new format if needed.
     """
-    # Get roles
-    admin_role = db.query(Role).filter(Role.name == "admin").first()
-    user_role = db.query(Role).filter(Role.name == "user").first()
-    researcher_role = db.query(Role).filter(Role.name == "researcher").first()
+    roles = db.query(Role).all()
     
-    if admin_role and user_role and researcher_role:
-        print(f"Updated role permissions. Admin ID: {admin_role.id}, User ID: {user_role.id}, Researcher ID: {researcher_role.id}")
-    else:
-        print("Warning: Not all default roles found in the database")
+    for role in roles:
+        try:
+            # Try to parse existing description as JSON
+            if role.description and role.description.startswith('{'):
+                description_data = json.loads(role.description)
+                # If already in JSON format with permissions, continue
+                if "permissions" in description_data:
+                    print(f"Role {role.name} already has proper JSON format")
+                    continue
+            
+            # If we get here, role description is not in JSON format or doesn't have permissions
+            # Create a new JSON format with any existing permissions and description
+            
+            # Start with empty permissions
+            permissions = []
+            
+            # If this is a system role, assign default permissions
+            if role.name == "admin":
+                # Admin has all permissions
+                permissions = AVAILABLE_PERMISSIONS
+            elif role.name == "user":
+                # Regular users have read access
+                permissions = ["datapuur:read"]
+            elif role.name == "researcher":
+                # Researchers have data access
+                permissions = ["datapuur:read", "datapuur:write", "kginsights:read"]
+            elif role.name == "superhero":
+                # Give superhero role access to everything except admin tasks
+                permissions = [p for p in AVAILABLE_PERMISSIONS if not p.startswith(("user:", "role:"))]
+            
+            # Store current description as text if it exists and isn't already JSON
+            original_description = ""
+            if role.description and not role.description.startswith('{'):
+                original_description = role.description
+            
+            # Create new JSON description
+            new_description = json.dumps({
+                "text": original_description,
+                "permissions": permissions
+            })
+            
+            # Update the role
+            role.description = new_description
+            db.commit()
+            
+            print(f"Updated role {role.name} with proper JSON format and permissions: {permissions}")
+        
+        except Exception as e:
+            print(f"Error updating role {role.name}: {str(e)}")
+            db.rollback()
+
+if __name__ == "__main__":
+    # Run this script directly to migrate all roles
+    db = next(get_db())
+    setup_default_role_permissions(db)
+    print("Migration complete")
