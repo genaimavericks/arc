@@ -7,6 +7,8 @@ import json
 import os
 from .agent.insights_data_agent import get_kg_answer, init_graph
 from .visualization_analyzer import analyze_data_for_visualization, GraphData
+from ..models import User
+from ..auth import has_any_permission
 
 router = APIRouter(prefix="/datainsights", tags=["Data Insights"])
 
@@ -83,7 +85,11 @@ async def get_status():
 
 
 @router.post("/{source_id}/visualize", response_model=GraphData)
-async def analyze_data_visualization(source_id: str, data: Dict[str, Any]):
+async def analyze_data_visualization(
+    source_id: str, 
+    data: Dict[str, Any],
+    current_user: User = Depends(has_any_permission(["kginsights:read"]))
+):
     """
     Analyze data and suggest appropriate visualization.
     
@@ -115,7 +121,11 @@ async def analyze_data_visualization(source_id: str, data: Dict[str, Any]):
 
 
 @router.post("/{source_id}/query", response_model=QueryResponse)
-async def process_query(source_id: str, request: QueryRequest):
+async def process_query(
+    source_id: str, 
+    request: QueryRequest,
+    current_user: User = Depends(has_any_permission(["kginsights:read"]))
+):
     """
     Process a query against the knowledge graph and record it in the query history.
     
@@ -237,7 +247,11 @@ async def record_query_history(source_id: str, response: QueryResponse):
         print(f"Error saving query history: {str(e)}")
 
 @router.get("/{source_id}/query/history", response_model=QueryHistoryResponse)
-async def get_query_history(source_id: str, limit: int = Query(10, ge=1, le=100)):
+async def get_query_history(
+    source_id: str, 
+    limit: int = Query(10, ge=1, le=100),
+    current_user: User = Depends(has_any_permission(["kginsights:read"]))
+):
     """
     Get the query history for a specific source_id.
     
@@ -279,7 +293,11 @@ async def get_query_history(source_id: str, limit: int = Query(10, ge=1, le=100)
         raise HTTPException(status_code=500, detail=f"Error retrieving query history: {str(e)}")
 
 @router.get("/{source_id}/query/canned", response_model=PredefinedQueriesResponse)
-async def get_predefined_queries(source_id: str, category: Optional[str] = None):
+async def get_predefined_queries(
+    source_id: str, 
+    category: Optional[str] = None,
+    current_user: User = Depends(has_any_permission(["kginsights:read"]))
+):
     """
     Get a list of predefined (canned) queries for a specific source_id.
     

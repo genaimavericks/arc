@@ -47,12 +47,29 @@ class Role(Base):
     
     def get_permissions(self):
         """Get the list of permissions for this role"""
-        if not self.permissions:
-            return []
-        try:
-            return json.loads(self.permissions)
-        except json.JSONDecodeError:
-            return []
+        # First try to get permissions from the permissions field
+        if self.permissions:
+            try:
+                return json.loads(self.permissions)
+            except json.JSONDecodeError:
+                pass  # Fall back to checking description
+                
+        # If no permissions in the permissions field or it couldn't be parsed,
+        # try to get permissions from the description field (for backward compatibility)
+        if self.description:
+            try:
+                # Try to parse as JSON
+                if self.description.strip() and (self.description.strip()[0] == '{' or self.description.strip()[0] == '['):
+                    description_data = json.loads(self.description)
+                    if isinstance(description_data, dict) and "permissions" in description_data:
+                        return description_data.get("permissions", [])
+                    elif isinstance(description_data, list):
+                        return description_data
+            except (json.JSONDecodeError, TypeError):
+                pass  # Ignore parsing errors
+                
+        # If we reach here, no permissions were found
+        return []
     
     def has_permission(self, permission):
         """Check if this role has a specific permission"""

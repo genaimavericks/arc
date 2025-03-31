@@ -9,11 +9,10 @@ import LoadingSpinner from "@/components/loading-spinner"
 
 interface ProtectedRouteProps {
   children: React.ReactNode
-  requiredRole?: string
   requiredPermission?: string
 }
 
-export default function ProtectedRoute({ children, requiredRole, requiredPermission }: ProtectedRouteProps) {
+export default function ProtectedRoute({ children, requiredPermission }: ProtectedRouteProps) {
   const { user, isLoading } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
@@ -32,20 +31,7 @@ export default function ProtectedRoute({ children, requiredRole, requiredPermiss
         router.push(`/login?redirect=${encodeURIComponent(pathname)}`)
       }
     } else if (!isLoading && user) {
-      // Admin has access to everything
-      if (user.role === "admin") {
-        return; // Admin has access to everything, no need to redirect
-      }
-      
-      // Check role-based permissions
-      if (requiredRole && 
-          (requiredRole === "admin" && user.role !== "admin") ||
-          (requiredRole === "researcher" && !["admin", "researcher"].includes(user.role))) {
-        // Redirect to home if not authorized by role
-        router.push("/")
-      }
-      
-      // Check permission-based access
+      // Check permission-based access if a specific permission is required
       if (requiredPermission && user.permissions) {
         // If the user doesn't have the required permission, redirect
         if (!user.permissions.includes(requiredPermission)) {
@@ -53,7 +39,7 @@ export default function ProtectedRoute({ children, requiredRole, requiredPermiss
         }
       }
     }
-  }, [user, isLoading, router, pathname, requiredRole, requiredPermission])
+  }, [user, isLoading, router, pathname, requiredPermission])
 
   // Show loading state
   if (isLoading) {
@@ -67,19 +53,6 @@ export default function ProtectedRoute({ children, requiredRole, requiredPermiss
   // If not authenticated, don't render children
   if (!user) {
     return null
-  }
-
-  // Admin can access everything
-  if (user.role === "admin") {
-    return <>{children}</>
-  }
-
-  // Check role-based access
-  if (requiredRole) {
-    if ((requiredRole === "admin" && user.role !== "admin") ||
-        (requiredRole === "researcher" && !["admin", "researcher"].includes(user.role))) {
-      return null
-    }
   }
 
   // Check permission-based access

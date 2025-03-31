@@ -65,21 +65,21 @@ export async function syncRoles() {
         id: 1,
         name: "admin",
         description: "Administrator with full access",
-        permissions: ["data:read", "data:write", "user:read", "user:write", "role:read", "role:write"],
+        permissions: ["datapuur:read", "datapuur:write", "datapuur:manage", "user:read", "user:create", "user:update", "user:delete", "role:read", "role:create", "role:update", "role:delete", "kginsights:read", "kginsights:write", "kginsights:manage"],
         is_system_role: true
       },
       {
         id: 2,
         name: "user",
         description: "Regular user with limited access",
-        permissions: ["data:read"],
+        permissions: ["datapuur:read"],
         is_system_role: true
       },
       {
         id: 3,
         name: "researcher",
         description: "Researcher with data access",
-        permissions: ["data:read", "data:write", "schema:read", "ingestion:read"],
+        permissions: ["datapuur:read", "datapuur:write", "kginsights:read"],
         is_system_role: true
       },
     ]
@@ -109,12 +109,19 @@ export async function syncAvailablePermissions() {
       console.warn(`Failed to fetch permissions: ${response.statusText}. Using default permissions.`)
       // Use default permissions if the API call fails
       const defaultPermissions = [
-        "data:read", "data:write", "data:delete", "data:upload",
-        "ingestion:create", "ingestion:read", "ingestion:update", "ingestion:delete",
-        "schema:read", "schema:write",
+        // DataPuur permissions
+        "datapuur:read", "datapuur:write", "datapuur:manage",
+        
+        // Database permissions
         "database:connect", "database:read", "database:write",
+        
+        // User management permissions
         "user:read", "user:create", "user:update", "user:delete",
-        "role:read", "role:write", "role:create", "role:delete",
+        
+        // Role management permissions
+        "role:read", "role:create", "role:update", "role:delete",
+        
+        // KGInsights permissions
         "kginsights:read", "kginsights:write", "kginsights:manage"
       ]
       
@@ -136,12 +143,19 @@ export async function syncAvailablePermissions() {
     
     // If the API call fails, use default permissions
     const defaultPermissions = [
-      "data:read", "data:write", "data:delete", "data:upload",
-      "ingestion:create", "ingestion:read", "ingestion:update", "ingestion:delete",
-      "schema:read", "schema:write",
+      // DataPuur permissions
+      "datapuur:read", "datapuur:write", "datapuur:manage",
+      
+      // Database permissions
       "database:connect", "database:read", "database:write",
+      
+      // User management permissions
       "user:read", "user:create", "user:update", "user:delete",
-      "role:read", "role:write", "role:create", "role:delete",
+      
+      // Role management permissions
+      "role:read", "role:create", "role:update", "role:delete",
+      
+      // KGInsights permissions
       "kginsights:read", "kginsights:write", "kginsights:manage"
     ]
     
@@ -194,10 +208,61 @@ export async function saveRoleToBackend(role: Role) {
 
     const savedRole = await response.json()
     console.log(`Role saved successfully: ${JSON.stringify(savedRole)}`)
-
-    return savedRole
+    
+    // Ensure the returned role has the permissions properly formatted for the frontend
+    return {
+      ...savedRole,
+      permissions: savedRole.permissions || savedRole.permissions_list || [],
+      permissions_list: savedRole.permissions_list || savedRole.permissions || []
+    }
   } catch (error) {
     console.error("Error saving role:", error)
     throw error
+  }
+}
+
+/**
+ * Deletes a role from the backend
+ * @param roleId The ID of the role to delete
+ * @returns True if deletion was successful
+ */
+export async function deleteRole(roleId: number) {
+  try {
+    const apiUrl = getApiBaseUrl()
+    const token = localStorage.getItem("token")
+    const headers = {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    }
+
+    // Delete role from the backend
+    const response = await fetch(`${apiUrl}/api/admin/roles/${roleId}`, { 
+      method: 'DELETE',
+      headers 
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.detail || `Failed to delete role: ${response.statusText}`)
+    }
+
+    // Update the store
+    const { roles, setRoles, setNotification } = useAdminStore.getState()
+    setRoles(roles.filter(r => r.id !== roleId))
+    setNotification({
+      type: "success",
+      message: "Role deleted successfully",
+    })
+
+    return true
+  } catch (error: any) {
+    console.error("Error deleting role:", error)
+    const { setNotification } = useAdminStore.getState()
+    setNotification({
+      type: "error",
+      message: error.message || "Failed to delete role",
+    })
+    return false
   }
 }

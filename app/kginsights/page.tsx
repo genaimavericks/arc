@@ -6,13 +6,13 @@ import KGInsightsSidebar from "@/components/kginsights-sidebar"
 import { BarChart, Settings } from "lucide-react"
 import { motion } from "framer-motion"
 import { useRouter } from "next/navigation"
-import ProtectedRoute from "@/components/protected-route"
+import { KGInsightsLayout } from "@/components/kginsights/kginsights-layout"
 
 export default function KGInsightsPage() {
   return (
-    <ProtectedRoute requiredPermission="kginsights:read">
+    <KGInsightsLayout>
       <KGInsightsContent />
-    </ProtectedRoute>
+    </KGInsightsLayout>
   )
 }
 
