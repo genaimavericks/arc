@@ -44,7 +44,7 @@ export default function DataPuurSidebar() {
               )}
             >
               <BarChart2 className="h-4 w-4" />
-              <span>Profile</span>
+              <span> Data Profile</span>
             </Link>
             <Link
               href="/datapuur/transformation"
