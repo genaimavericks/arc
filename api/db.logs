@@ -4282,3 +4282,880 @@ WHERE ingestion_jobs.status = ?
 2025-03-30 22:32:57,833 - [SQL Time] 0.005s
 
 2025-03-30 22:32:57,860 - ROLLBACK
+2025-03-31 09:51:20,548 - BEGIN (implicit)
+2025-03-31 09:51:20,549 - [SQL Query] PRAGMA main.table_info("users")
+2025-03-31 09:51:20,549 - [SQL Parameters] ()
+2025-03-31 09:51:20,549 - PRAGMA main.table_info("users")
+2025-03-31 09:51:20,549 - [raw sql] ()
+2025-03-31 09:51:20,556 - [SQL Time] 0.007s
+
+2025-03-31 09:51:20,558 - [SQL Query] PRAGMA main.table_info("roles")
+2025-03-31 09:51:20,558 - [SQL Parameters] ()
+2025-03-31 09:51:20,558 - PRAGMA main.table_info("roles")
+2025-03-31 09:51:20,558 - [raw sql] ()
+2025-03-31 09:51:20,560 - [SQL Time] 0.001s
+
+2025-03-31 09:51:20,560 - [SQL Query] PRAGMA main.table_info("activity_logs")
+2025-03-31 09:51:20,560 - [SQL Parameters] ()
+2025-03-31 09:51:20,560 - PRAGMA main.table_info("activity_logs")
+2025-03-31 09:51:20,560 - [raw sql] ()
+2025-03-31 09:51:20,560 - [SQL Time] 0.000s
+
+2025-03-31 09:51:20,562 - [SQL Query] PRAGMA main.table_info("uploaded_files")
+2025-03-31 09:51:20,562 - [SQL Parameters] ()
+2025-03-31 09:51:20,562 - PRAGMA main.table_info("uploaded_files")
+2025-03-31 09:51:20,562 - [raw sql] ()
+2025-03-31 09:51:20,562 - [SQL Time] 0.001s
+
+2025-03-31 09:51:20,563 - [SQL Query] PRAGMA main.table_info("ingestion_jobs")
+2025-03-31 09:51:20,563 - [SQL Parameters] ()
+2025-03-31 09:51:20,564 - PRAGMA main.table_info("ingestion_jobs")
+2025-03-31 09:51:20,564 - [raw sql] ()
+2025-03-31 09:51:20,564 - [SQL Time] 0.001s
+
+2025-03-31 09:51:20,565 - [SQL Query] PRAGMA main.table_info("schemas")
+2025-03-31 09:51:20,565 - [SQL Parameters] ()
+2025-03-31 09:51:20,565 - PRAGMA main.table_info("schemas")
+2025-03-31 09:51:20,565 - [raw sql] ()
+2025-03-31 09:51:20,565 - [SQL Time] 0.000s
+
+2025-03-31 09:51:20,567 - COMMIT
+2025-03-31 09:51:21,144 - BEGIN (implicit)
+2025-03-31 09:51:21,156 - [SQL Query] SELECT roles.id AS roles_id, roles.name AS roles_name, roles.description AS roles_description, roles.permissions AS roles_permissions, roles.is_system_role AS roles_is_system_role, roles.created_at AS roles_created_at, roles.updated_at AS roles_updated_at 
+FROM roles 
+WHERE roles.name = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:51:21,158 - [SQL Parameters] ('admin', 1, 0)
+2025-03-31 09:51:21,158 - SELECT roles.id AS roles_id, roles.name AS roles_name, roles.description AS roles_description, roles.permissions AS roles_permissions, roles.is_system_role AS roles_is_system_role, roles.created_at AS roles_created_at, roles.updated_at AS roles_updated_at 
+FROM roles 
+WHERE roles.name = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:51:21,158 - [generated in 0.00283s] ('admin', 1, 0)
+2025-03-31 09:51:21,160 - [SQL Time] 0.004s
+
+2025-03-31 09:51:21,162 - [SQL Query] SELECT roles.id AS roles_id, roles.name AS roles_name, roles.description AS roles_description, roles.permissions AS roles_permissions, roles.is_system_role AS roles_is_system_role, roles.created_at AS roles_created_at, roles.updated_at AS roles_updated_at 
+FROM roles 
+WHERE roles.name = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:51:21,162 - [SQL Parameters] ('user', 1, 0)
+2025-03-31 09:51:21,162 - SELECT roles.id AS roles_id, roles.name AS roles_name, roles.description AS roles_description, roles.permissions AS roles_permissions, roles.is_system_role AS roles_is_system_role, roles.created_at AS roles_created_at, roles.updated_at AS roles_updated_at 
+FROM roles 
+WHERE roles.name = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:51:21,162 - [cached since 0.006852s ago] ('user', 1, 0)
+2025-03-31 09:51:21,163 - [SQL Time] 0.001s
+
+2025-03-31 09:51:21,164 - [SQL Query] SELECT roles.id AS roles_id, roles.name AS roles_name, roles.description AS roles_description, roles.permissions AS roles_permissions, roles.is_system_role AS roles_is_system_role, roles.created_at AS roles_created_at, roles.updated_at AS roles_updated_at 
+FROM roles 
+WHERE roles.name = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:51:21,164 - [SQL Parameters] ('researcher', 1, 0)
+2025-03-31 09:51:21,164 - SELECT roles.id AS roles_id, roles.name AS roles_name, roles.description AS roles_description, roles.permissions AS roles_permissions, roles.is_system_role AS roles_is_system_role, roles.created_at AS roles_created_at, roles.updated_at AS roles_updated_at 
+FROM roles 
+WHERE roles.name = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:51:21,164 - [cached since 0.009185s ago] ('researcher', 1, 0)
+2025-03-31 09:51:21,165 - [SQL Time] 0.001s
+
+2025-03-31 09:51:21,166 - [SQL Query] SELECT roles.id AS roles_id, roles.name AS roles_name, roles.description AS roles_description, roles.permissions AS roles_permissions, roles.is_system_role AS roles_is_system_role, roles.created_at AS roles_created_at, roles.updated_at AS roles_updated_at 
+FROM roles
+2025-03-31 09:51:21,166 - [SQL Parameters] ()
+2025-03-31 09:51:21,166 - SELECT roles.id AS roles_id, roles.name AS roles_name, roles.description AS roles_description, roles.permissions AS roles_permissions, roles.is_system_role AS roles_is_system_role, roles.created_at AS roles_created_at, roles.updated_at AS roles_updated_at 
+FROM roles
+2025-03-31 09:51:21,168 - [generated in 0.00063s] ()
+2025-03-31 09:51:21,168 - [SQL Time] 0.002s
+
+2025-03-31 09:51:21,175 - [SQL Query] SELECT roles.id AS roles_id, roles.name AS roles_name, roles.description AS roles_description, roles.permissions AS roles_permissions, roles.is_system_role AS roles_is_system_role, roles.created_at AS roles_created_at, roles.updated_at AS roles_updated_at 
+FROM roles 
+WHERE roles.name IN (?, ?, ?) AND (roles.id NOT IN (?, ?, ?))
+2025-03-31 09:51:21,175 - [SQL Parameters] ('admin', 'user', 'researcher', 2, 4, 1)
+2025-03-31 09:51:21,175 - SELECT roles.id AS roles_id, roles.name AS roles_name, roles.description AS roles_description, roles.permissions AS roles_permissions, roles.is_system_role AS roles_is_system_role, roles.created_at AS roles_created_at, roles.updated_at AS roles_updated_at 
+FROM roles 
+WHERE roles.name IN (?, ?, ?) AND (roles.id NOT IN (?, ?, ?))
+2025-03-31 09:51:21,175 - [generated in 0.00106s] ('admin', 'user', 'researcher', 2, 4, 1)
+2025-03-31 09:51:21,176 - [SQL Time] 0.001s
+
+2025-03-31 09:51:21,182 - [SQL Query] UPDATE roles SET updated_at=? WHERE roles.id = ?
+2025-03-31 09:51:21,184 - [SQL Parameters] [('2025-03-31 04:21:21.165945', 1), ('2025-03-31 04:21:21.161408', 2), ('2025-03-31 04:21:21.163950', 4)]
+2025-03-31 09:51:21,184 - UPDATE roles SET updated_at=? WHERE roles.id = ?
+2025-03-31 09:51:21,187 - [generated in 0.00396s] [('2025-03-31 04:21:21.165945', 1), ('2025-03-31 04:21:21.161408', 2), ('2025-03-31 04:21:21.163950', 4)]
+2025-03-31 09:51:21,191 - [SQL Time] 0.008s
+
+2025-03-31 09:51:21,193 - COMMIT
+2025-03-31 09:51:21,205 - BEGIN (implicit)
+2025-03-31 09:51:21,210 - [SQL Query] SELECT roles.id AS roles_id, roles.name AS roles_name, roles.description AS roles_description, roles.permissions AS roles_permissions, roles.is_system_role AS roles_is_system_role, roles.created_at AS roles_created_at, roles.updated_at AS roles_updated_at 
+FROM roles 
+WHERE roles.id = ?
+2025-03-31 09:51:21,210 - [SQL Parameters] (2,)
+2025-03-31 09:51:21,211 - SELECT roles.id AS roles_id, roles.name AS roles_name, roles.description AS roles_description, roles.permissions AS roles_permissions, roles.is_system_role AS roles_is_system_role, roles.created_at AS roles_created_at, roles.updated_at AS roles_updated_at 
+FROM roles 
+WHERE roles.id = ?
+2025-03-31 09:51:21,211 - [generated in 0.00084s] (2,)
+2025-03-31 09:51:21,211 - [SQL Time] 0.001s
+
+2025-03-31 09:51:21,213 - [SQL Query] SELECT roles.id AS roles_id, roles.name AS roles_name, roles.description AS roles_description, roles.permissions AS roles_permissions, roles.is_system_role AS roles_is_system_role, roles.created_at AS roles_created_at, roles.updated_at AS roles_updated_at 
+FROM roles 
+WHERE roles.id = ?
+2025-03-31 09:51:21,213 - [SQL Parameters] (4,)
+2025-03-31 09:51:21,213 - SELECT roles.id AS roles_id, roles.name AS roles_name, roles.description AS roles_description, roles.permissions AS roles_permissions, roles.is_system_role AS roles_is_system_role, roles.created_at AS roles_created_at, roles.updated_at AS roles_updated_at 
+FROM roles 
+WHERE roles.id = ?
+2025-03-31 09:51:21,213 - [cached since 0.003685s ago] (4,)
+2025-03-31 09:51:21,214 - [SQL Time] 0.001s
+
+2025-03-31 09:51:21,216 - [SQL Query] SELECT roles.id AS roles_id, roles.name AS roles_name, roles.description AS roles_description, roles.permissions AS roles_permissions, roles.is_system_role AS roles_is_system_role, roles.created_at AS roles_created_at, roles.updated_at AS roles_updated_at 
+FROM roles 
+WHERE roles.id = ?
+2025-03-31 09:51:21,216 - [SQL Parameters] (1,)
+2025-03-31 09:51:21,216 - SELECT roles.id AS roles_id, roles.name AS roles_name, roles.description AS roles_description, roles.permissions AS roles_permissions, roles.is_system_role AS roles_is_system_role, roles.created_at AS roles_created_at, roles.updated_at AS roles_updated_at 
+FROM roles 
+WHERE roles.id = ?
+2025-03-31 09:51:21,216 - [cached since 0.006128s ago] (1,)
+2025-03-31 09:51:21,217 - [SQL Time] 0.001s
+
+2025-03-31 09:51:21,218 - ROLLBACK
+2025-03-31 09:51:42,792 - BEGIN (implicit)
+2025-03-31 09:51:42,792 - [SQL Query] PRAGMA main.table_info("users")
+2025-03-31 09:51:42,792 - [SQL Parameters] ()
+2025-03-31 09:51:42,792 - PRAGMA main.table_info("users")
+2025-03-31 09:51:42,792 - [raw sql] ()
+2025-03-31 09:51:42,793 - [SQL Time] 0.001s
+
+2025-03-31 09:51:42,794 - [SQL Query] PRAGMA main.table_info("roles")
+2025-03-31 09:51:42,794 - [SQL Parameters] ()
+2025-03-31 09:51:42,794 - PRAGMA main.table_info("roles")
+2025-03-31 09:51:42,794 - [raw sql] ()
+2025-03-31 09:51:42,794 - [SQL Time] 0.000s
+
+2025-03-31 09:51:42,795 - [SQL Query] PRAGMA main.table_info("activity_logs")
+2025-03-31 09:51:42,795 - [SQL Parameters] ()
+2025-03-31 09:51:42,795 - PRAGMA main.table_info("activity_logs")
+2025-03-31 09:51:42,795 - [raw sql] ()
+2025-03-31 09:51:42,795 - [SQL Time] 0.001s
+
+2025-03-31 09:51:42,796 - [SQL Query] PRAGMA main.table_info("uploaded_files")
+2025-03-31 09:51:42,796 - [SQL Parameters] ()
+2025-03-31 09:51:42,796 - PRAGMA main.table_info("uploaded_files")
+2025-03-31 09:51:42,796 - [raw sql] ()
+2025-03-31 09:51:42,796 - [SQL Time] 0.000s
+
+2025-03-31 09:51:42,796 - [SQL Query] PRAGMA main.table_info("ingestion_jobs")
+2025-03-31 09:51:42,796 - [SQL Parameters] ()
+2025-03-31 09:51:42,797 - PRAGMA main.table_info("ingestion_jobs")
+2025-03-31 09:51:42,797 - [raw sql] ()
+2025-03-31 09:51:42,797 - [SQL Time] 0.001s
+
+2025-03-31 09:51:42,797 - [SQL Query] PRAGMA main.table_info("schemas")
+2025-03-31 09:51:42,797 - [SQL Parameters] ()
+2025-03-31 09:51:42,797 - PRAGMA main.table_info("schemas")
+2025-03-31 09:51:42,797 - [raw sql] ()
+2025-03-31 09:51:42,798 - [SQL Time] 0.001s
+
+2025-03-31 09:51:42,798 - COMMIT
+2025-03-31 09:51:42,799 - BEGIN (implicit)
+2025-03-31 09:51:42,802 - [SQL Query] SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:51:42,802 - [SQL Parameters] ('admin', 1, 0)
+2025-03-31 09:51:42,802 - SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:51:42,802 - [generated in 0.00070s] ('admin', 1, 0)
+2025-03-31 09:51:42,803 - [SQL Time] 0.001s
+
+2025-03-31 09:51:42,804 - [SQL Query] SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:51:42,804 - [SQL Parameters] ('researcher', 1, 0)
+2025-03-31 09:51:42,804 - SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:51:42,804 - [cached since 0.002804s ago] ('researcher', 1, 0)
+2025-03-31 09:51:42,805 - [SQL Time] 0.001s
+
+2025-03-31 09:51:42,806 - [SQL Query] SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:51:42,806 - [SQL Parameters] ('user', 1, 0)
+2025-03-31 09:51:42,806 - SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:51:42,806 - [cached since 0.004385s ago] ('user', 1, 0)
+2025-03-31 09:51:42,806 - [SQL Time] 0.000s
+
+2025-03-31 09:51:42,809 - [SQL Query] SELECT roles.id AS roles_id, roles.name AS roles_name, roles.description AS roles_description, roles.permissions AS roles_permissions, roles.is_system_role AS roles_is_system_role, roles.created_at AS roles_created_at, roles.updated_at AS roles_updated_at 
+FROM roles 
+WHERE roles.name = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:51:42,810 - [SQL Parameters] ('admin', 1, 0)
+2025-03-31 09:51:42,810 - SELECT roles.id AS roles_id, roles.name AS roles_name, roles.description AS roles_description, roles.permissions AS roles_permissions, roles.is_system_role AS roles_is_system_role, roles.created_at AS roles_created_at, roles.updated_at AS roles_updated_at 
+FROM roles 
+WHERE roles.name = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:51:42,810 - [cached since 21.65s ago] ('admin', 1, 0)
+2025-03-31 09:51:42,811 - [SQL Time] 0.001s
+
+2025-03-31 09:51:42,812 - [SQL Query] SELECT roles.id AS roles_id, roles.name AS roles_name, roles.description AS roles_description, roles.permissions AS roles_permissions, roles.is_system_role AS roles_is_system_role, roles.created_at AS roles_created_at, roles.updated_at AS roles_updated_at 
+FROM roles 
+WHERE roles.name = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:51:42,813 - [SQL Parameters] ('user', 1, 0)
+2025-03-31 09:51:42,814 - SELECT roles.id AS roles_id, roles.name AS roles_name, roles.description AS roles_description, roles.permissions AS roles_permissions, roles.is_system_role AS roles_is_system_role, roles.created_at AS roles_created_at, roles.updated_at AS roles_updated_at 
+FROM roles 
+WHERE roles.name = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:51:42,815 - [cached since 21.66s ago] ('user', 1, 0)
+2025-03-31 09:51:42,815 - [SQL Time] 0.003s
+
+2025-03-31 09:51:42,819 - [SQL Query] SELECT roles.id AS roles_id, roles.name AS roles_name, roles.description AS roles_description, roles.permissions AS roles_permissions, roles.is_system_role AS roles_is_system_role, roles.created_at AS roles_created_at, roles.updated_at AS roles_updated_at 
+FROM roles 
+WHERE roles.name = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:51:42,819 - [SQL Parameters] ('researcher', 1, 0)
+2025-03-31 09:51:42,819 - SELECT roles.id AS roles_id, roles.name AS roles_name, roles.description AS roles_description, roles.permissions AS roles_permissions, roles.is_system_role AS roles_is_system_role, roles.created_at AS roles_created_at, roles.updated_at AS roles_updated_at 
+FROM roles 
+WHERE roles.name = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:51:42,822 - [cached since 21.66s ago] ('researcher', 1, 0)
+2025-03-31 09:51:42,824 - [SQL Time] 0.005s
+
+2025-03-31 09:51:48,518 - BEGIN (implicit)
+2025-03-31 09:51:48,522 - [SQL Query] INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:51:48,522 - [SQL Parameters] ('anonymous', 'Page visit', 'Visited /', '2025-03-31 09:51:48.513073', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/')
+2025-03-31 09:51:48,522 - INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:51:48,522 - [generated in 0.00076s] ('anonymous', 'Page visit', 'Visited /', '2025-03-31 09:51:48.513073', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/')
+2025-03-31 09:51:48,525 - [SQL Time] 0.003s
+
+2025-03-31 09:51:48,525 - COMMIT
+2025-03-31 09:51:48,534 - BEGIN (implicit)
+2025-03-31 09:51:48,541 - [SQL Query] SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:51:48,541 - [SQL Parameters] (4321,)
+2025-03-31 09:51:48,541 - SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:51:48,541 - [generated in 0.00178s] (4321,)
+2025-03-31 09:51:48,542 - [SQL Time] 0.003s
+
+2025-03-31 09:51:50,560 - BEGIN (implicit)
+2025-03-31 09:51:50,593 - [SQL Query] INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:51:50,594 - [SQL Parameters] ('anonymous', 'Page visit', 'Visited /admin.txt', '2025-03-31 09:51:50.557251', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/admin.txt')
+2025-03-31 09:51:50,595 - INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:51:50,667 - [cached since 2.146s ago] ('anonymous', 'Page visit', 'Visited /admin.txt', '2025-03-31 09:51:50.557251', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/admin.txt')
+2025-03-31 09:51:50,730 - [SQL Time] 0.137s
+
+2025-03-31 09:51:50,734 - COMMIT
+2025-03-31 09:51:50,779 - BEGIN (implicit)
+2025-03-31 09:51:50,800 - [SQL Query] SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:51:50,815 - [SQL Parameters] (4322,)
+2025-03-31 09:51:50,816 - SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:51:50,817 - [cached since 2.277s ago] (4322,)
+2025-03-31 09:51:50,818 - [SQL Time] 0.019s
+
+2025-03-31 09:51:51,051 - BEGIN (implicit)
+2025-03-31 09:51:51,065 - [SQL Query] INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:51:51,065 - [SQL Parameters] ('anonymous', 'Page visit', 'Visited /kginsights/dashboard.txt', '2025-03-31 09:51:51.046542', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/kginsights/dashboard.txt')
+2025-03-31 09:51:51,066 - INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:51:51,066 - [cached since 2.544s ago] ('anonymous', 'Page visit', 'Visited /kginsights/dashboard.txt', '2025-03-31 09:51:51.046542', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/kginsights/dashboard.txt')
+2025-03-31 09:51:51,104 - [SQL Time] 0.039s
+
+2025-03-31 09:51:51,104 - COMMIT
+2025-03-31 09:51:51,149 - BEGIN (implicit)
+2025-03-31 09:51:51,151 - [SQL Query] SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:51:51,151 - [SQL Parameters] (4323,)
+2025-03-31 09:51:51,151 - SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:51:51,151 - [cached since 2.612s ago] (4323,)
+2025-03-31 09:51:51,164 - [SQL Time] 0.013s
+
+2025-03-31 09:51:51,256 - BEGIN (implicit)
+2025-03-31 09:51:51,296 - [SQL Query] INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:51:51,297 - [SQL Parameters] ('anonymous', 'Page visit', 'Visited /datapuur.txt', '2025-03-31 09:51:51.214106', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/datapuur.txt')
+2025-03-31 09:51:51,297 - INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:51:51,317 - [cached since 2.795s ago] ('anonymous', 'Page visit', 'Visited /datapuur.txt', '2025-03-31 09:51:51.214106', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/datapuur.txt')
+2025-03-31 09:51:51,347 - [SQL Time] 0.080s
+
+2025-03-31 09:51:51,381 - COMMIT
+2025-03-31 09:51:51,433 - BEGIN (implicit)
+2025-03-31 09:51:51,434 - [SQL Query] SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:51:51,464 - [SQL Parameters] (4324,)
+2025-03-31 09:51:51,464 - SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:51:51,465 - [cached since 2.924s ago] (4324,)
+2025-03-31 09:51:51,483 - [SQL Time] 0.049s
+
+2025-03-31 09:52:04,088 - BEGIN (implicit)
+2025-03-31 09:52:04,115 - [SQL Query] INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:52:04,115 - [SQL Parameters] ('anonymous', 'Page visit', 'Visited /login.txt', '2025-03-31 09:52:04.005731', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/login.txt')
+2025-03-31 09:52:04,116 - INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:52:04,116 - [cached since 15.59s ago] ('anonymous', 'Page visit', 'Visited /login.txt', '2025-03-31 09:52:04.005731', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/login.txt')
+2025-03-31 09:52:04,439 - [SQL Time] 0.323s
+
+2025-03-31 09:52:04,625 - COMMIT
+2025-03-31 09:52:04,785 - BEGIN (implicit)
+2025-03-31 09:52:04,997 - [SQL Query] SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:52:04,998 - [SQL Parameters] (4325,)
+2025-03-31 09:52:05,067 - SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:52:05,067 - [cached since 16.53s ago] (4325,)
+2025-03-31 09:52:05,068 - [SQL Time] 0.115s
+
+2025-03-31 09:52:07,268 - BEGIN (implicit)
+2025-03-31 09:52:07,268 - [SQL Query] INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:52:07,268 - [SQL Parameters] ('anonymous', 'Page visit', 'Visited /login.txt', '2025-03-31 09:52:07.267377', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/login.txt')
+2025-03-31 09:52:07,268 - INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:52:07,268 - [cached since 18.75s ago] ('anonymous', 'Page visit', 'Visited /login.txt', '2025-03-31 09:52:07.267377', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/login.txt')
+2025-03-31 09:52:07,281 - [SQL Time] 0.012s
+
+2025-03-31 09:52:07,281 - COMMIT
+2025-03-31 09:52:07,294 - BEGIN (implicit)
+2025-03-31 09:52:07,299 - [SQL Query] SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:52:07,299 - [SQL Parameters] (4326,)
+2025-03-31 09:52:07,299 - SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:52:07,300 - [cached since 18.76s ago] (4326,)
+2025-03-31 09:52:07,300 - [SQL Time] 0.002s
+
+2025-03-31 09:52:09,906 - BEGIN (implicit)
+2025-03-31 09:52:09,908 - [SQL Query] INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:52:09,908 - [SQL Parameters] ('anonymous', 'Page visit', 'Visited /forgot-password.txt', '2025-03-31 09:52:09.903080', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/forgot-password.txt')
+2025-03-31 09:52:09,908 - INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:52:09,908 - [cached since 21.39s ago] ('anonymous', 'Page visit', 'Visited /forgot-password.txt', '2025-03-31 09:52:09.903080', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/forgot-password.txt')
+2025-03-31 09:52:09,914 - [SQL Time] 0.006s
+
+2025-03-31 09:52:09,915 - COMMIT
+2025-03-31 09:52:09,924 - BEGIN (implicit)
+2025-03-31 09:52:09,924 - [SQL Query] SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:52:09,924 - [SQL Parameters] (4327,)
+2025-03-31 09:52:09,924 - SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:52:09,925 - [cached since 21.38s ago] (4327,)
+2025-03-31 09:52:09,925 - [SQL Time] 0.001s
+
+2025-03-31 09:52:13,884 - BEGIN (implicit)
+2025-03-31 09:52:13,885 - [SQL Query] SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:52:13,951 - [SQL Parameters] ('admin', 1, 0)
+2025-03-31 09:52:13,967 - SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:52:14,034 - [cached since 31.23s ago] ('admin', 1, 0)
+2025-03-31 09:52:14,167 - [SQL Time] 0.281s
+
+2025-03-31 09:52:29,428 - [SQL Query] SELECT roles.id AS roles_id, roles.name AS roles_name, roles.description AS roles_description, roles.permissions AS roles_permissions, roles.is_system_role AS roles_is_system_role, roles.created_at AS roles_created_at, roles.updated_at AS roles_updated_at 
+FROM roles 
+WHERE roles.name = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:52:29,436 - [SQL Parameters] ('admin', 1, 0)
+2025-03-31 09:52:29,436 - SELECT roles.id AS roles_id, roles.name AS roles_name, roles.description AS roles_description, roles.permissions AS roles_permissions, roles.is_system_role AS roles_is_system_role, roles.created_at AS roles_created_at, roles.updated_at AS roles_updated_at 
+FROM roles 
+WHERE roles.name = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:52:29,436 - [cached since 68.28s ago] ('admin', 1, 0)
+2025-03-31 09:52:29,440 - [SQL Time] 0.012s
+
+2025-03-31 09:52:29,967 - [SQL Query] INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:52:29,967 - [SQL Parameters] ('admin', 'login', 'User logged in', '2025-03-31 09:52:29.586439', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', None)
+2025-03-31 09:52:29,967 - INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:52:29,967 - [cached since 41.45s ago] ('admin', 'login', 'User logged in', '2025-03-31 09:52:29.586439', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', None)
+2025-03-31 09:52:30,218 - [SQL Time] 0.251s
+
+2025-03-31 09:52:30,219 - COMMIT
+2025-03-31 09:52:30,285 - BEGIN (implicit)
+2025-03-31 09:52:30,286 - [SQL Query] SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:52:30,286 - [SQL Parameters] (4328,)
+2025-03-31 09:52:30,445 - SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:52:30,445 - [cached since 41.91s ago] (4328,)
+2025-03-31 09:52:30,446 - [SQL Time] 0.160s
+
+2025-03-31 09:52:30,731 - [SQL Query] SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.id = ?
+2025-03-31 09:52:30,733 - [SQL Parameters] (1,)
+2025-03-31 09:52:31,183 - SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.id = ?
+2025-03-31 09:52:31,184 - [generated in 0.45312s] (1,)
+2025-03-31 09:52:31,186 - [SQL Time] 0.455s
+
+2025-03-31 09:52:33,218 - ROLLBACK
+2025-03-31 09:52:34,110 - BEGIN (implicit)
+2025-03-31 09:52:34,801 - [SQL Query] SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:52:34,935 - [SQL Parameters] ('admin', 1, 0)
+2025-03-31 09:52:34,935 - SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:52:34,935 - [cached since 52.13s ago] ('admin', 1, 0)
+2025-03-31 09:52:34,944 - [SQL Time] 0.143s
+
+2025-03-31 09:52:35,025 - [SQL Query] INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:52:35,025 - [SQL Parameters] ('admin', 'Page visit', 'Visited /login', '2025-03-31 09:52:35.024037', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/login')
+2025-03-31 09:52:35,025 - INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:52:35,025 - [cached since 46.5s ago] ('admin', 'Page visit', 'Visited /login', '2025-03-31 09:52:35.024037', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/login')
+2025-03-31 09:52:35,027 - [SQL Time] 0.003s
+
+2025-03-31 09:52:35,028 - COMMIT
+2025-03-31 09:52:35,035 - BEGIN (implicit)
+2025-03-31 09:52:35,035 - [SQL Query] SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:52:35,147 - [SQL Parameters] (4329,)
+2025-03-31 09:52:35,147 - SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:52:35,147 - [cached since 46.61s ago] (4329,)
+2025-03-31 09:52:35,148 - [SQL Time] 0.113s
+
+2025-03-31 09:52:36,669 - ROLLBACK
+2025-03-31 09:52:37,819 - BEGIN (implicit)
+2025-03-31 09:52:38,336 - [SQL Query] INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:52:38,336 - [SQL Parameters] ('anonymous', 'Page visit', 'Visited /kginsights/insights.txt', '2025-03-31 09:52:37.818183', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/kginsights/insights.txt')
+2025-03-31 09:52:38,336 - INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:52:38,337 - [cached since 49.81s ago] ('anonymous', 'Page visit', 'Visited /kginsights/insights.txt', '2025-03-31 09:52:37.818183', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/kginsights/insights.txt')
+2025-03-31 09:52:38,463 - [SQL Time] 0.496s
+
+2025-03-31 09:52:38,465 - COMMIT
+2025-03-31 09:52:39,386 - BEGIN (implicit)
+2025-03-31 09:52:39,646 - [SQL Query] SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:52:39,646 - [SQL Parameters] (4330,)
+2025-03-31 09:52:39,646 - SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:52:39,646 - [cached since 51.11s ago] (4330,)
+2025-03-31 09:52:39,646 - [SQL Time] 0.000s
+
+2025-03-31 09:52:40,499 - BEGIN (implicit)
+2025-03-31 09:52:40,499 - [SQL Query] SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:52:40,500 - [SQL Parameters] ('admin', 1, 0)
+2025-03-31 09:52:40,501 - BEGIN (implicit)
+2025-03-31 09:52:40,501 - SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:52:40,501 - [cached since 57.7s ago] ('admin', 1, 0)
+2025-03-31 09:52:40,501 - [SQL Query] INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:52:40,853 - [SQL Parameters] ('anonymous', 'Page visit', 'Visited /kginsights/generate.txt', '2025-03-31 09:52:40.450698', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/kginsights/generate.txt')
+2025-03-31 09:52:40,854 - INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:52:40,855 - [cached since 52.33s ago] ('anonymous', 'Page visit', 'Visited /kginsights/generate.txt', '2025-03-31 09:52:40.450698', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/kginsights/generate.txt')
+2025-03-31 09:52:40,916 - [SQL Time] 0.417s
+
+2025-03-31 09:52:41,749 - [SQL Time] 1.247s
+
+2025-03-31 09:52:42,034 - COMMIT
+2025-03-31 09:52:42,286 - BEGIN (implicit)
+2025-03-31 09:52:42,300 - [SQL Query] SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:52:42,383 - [SQL Parameters] (4331,)
+2025-03-31 09:52:42,384 - SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:52:42,384 - [cached since 53.84s ago] (4331,)
+2025-03-31 09:52:42,545 - [SQL Time] 0.245s
+
+2025-03-31 09:52:43,732 - BEGIN (implicit)
+2025-03-31 09:52:43,733 - [SQL Query] INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:52:43,733 - [SQL Parameters] ('anonymous', 'Page visit', 'Visited /kginsights/manage.txt', '2025-03-31 09:52:43.458280', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/kginsights/manage.txt')
+2025-03-31 09:52:43,733 - INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:52:43,734 - [cached since 55.21s ago] ('anonymous', 'Page visit', 'Visited /kginsights/manage.txt', '2025-03-31 09:52:43.458280', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/kginsights/manage.txt')
+2025-03-31 09:52:44,359 - [SQL Time] 0.626s
+
+2025-03-31 09:52:44,447 - COMMIT
+2025-03-31 09:52:44,566 - BEGIN (implicit)
+2025-03-31 09:52:44,652 - [SQL Query] SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:52:44,653 - [SQL Parameters] (4332,)
+2025-03-31 09:52:44,657 - SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:52:44,659 - [cached since 56.12s ago] (4332,)
+2025-03-31 09:52:44,783 - [SQL Time] 0.130s
+
+2025-03-31 09:52:46,065 - [SQL Query] INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:52:46,066 - [SQL Parameters] ('admin', 'Page visit', 'Visited /kginsights/dashboard', '2025-03-31 09:52:45.818729', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/kginsights/dashboard')
+2025-03-31 09:52:46,066 - INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:52:46,066 - [cached since 57.54s ago] ('admin', 'Page visit', 'Visited /kginsights/dashboard', '2025-03-31 09:52:45.818729', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/kginsights/dashboard')
+2025-03-31 09:52:46,083 - [SQL Time] 0.017s
+
+2025-03-31 09:52:46,084 - COMMIT
+2025-03-31 09:52:46,284 - BEGIN (implicit)
+2025-03-31 09:52:46,285 - [SQL Query] SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:52:46,285 - [SQL Parameters] (4333,)
+2025-03-31 09:52:46,336 - SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:52:46,336 - [cached since 57.8s ago] (4333,)
+2025-03-31 09:52:46,351 - [SQL Time] 0.066s
+
+2025-03-31 09:52:47,969 - ROLLBACK
+2025-03-31 09:52:49,585 - BEGIN (implicit)
+2025-03-31 09:52:49,603 - [SQL Query] INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:52:49,604 - [SQL Parameters] ('anonymous', 'Page visit', 'Visited /kginsights/generate.txt', '2025-03-31 09:52:49.203419', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/kginsights/generate.txt')
+2025-03-31 09:52:49,669 - INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:52:49,670 - [cached since 61.15s ago] ('anonymous', 'Page visit', 'Visited /kginsights/generate.txt', '2025-03-31 09:52:49.203419', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/kginsights/generate.txt')
+2025-03-31 09:52:49,784 - [SQL Time] 0.182s
+
+2025-03-31 09:52:49,784 - COMMIT
+2025-03-31 09:52:50,103 - BEGIN (implicit)
+2025-03-31 09:52:50,103 - [SQL Query] SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:52:50,104 - [SQL Parameters] (4334,)
+2025-03-31 09:52:50,104 - SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:52:50,105 - [cached since 61.56s ago] (4334,)
+2025-03-31 09:52:50,183 - [SQL Time] 0.081s
+
+2025-03-31 09:52:50,966 - BEGIN (implicit)
+2025-03-31 09:52:51,030 - [SQL Query] SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:52:51,033 - [SQL Parameters] ('admin', 1, 0)
+2025-03-31 09:52:51,034 - SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:52:51,084 - [cached since 68.28s ago] ('admin', 1, 0)
+2025-03-31 09:52:51,085 - [SQL Time] 0.054s
+
+2025-03-31 09:52:51,115 - BEGIN (implicit)
+2025-03-31 09:52:51,116 - [SQL Query] INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:52:51,150 - [SQL Parameters] ('anonymous', 'Page visit', 'Visited /kginsights/manage.txt', '2025-03-31 09:52:51.036067', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/kginsights/manage.txt')
+2025-03-31 09:52:51,151 - INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:52:51,151 - [cached since 62.63s ago] ('anonymous', 'Page visit', 'Visited /kginsights/manage.txt', '2025-03-31 09:52:51.036067', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/kginsights/manage.txt')
+2025-03-31 09:52:51,153 - [SQL Time] 0.037s
+
+2025-03-31 09:52:51,154 - COMMIT
+2025-03-31 09:52:51,234 - BEGIN (implicit)
+2025-03-31 09:52:51,235 - [SQL Query] SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:52:51,235 - [SQL Parameters] (4335,)
+2025-03-31 09:52:51,235 - SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:52:51,235 - [cached since 62.7s ago] (4335,)
+2025-03-31 09:52:51,236 - [SQL Time] 0.001s
+
+2025-03-31 09:52:52,282 - [SQL Query] SELECT schemas.id AS schemas_id, schemas.name AS schemas_name, schemas.source_id AS schemas_source_id, schemas.description AS schemas_description, schemas.schema AS schemas_schema, schemas.created_at AS schemas_created_at, schemas.updated_at AS schemas_updated_at 
+FROM schemas ORDER BY schemas.created_at DESC
+2025-03-31 09:52:52,283 - [SQL Parameters] ()
+2025-03-31 09:52:52,283 - SELECT schemas.id AS schemas_id, schemas.name AS schemas_name, schemas.source_id AS schemas_source_id, schemas.description AS schemas_description, schemas.schema AS schemas_schema, schemas.created_at AS schemas_created_at, schemas.updated_at AS schemas_updated_at 
+FROM schemas ORDER BY schemas.created_at DESC
+2025-03-31 09:52:52,300 - [generated in 0.00077s] ()
+2025-03-31 09:52:52,301 - [SQL Time] 0.019s
+
+2025-03-31 09:52:52,520 - ROLLBACK
+2025-03-31 09:52:52,525 - BEGIN (implicit)
+2025-03-31 09:52:52,526 - [SQL Query] SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:52:52,526 - [SQL Parameters] ('admin', 1, 0)
+2025-03-31 09:52:52,526 - SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:52:52,540 - [cached since 69.72s ago] ('admin', 1, 0)
+2025-03-31 09:52:53,215 - [SQL Time] 0.623s
+
+2025-03-31 09:52:53,217 - BEGIN (implicit)
+2025-03-31 09:52:53,783 - [SQL Query] SELECT ingestion_jobs.id AS ingestion_jobs_id, ingestion_jobs.name AS ingestion_jobs_name, ingestion_jobs.type AS ingestion_jobs_type, ingestion_jobs.status AS ingestion_jobs_status, ingestion_jobs.progress AS ingestion_jobs_progress, ingestion_jobs.start_time AS ingestion_jobs_start_time, ingestion_jobs.end_time AS ingestion_jobs_end_time, ingestion_jobs.details AS ingestion_jobs_details, ingestion_jobs.error AS ingestion_jobs_error, ingestion_jobs.duration AS ingestion_jobs_duration, ingestion_jobs.config AS ingestion_jobs_config 
+FROM ingestion_jobs 
+WHERE ingestion_jobs.status = ?
+2025-03-31 09:52:53,785 - [SQL Query] SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:52:54,165 - [SQL Parameters] ('completed',)
+2025-03-31 09:52:54,166 - [SQL Parameters] ('admin', 1, 0)
+2025-03-31 09:52:54,166 - SELECT ingestion_jobs.id AS ingestion_jobs_id, ingestion_jobs.name AS ingestion_jobs_name, ingestion_jobs.type AS ingestion_jobs_type, ingestion_jobs.status AS ingestion_jobs_status, ingestion_jobs.progress AS ingestion_jobs_progress, ingestion_jobs.start_time AS ingestion_jobs_start_time, ingestion_jobs.end_time AS ingestion_jobs_end_time, ingestion_jobs.details AS ingestion_jobs_details, ingestion_jobs.error AS ingestion_jobs_error, ingestion_jobs.duration AS ingestion_jobs_duration, ingestion_jobs.config AS ingestion_jobs_config 
+FROM ingestion_jobs 
+WHERE ingestion_jobs.status = ?
+2025-03-31 09:52:54,166 - SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:52:54,166 - [generated in 0.38377s] ('completed',)
+2025-03-31 09:52:54,167 - [cached since 71.37s ago] ('admin', 1, 0)
+2025-03-31 09:52:54,552 - [SQL Time] 0.767s
+
+2025-03-31 09:52:54,553 - [SQL Time] 0.507s
+
+2025-03-31 09:52:55,733 - [SQL Query] INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:52:55,734 - [SQL Parameters] ('admin', 'Page visit', 'Visited /kginsights/generate', '2025-03-31 09:52:55.467362', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/kginsights/generate')
+2025-03-31 09:52:55,734 - INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:52:55,734 - [cached since 67.21s ago] ('admin', 'Page visit', 'Visited /kginsights/generate', '2025-03-31 09:52:55.467362', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/kginsights/generate')
+2025-03-31 09:52:56,153 - [SQL Time] 0.420s
+
+2025-03-31 09:52:56,157 - COMMIT
+2025-03-31 09:52:56,463 - BEGIN (implicit)
+2025-03-31 09:52:56,686 - [SQL Query] SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:52:56,768 - [SQL Parameters] (4336,)
+2025-03-31 09:52:56,768 - SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:52:56,768 - [cached since 68.23s ago] (4336,)
+2025-03-31 09:52:57,103 - [SQL Time] 0.201s
+
+2025-03-31 09:52:58,239 - ROLLBACK
+2025-03-31 09:52:58,645 - ROLLBACK
+2025-03-31 09:52:59,184 - BEGIN (implicit)
+2025-03-31 09:52:59,185 - [SQL Query] SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:52:59,185 - [SQL Parameters] ('admin', 1, 0)
+2025-03-31 09:52:59,185 - SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:52:59,480 - [cached since 76.68s ago] ('admin', 1, 0)
+2025-03-31 09:52:59,481 - [SQL Time] 0.296s
+
+2025-03-31 09:53:00,151 - [SQL Query] SELECT ingestion_jobs.id AS ingestion_jobs_id, ingestion_jobs.name AS ingestion_jobs_name, ingestion_jobs.type AS ingestion_jobs_type, ingestion_jobs.status AS ingestion_jobs_status, ingestion_jobs.progress AS ingestion_jobs_progress, ingestion_jobs.start_time AS ingestion_jobs_start_time, ingestion_jobs.end_time AS ingestion_jobs_end_time, ingestion_jobs.details AS ingestion_jobs_details, ingestion_jobs.error AS ingestion_jobs_error, ingestion_jobs.duration AS ingestion_jobs_duration, ingestion_jobs.config AS ingestion_jobs_config 
+FROM ingestion_jobs 
+WHERE ingestion_jobs.status = ?
+2025-03-31 09:53:00,151 - [SQL Parameters] ('completed',)
+2025-03-31 09:53:00,152 - SELECT ingestion_jobs.id AS ingestion_jobs_id, ingestion_jobs.name AS ingestion_jobs_name, ingestion_jobs.type AS ingestion_jobs_type, ingestion_jobs.status AS ingestion_jobs_status, ingestion_jobs.progress AS ingestion_jobs_progress, ingestion_jobs.start_time AS ingestion_jobs_start_time, ingestion_jobs.end_time AS ingestion_jobs_end_time, ingestion_jobs.details AS ingestion_jobs_details, ingestion_jobs.error AS ingestion_jobs_error, ingestion_jobs.duration AS ingestion_jobs_duration, ingestion_jobs.config AS ingestion_jobs_config 
+FROM ingestion_jobs 
+WHERE ingestion_jobs.status = ?
+2025-03-31 09:53:00,152 - [cached since 6.37s ago] ('completed',)
+2025-03-31 09:53:00,152 - [SQL Time] 0.002s
+
+2025-03-31 09:53:01,283 - ROLLBACK
+2025-03-31 09:53:46,152 - BEGIN (implicit)
+2025-03-31 09:53:46,153 - [SQL Query] SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:53:46,153 - [SQL Parameters] ('admin', 1, 0)
+2025-03-31 09:53:46,154 - SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:53:46,154 - [cached since 123.4s ago] ('admin', 1, 0)
+2025-03-31 09:53:46,154 - [SQL Time] 0.001s
+
+2025-03-31 09:53:47,595 - [SQL Query] SELECT ingestion_jobs.id AS ingestion_jobs_id, ingestion_jobs.name AS ingestion_jobs_name, ingestion_jobs.type AS ingestion_jobs_type, ingestion_jobs.status AS ingestion_jobs_status, ingestion_jobs.progress AS ingestion_jobs_progress, ingestion_jobs.start_time AS ingestion_jobs_start_time, ingestion_jobs.end_time AS ingestion_jobs_end_time, ingestion_jobs.details AS ingestion_jobs_details, ingestion_jobs.error AS ingestion_jobs_error, ingestion_jobs.duration AS ingestion_jobs_duration, ingestion_jobs.config AS ingestion_jobs_config 
+FROM ingestion_jobs 
+WHERE ingestion_jobs.id = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:53:47,596 - [SQL Parameters] ('565313c0-e499-44de-adeb-a119c9343fc5', 1, 0)
+2025-03-31 09:53:47,980 - SELECT ingestion_jobs.id AS ingestion_jobs_id, ingestion_jobs.name AS ingestion_jobs_name, ingestion_jobs.type AS ingestion_jobs_type, ingestion_jobs.status AS ingestion_jobs_status, ingestion_jobs.progress AS ingestion_jobs_progress, ingestion_jobs.start_time AS ingestion_jobs_start_time, ingestion_jobs.end_time AS ingestion_jobs_end_time, ingestion_jobs.details AS ingestion_jobs_details, ingestion_jobs.error AS ingestion_jobs_error, ingestion_jobs.duration AS ingestion_jobs_duration, ingestion_jobs.config AS ingestion_jobs_config 
+FROM ingestion_jobs 
+WHERE ingestion_jobs.id = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:53:47,981 - [generated in 0.38716s] ('565313c0-e499-44de-adeb-a119c9343fc5', 1, 0)
+2025-03-31 09:53:47,982 - [SQL Time] 0.388s
+
+2025-03-31 09:53:48,648 - [SQL Query] SELECT uploaded_files.id AS uploaded_files_id, uploaded_files.filename AS uploaded_files_filename, uploaded_files.path AS uploaded_files_path, uploaded_files.type AS uploaded_files_type, uploaded_files.uploaded_by AS uploaded_files_uploaded_by, uploaded_files.uploaded_at AS uploaded_files_uploaded_at, uploaded_files.chunk_size AS uploaded_files_chunk_size, uploaded_files.schema AS uploaded_files_schema 
+FROM uploaded_files 
+WHERE uploaded_files.id = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:53:48,648 - [SQL Parameters] ('5f8ddded-b24b-4d18-a35a-3628684ab706', 1, 0)
+2025-03-31 09:53:48,648 - SELECT uploaded_files.id AS uploaded_files_id, uploaded_files.filename AS uploaded_files_filename, uploaded_files.path AS uploaded_files_path, uploaded_files.type AS uploaded_files_type, uploaded_files.uploaded_by AS uploaded_files_uploaded_by, uploaded_files.uploaded_at AS uploaded_files_uploaded_at, uploaded_files.chunk_size AS uploaded_files_chunk_size, uploaded_files.schema AS uploaded_files_schema 
+FROM uploaded_files 
+WHERE uploaded_files.id = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:53:48,648 - [generated in 0.01624s] ('5f8ddded-b24b-4d18-a35a-3628684ab706', 1, 0)
+2025-03-31 09:53:48,649 - [SQL Time] 0.002s
+
+2025-03-31 09:54:07,800 - ROLLBACK
+2025-03-31 09:54:41,486 - BEGIN (implicit)
+2025-03-31 09:54:41,487 - [SQL Query] SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:54:41,518 - [SQL Parameters] ('admin', 1, 0)
+2025-03-31 09:54:41,518 - SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:54:41,518 - [cached since 178.7s ago] ('admin', 1, 0)
+2025-03-31 09:54:41,529 - [SQL Time] 0.041s
+
+2025-03-31 09:54:41,856 - [SQL Query] SELECT ingestion_jobs.id AS ingestion_jobs_id, ingestion_jobs.name AS ingestion_jobs_name, ingestion_jobs.type AS ingestion_jobs_type, ingestion_jobs.status AS ingestion_jobs_status, ingestion_jobs.progress AS ingestion_jobs_progress, ingestion_jobs.start_time AS ingestion_jobs_start_time, ingestion_jobs.end_time AS ingestion_jobs_end_time, ingestion_jobs.details AS ingestion_jobs_details, ingestion_jobs.error AS ingestion_jobs_error, ingestion_jobs.duration AS ingestion_jobs_duration, ingestion_jobs.config AS ingestion_jobs_config 
+FROM ingestion_jobs 
+WHERE ingestion_jobs.id = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:54:41,856 - [SQL Parameters] ('565313c0-e499-44de-adeb-a119c9343fc5', 1, 0)
+2025-03-31 09:54:41,856 - SELECT ingestion_jobs.id AS ingestion_jobs_id, ingestion_jobs.name AS ingestion_jobs_name, ingestion_jobs.type AS ingestion_jobs_type, ingestion_jobs.status AS ingestion_jobs_status, ingestion_jobs.progress AS ingestion_jobs_progress, ingestion_jobs.start_time AS ingestion_jobs_start_time, ingestion_jobs.end_time AS ingestion_jobs_end_time, ingestion_jobs.details AS ingestion_jobs_details, ingestion_jobs.error AS ingestion_jobs_error, ingestion_jobs.duration AS ingestion_jobs_duration, ingestion_jobs.config AS ingestion_jobs_config 
+FROM ingestion_jobs 
+WHERE ingestion_jobs.id = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:54:41,856 - [cached since 54.26s ago] ('565313c0-e499-44de-adeb-a119c9343fc5', 1, 0)
+2025-03-31 09:54:41,859 - [SQL Time] 0.003s
+
+2025-03-31 09:54:42,865 - [SQL Query] SELECT uploaded_files.id AS uploaded_files_id, uploaded_files.filename AS uploaded_files_filename, uploaded_files.path AS uploaded_files_path, uploaded_files.type AS uploaded_files_type, uploaded_files.uploaded_by AS uploaded_files_uploaded_by, uploaded_files.uploaded_at AS uploaded_files_uploaded_at, uploaded_files.chunk_size AS uploaded_files_chunk_size, uploaded_files.schema AS uploaded_files_schema 
+FROM uploaded_files 
+WHERE uploaded_files.id = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:54:42,865 - [SQL Parameters] ('5f8ddded-b24b-4d18-a35a-3628684ab706', 1, 0)
+2025-03-31 09:54:42,866 - SELECT uploaded_files.id AS uploaded_files_id, uploaded_files.filename AS uploaded_files_filename, uploaded_files.path AS uploaded_files_path, uploaded_files.type AS uploaded_files_type, uploaded_files.uploaded_by AS uploaded_files_uploaded_by, uploaded_files.uploaded_at AS uploaded_files_uploaded_at, uploaded_files.chunk_size AS uploaded_files_chunk_size, uploaded_files.schema AS uploaded_files_schema 
+FROM uploaded_files 
+WHERE uploaded_files.id = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:54:42,866 - [cached since 54.23s ago] ('5f8ddded-b24b-4d18-a35a-3628684ab706', 1, 0)
+2025-03-31 09:54:42,938 - [SQL Time] 0.074s
+
+2025-03-31 09:55:23,299 - ROLLBACK
+2025-03-31 09:56:25,090 - BEGIN (implicit)
+2025-03-31 09:56:25,135 - [SQL Query] SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:56:25,136 - [SQL Parameters] ('admin', 1, 0)
+2025-03-31 09:56:25,136 - SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:56:25,136 - [cached since 282.3s ago] ('admin', 1, 0)
+2025-03-31 09:56:25,138 - [SQL Time] 0.002s
+
+2025-03-31 09:56:25,577 - [SQL Query] INSERT INTO schemas (name, source_id, description, schema, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+2025-03-31 09:56:25,584 - [SQL Parameters] ('Test Schema', '565313c0-e499-44de-adeb-a119c9343fc5', '', '{"nodes": [{"label": "Customer", "properties": {"customerID": "string", "gender": "string", "SeniorCitizen": "boolean", "Partner": "boolean", "Dependents": "boolean", "tenure": "integer", "PhoneService": "boolean", "MultipleLines": "string", "MonthlyCharges": "float", "TotalCharges": "float", "Churn": "boolean"}}, {"label": "InternetService", "properties": {"type": "string"}}, {"label": "Service", "properties": {"name": "string"}}, {"label": "Contract", "properties": {"type": "string"}}, {"label": "PaymentMethod", "properties": {"method": "string"}}], "relationships": [{"type": "USES_INTERNET_SERVICE", "source": "Customer", "target": "InternetService", "properties": {}, "startNode": "Customer", "endNode": "InternetService"}, {"type": "SUBSCRIBED_TO", "source": "Customer", "target": "Service", "properties": {}, "startNode": "Customer", "endNode": "Service"}, {"type": "HAS_CONTRACT", "source": "Customer", "target": "Contract", "properties": {"PaperlessBilling": "boolean"}, "startNode": "Customer", "endNode": "Contract"}, {"type": "PAYS_WITH", "source": "Customer", "target": "PaymentMethod", "properties": {}, "startNode": "Customer", "endNode": "PaymentMethod"}], "indexes": ["Customer(customerID)", "InternetService(type)", "Service(name)", "Contract(type)", "PaymentMethod(method)"], "name": "Test Schema", "description": "", "source_id": "565313c0-e499-44de-adeb-a119c9343fc5", "created_at": "2025-03-31T04:26:24.618Z"}', '2025-03-31 04:26:25.576743', '2025-03-31 04:26:25.576743')
+2025-03-31 09:56:25,585 - INSERT INTO schemas (name, source_id, description, schema, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+2025-03-31 09:56:25,585 - [generated in 0.00877s] ('Test Schema', '565313c0-e499-44de-adeb-a119c9343fc5', '', '{"nodes": [{"label": "Customer", "properties": {"customerID": "string", "gender": "string", "SeniorCitizen": "boolean", "Partner": "boolean", "Depend ... (1139 characters truncated) ... d(method)"], "name": "Test Schema", "description": "", "source_id": "565313c0-e499-44de-adeb-a119c9343fc5", "created_at": "2025-03-31T04:26:24.618Z"}', '2025-03-31 04:26:25.576743', '2025-03-31 04:26:25.576743')
+2025-03-31 09:56:25,652 - [SQL Time] 0.075s
+
+2025-03-31 09:56:25,653 - COMMIT
+2025-03-31 09:56:25,700 - BEGIN (implicit)
+2025-03-31 09:56:25,790 - [SQL Query] SELECT schemas.id AS schemas_id, schemas.name AS schemas_name, schemas.source_id AS schemas_source_id, schemas.description AS schemas_description, schemas.schema AS schemas_schema, schemas.created_at AS schemas_created_at, schemas.updated_at AS schemas_updated_at 
+FROM schemas 
+WHERE schemas.id = ?
+2025-03-31 09:56:25,791 - [SQL Parameters] (4,)
+2025-03-31 09:56:25,801 - SELECT schemas.id AS schemas_id, schemas.name AS schemas_name, schemas.source_id AS schemas_source_id, schemas.description AS schemas_description, schemas.schema AS schemas_schema, schemas.created_at AS schemas_created_at, schemas.updated_at AS schemas_updated_at 
+FROM schemas 
+WHERE schemas.id = ?
+2025-03-31 09:56:25,801 - [generated in 0.01600s] (4,)
+2025-03-31 09:56:25,851 - [SQL Time] 0.065s
+
+2025-03-31 09:56:26,047 - ROLLBACK
+2025-03-31 09:56:33,186 - BEGIN (implicit)
+2025-03-31 09:56:33,186 - [SQL Query] SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:56:33,189 - [SQL Parameters] ('admin', 1, 0)
+2025-03-31 09:56:33,190 - SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:56:33,195 - [cached since 290.4s ago] ('admin', 1, 0)
+2025-03-31 09:56:33,196 - [SQL Time] 0.010s
+
+2025-03-31 09:56:33,204 - [SQL Query] SELECT schemas.id AS schemas_id, schemas.name AS schemas_name, schemas.source_id AS schemas_source_id, schemas.description AS schemas_description, schemas.schema AS schemas_schema, schemas.created_at AS schemas_created_at, schemas.updated_at AS schemas_updated_at 
+FROM schemas ORDER BY schemas.created_at DESC
+2025-03-31 09:56:33,205 - [SQL Parameters] ()
+2025-03-31 09:56:33,205 - SELECT schemas.id AS schemas_id, schemas.name AS schemas_name, schemas.source_id AS schemas_source_id, schemas.description AS schemas_description, schemas.schema AS schemas_schema, schemas.created_at AS schemas_created_at, schemas.updated_at AS schemas_updated_at 
+FROM schemas ORDER BY schemas.created_at DESC
+2025-03-31 09:56:33,205 - [cached since 220.9s ago] ()
+2025-03-31 09:56:33,206 - [SQL Time] 0.001s
+
+2025-03-31 09:56:33,213 - ROLLBACK
+2025-03-31 09:56:33,424 - BEGIN (implicit)
+2025-03-31 09:56:33,425 - [SQL Query] SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:56:33,425 - [SQL Parameters] ('admin', 1, 0)
+2025-03-31 09:56:33,425 - SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:56:33,425 - [cached since 290.6s ago] ('admin', 1, 0)
+2025-03-31 09:56:33,425 - [SQL Time] 0.001s
+
+2025-03-31 09:56:33,436 - [SQL Query] INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:56:33,436 - [SQL Parameters] ('admin', 'Page visit', 'Visited /kginsights/dashboard', '2025-03-31 09:56:33.426334', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/kginsights/dashboard')
+2025-03-31 09:56:33,436 - INSERT INTO activity_logs (username, action, details, timestamp, ip_address, user_agent, page_url) VALUES (?, ?, ?, ?, ?, ?, ?)
+2025-03-31 09:56:33,436 - [cached since 284.9s ago] ('admin', 'Page visit', 'Visited /kginsights/dashboard', '2025-03-31 09:56:33.426334', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', '/kginsights/dashboard')
+2025-03-31 09:56:33,440 - [SQL Time] 0.004s
+
+2025-03-31 09:56:33,444 - COMMIT
+2025-03-31 09:56:33,487 - BEGIN (implicit)
+2025-03-31 09:56:33,488 - [SQL Query] SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:56:33,488 - [SQL Parameters] (4337,)
+2025-03-31 09:56:33,488 - SELECT activity_logs.id AS activity_logs_id, activity_logs.username AS activity_logs_username, activity_logs.action AS activity_logs_action, activity_logs.details AS activity_logs_details, activity_logs.timestamp AS activity_logs_timestamp, activity_logs.ip_address AS activity_logs_ip_address, activity_logs.user_agent AS activity_logs_user_agent, activity_logs.page_url AS activity_logs_page_url 
+FROM activity_logs 
+WHERE activity_logs.id = ?
+2025-03-31 09:56:33,488 - [cached since 284.9s ago] (4337,)
+2025-03-31 09:56:33,489 - [SQL Time] 0.001s
+
+2025-03-31 09:56:33,507 - ROLLBACK
+2025-03-31 09:56:33,745 - BEGIN (implicit)
+2025-03-31 09:56:33,805 - [SQL Query] SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:56:33,806 - [SQL Parameters] ('admin', 1, 0)
+2025-03-31 09:56:33,806 - SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.role AS users_role, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = ?
+ LIMIT ? OFFSET ?
+2025-03-31 09:56:33,806 - [cached since 291s ago] ('admin', 1, 0)
+2025-03-31 09:56:33,807 - [SQL Time] 0.002s
+
+2025-03-31 09:56:33,824 - [SQL Query] SELECT ingestion_jobs.id AS ingestion_jobs_id, ingestion_jobs.name AS ingestion_jobs_name, ingestion_jobs.type AS ingestion_jobs_type, ingestion_jobs.status AS ingestion_jobs_status, ingestion_jobs.progress AS ingestion_jobs_progress, ingestion_jobs.start_time AS ingestion_jobs_start_time, ingestion_jobs.end_time AS ingestion_jobs_end_time, ingestion_jobs.details AS ingestion_jobs_details, ingestion_jobs.error AS ingestion_jobs_error, ingestion_jobs.duration AS ingestion_jobs_duration, ingestion_jobs.config AS ingestion_jobs_config 
+FROM ingestion_jobs 
+WHERE ingestion_jobs.status = ?
+2025-03-31 09:56:33,824 - [SQL Parameters] ('completed',)
+2025-03-31 09:56:33,824 - SELECT ingestion_jobs.id AS ingestion_jobs_id, ingestion_jobs.name AS ingestion_jobs_name, ingestion_jobs.type AS ingestion_jobs_type, ingestion_jobs.status AS ingestion_jobs_status, ingestion_jobs.progress AS ingestion_jobs_progress, ingestion_jobs.start_time AS ingestion_jobs_start_time, ingestion_jobs.end_time AS ingestion_jobs_end_time, ingestion_jobs.details AS ingestion_jobs_details, ingestion_jobs.error AS ingestion_jobs_error, ingestion_jobs.duration AS ingestion_jobs_duration, ingestion_jobs.config AS ingestion_jobs_config 
+FROM ingestion_jobs 
+WHERE ingestion_jobs.status = ?
+2025-03-31 09:56:33,824 - [cached since 220s ago] ('completed',)
+2025-03-31 09:56:33,829 - [SQL Time] 0.005s
+
+2025-03-31 09:56:33,873 - ROLLBACK
