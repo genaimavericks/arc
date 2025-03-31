@@ -99,10 +99,18 @@ async def analyze_data_visualization(source_id: str, data: Dict[str, Any]):
         if not data:
             raise HTTPException(status_code=400, detail="No data provided for analysis")
         
+        # Log the input data for debugging
+        print(f"Visualization input data: {json.dumps(data, default=str)[:500]}...")
+        
         # Analyze data for visualization
         visualization = analyze_data_for_visualization(data)
+        
+        # Log the output for debugging
+        print(f"Visualization result: {json.dumps(visualization.dict(), default=str)[:500]}...")
+        
         return visualization
     except Exception as e:
+        print(f"Visualization analysis error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error analyzing data: {str(e)}")
 
 
@@ -147,7 +155,19 @@ async def process_query(source_id: str, request: QueryRequest):
         visualization = None
         if intermediate_steps:
             try:
+                print(f"Analyzing intermediate steps for visualization: {json.dumps(intermediate_steps, default=str)[:300]}...")
                 visualization = analyze_data_for_visualization(intermediate_steps)
+                
+                # Log visualization result
+                if visualization and visualization.type != "none":
+                    print(f"Visualization generated: {visualization.type}, title: {visualization.title}")
+                    # Check if we have the necessary data for the chart type
+                    if visualization.type in ["bar", "line", "histogram"] and (not visualization.x_axis or not visualization.y_axis):
+                        print("WARNING: Missing axis data for chart visualization!")
+                    elif visualization.type == "pie" and (not visualization.labels or not visualization.values):
+                        print("WARNING: Missing labels/values for pie chart!")
+                else:
+                    print("No suitable visualization found for the data")
             except Exception as e:
                 print(f"Error analyzing data for visualization: {e}")
         

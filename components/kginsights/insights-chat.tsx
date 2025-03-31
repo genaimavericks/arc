@@ -221,7 +221,8 @@ export default function InsightsChat() {
         content: data.result,
         timestamp: new Date(),
         sourceId: data.source_id,
-        metadata: data.intermediate_steps
+        metadata: data.intermediate_steps,
+        visualization: data.visualization  // Add visualization data from API response
       }
       
       // Update messages with assistant response

@@ -41,3 +41,4 @@ api/static/*
 .env
 api/.env
 npm
+**myenv**
