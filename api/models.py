@@ -107,5 +107,16 @@ class IngestionJob(Base):
     duration = Column(String, nullable=True)
     config = Column(Text, nullable=True)  # Store config as JSON string
 
+class Schema(Base):
+    __tablename__ = "schemas"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False, index=True)
+    source_id = Column(String, nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    schema = Column(Text, nullable=False)  # Store schema as JSON string
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 # Create tables
 Base.metadata.create_all(bind=engine)

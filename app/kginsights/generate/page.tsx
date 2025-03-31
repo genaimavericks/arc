@@ -168,16 +168,38 @@ function GenerateGraphContent() {
       return
     }
 
-    if (!kgName.trim()) {
+    // Generate a default name if none provided
+    let schemaName = kgName.trim()
+    if (!schemaName) {
+      // Use dataset name or a timestamp if no name is provided
+      schemaName = selectedSourceName 
+        ? `Schema for ${selectedSourceName}` 
+        : `Schema ${new Date().toISOString().split('T')[0]}`
+      
+      // Update the state
+      setKgName(schemaName)
+    }
+
+    if (!selectedSource) {
       toast({
         title: "Error",
-        description: "Please provide a name for the schema.",
+        description: "Please select a data source.",
         variant: "destructive",
       })
       return
     }
 
     try {
+      // Set loading state
+      setLoading(true)
+      
+      console.log("Saving schema:", {
+        ...schema,
+        name: schemaName,
+        description: kgDescription,
+        source_id: selectedSource,
+      })
+
       const response = await fetch("/api/graphschema/save-schema", {
         method: "POST",
         headers: {
@@ -187,7 +209,7 @@ function GenerateGraphContent() {
         body: JSON.stringify({
           schema: {
             ...schema,
-            name: kgName,
+            name: schemaName,
             description: kgDescription,
             source_id: selectedSource,
             created_at: new Date().toISOString(),
@@ -196,21 +218,29 @@ function GenerateGraphContent() {
       })
 
       if (!response.ok) {
-        throw new Error(`Failed to save schema: ${response.status}`)
+        const errorData = await response.json().catch(() => null)
+        throw new Error(
+          errorData?.detail || `Failed to save schema: ${response.status}`
+        )
       }
 
       const data = await response.json()
+      console.log("Schema saved successfully:", data)
+      
       toast({
         title: "Success",
-        description: `Schema "${kgName}" saved successfully!`,
+        description: `Schema "${schemaName}" saved successfully!`,
       })
     } catch (error) {
       console.error("Error saving schema:", error)
       toast({
         title: "Error",
-        description: "Failed to save schema. Please try again.",
+        description: error instanceof Error ? error.message : "Failed to save schema. Please try again.",
         variant: "destructive",
       })
+    } finally {
+      // Reset loading state
+      setLoading(false)
     }
   }
 
@@ -247,34 +277,48 @@ function GenerateGraphContent() {
               </motion.h1>
 
               <div className="flex justify-between items-center mb-8">
-                <div className="w-64">
-                  <Label htmlFor="dataset-select" className="mb-2 block">Select Dataset:</Label>
-                  <Select
-                    value={selectedSource}
-                    onValueChange={handleSourceChange}
-                    disabled={loadingSources || loading}
-                  >
-                    <SelectTrigger id="dataset-select" className="w-full">
-                      <SelectValue placeholder="Select a dataset" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {loadingSources ? (
-                        <div className="flex justify-center p-2">
-                          <LoadingSpinner size="sm" />
-                        </div>
-                      ) : sources.length > 0 ? (
-                        sources.map((source) => (
-                          <SelectItem key={source.id} value={source.id}>
-                            {source.name}
-                          </SelectItem>
-                        ))
-                      ) : (
-                        <div className="p-2 text-center text-muted-foreground">
-                          No datasets available
-                        </div>
-                      )}
-                    </SelectContent>
-                  </Select>
+                <div className="space-y-4">
+                  <div className="w-64">
+                    <Label htmlFor="dataset-select" className="mb-2 block">Select Dataset:</Label>
+                    <Select
+                      value={selectedSource}
+                      onValueChange={handleSourceChange}
+                      disabled={loadingSources || loading}
+                    >
+                      <SelectTrigger id="dataset-select" className="w-full">
+                        <SelectValue placeholder="Select a dataset" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {loadingSources ? (
+                          <div className="flex justify-center p-2">
+                            <LoadingSpinner size="sm" />
+                          </div>
+                        ) : sources.length > 0 ? (
+                          sources.map((source) => (
+                            <SelectItem key={source.id} value={source.id}>
+                              {source.name}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <div className="p-2 text-center text-muted-foreground">
+                            No datasets available
+                          </div>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div className="w-64">
+                    <Label htmlFor="schema-name" className="mb-2 block">Schema Name:</Label>
+                    <Input
+                      id="schema-name"
+                      value={kgName}
+                      onChange={(e) => setKgName(e.target.value)}
+                      placeholder="Enter schema name"
+                      disabled={loading}
+                      className="w-full"
+                    />
+                  </div>
                 </div>
 
                 <div className="flex gap-2">
@@ -290,10 +334,10 @@ function GenerateGraphContent() {
                   <Button
                     className="bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-2"
                     onClick={handleSaveSchema}
-                    disabled={!schema || loading}
+                    disabled={loading || (!schema && !selectedSource)}
                   >
                     <Save className="w-4 h-4" />
-                    Save Schema Version
+                    {loading ? "Saving..." : "Save Schema Version"}
                   </Button>
                 </div>
               </div>

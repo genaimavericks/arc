@@ -8,7 +8,7 @@ import io
 import json
 from datetime import datetime
 from sqlalchemy.orm import Session
-from ..models import get_db, IngestionJob, UploadedFile
+from ..models import get_db, IngestionJob, UploadedFile, Schema
 from ..auth import has_any_permission
 from ..models import User
 
@@ -403,38 +403,128 @@ async def refine_schema(
         raise HTTPException(status_code=500, detail=f"Schema refinement failed: {str(e)}")
 
 @router.post('/save-schema', response_model=SaveSchemaResponse)
-async def save_schema(save_input: SaveSchemaInput):
-    """Save the generated schema JSON to a file on the server."""
+async def save_schema(
+    save_input: SaveSchemaInput,
+    current_user: User = Depends(has_any_permission(["kginsights:write"])),
+    db: Session = Depends(get_db)
+):
+    """Save the generated schema to the database and as a JSON file."""
     try:
-        schema = save_input.schema
+        print(f"DEBUG: save_schema called with schema data")
         
-        # Create a default output path if none provided
-        if not save_input.output_path:
-            # Create schemas directory if it doesn't exist
-            schemas_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "saved_schemas")
-            os.makedirs(schemas_dir, exist_ok=True)
+        schema_data = save_input.schema
+        
+        # Ensure schema has a name
+        if not schema_data.get('name'):
+            schema_data['name'] = f"Schema_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            print(f"DEBUG: Using default name: {schema_data['name']}")
+        
+        # Ensure schema has a source_id
+        if not schema_data.get('source_id'):
+            print(f"WARNING: No source_id provided in schema data")
+            schema_data['source_id'] = "unknown_source"
             
-            # Generate a filename with timestamp
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_path = os.path.join(schemas_dir, f"schema_{timestamp}.json")
-        else:
-            output_path = save_input.output_path
-            
-            # Ensure the directory exists
-            os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-            
-            # Validate the output path ends with .json
-            if not output_path.lower().endswith('.json'):
-                output_path += '.json'
+        # Create schemas directory if it doesn't exist
+        schemas_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "saved_schemas")
+        os.makedirs(schemas_dir, exist_ok=True)
+        
+        # Generate a filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        schema_name = schema_data.get('name', 'unnamed').replace(' ', '_').lower()
+        output_path = os.path.join(schemas_dir, f"{schema_name}_{timestamp}.json")
         
         # Write the schema to the file
         with open(output_path, 'w') as f:
-            json.dump(schema, f, indent=2)
+            json.dump(schema_data, f, indent=2)
+            
+        print(f"DEBUG: Schema saved to file: {output_path}")
+        
+        try:
+            # Save schema to database
+            db_schema = Schema(
+                name=schema_data.get('name'),
+                source_id=schema_data.get('source_id'),
+                description=schema_data.get('description', ''),
+                schema=json.dumps(schema_data)
+            )
+            db.add(db_schema)
+            db.commit()
+            print(f"DEBUG: Schema saved to database with ID: {db_schema.id}")
+        except Exception as db_error:
+            print(f"WARNING: Could not save schema to database: {str(db_error)}")
+            # Continue even if database save fails - we still have the file
         
         return {
-            'message': 'Schema saved successfully',
+            'message': f'Schema "{schema_data.get("name")}" saved successfully',
             'file_path': output_path
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Error in save_schema: {str(e)}")
+        print(f"ERROR in save_schema: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to save schema: {str(e)}")
+
+@router.get('/schemas', response_model=list)
+async def get_schemas(
+    current_user: User = Depends(has_any_permission(["kginsights:read"])),
+    db: Session = Depends(get_db)
+):
+    """Get all saved schemas from the database."""
+    try:
+        # Query all schemas from the database
+        schemas = db.query(Schema).order_by(Schema.created_at.desc()).all()
+        
+        # Format the schemas for the frontend
+        result = []
+        for schema in schemas:
+            try:
+                schema_data = json.loads(schema.schema) if schema.schema else {}
+                result.append({
+                    "id": schema.id,
+                    "name": schema.name,
+                    "source_id": schema.source_id,
+                    "description": schema.description or "",
+                    "created_at": schema.created_at.isoformat() if schema.created_at else None,
+                    "updated_at": schema.updated_at.isoformat() if schema.updated_at else None,
+                })
+            except Exception as e:
+                print(f"Error processing schema {schema.id}: {str(e)}")
+                # Skip this schema if there's an error
+                continue
+                
+        return result
+    except Exception as e:
+        print(f"Error in get_schemas: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch schemas: {str(e)}")
+
+@router.get('/schemas/{schema_id}', response_model=dict)
+async def get_schema_by_id(
+    schema_id: int,
+    current_user: User = Depends(has_any_permission(["kginsights:read"])),
+    db: Session = Depends(get_db)
+):
+    """Get a specific schema by ID from the database."""
+    try:
+        # Query the schema from the database
+        schema = db.query(Schema).filter(Schema.id == schema_id).first()
+        
+        if not schema:
+            raise HTTPException(status_code=404, detail=f"Schema with ID {schema_id} not found")
+            
+        # Format the schema for the frontend
+        result = {
+            "id": schema.id,
+            "name": schema.name,
+            "source_id": schema.source_id,
+            "description": schema.description or "",
+            "schema": schema.schema,  # Return the raw schema JSON string
+            "created_at": schema.created_at.isoformat() if schema.created_at else None,
+            "updated_at": schema.updated_at.isoformat() if schema.updated_at else None,
+        }
+                
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error in get_schema_by_id: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch schema: {str(e)}")

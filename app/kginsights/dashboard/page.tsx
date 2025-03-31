@@ -24,6 +24,7 @@ interface KnowledgeGraph {
   name: string
   description: string
   created: string
+  type: string
 }
 
 interface Dataset {
@@ -48,12 +49,14 @@ function KGraphDashboardContent() {
       name: "Customer Relations",
       description: "Customer-product relationships",
       created: "2025-03-05",
+      type: "graph"
     },
     {
       id: "2",
       name: "Supply Chain",
       description: "Supply chain network",
       created: "2025-02-20",
+      type: "graph"
     },
   ])
 
@@ -123,17 +126,43 @@ function KGraphDashboardContent() {
   // Function to fetch knowledge graphs
   const fetchKnowledgeGraphs = async () => {
     try {
+      // First try to fetch saved schemas
+      const schemasResponse = await fetch("/api/graphschema/schemas", {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+      });
+
+      if (schemasResponse.ok) {
+        const schemasData = await schemasResponse.json();
+        
+        if (schemasData && Array.isArray(schemasData)) {
+          // Map schemas to knowledge graphs format
+          const schemaGraphs = schemasData.map((schema: any) => ({
+            id: schema.id.toString(),
+            name: schema.name,
+            description: schema.description || "Generated schema",
+            created: schema.created_at ? new Date(schema.created_at).toLocaleDateString() : "N/A",
+            type: "schema"
+          }));
+          
+          setKnowledgeGraphs(schemaGraphs);
+          return;
+        }
+      }
+      
+      // Fallback to existing graphs endpoint if schemas endpoint fails
       const response = await fetch("/api/kginsights/graphs", {
         headers: {
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
-      })
+      });
 
       if (!response.ok) {
-        throw new Error(`Failed to fetch knowledge graphs: ${response.status}`)
+        throw new Error(`Failed to fetch knowledge graphs: ${response.status}`);
       }
 
-      const data = await response.json()
+      const data = await response.json();
 
       if (data && Array.isArray(data.graphs)) {
         setKnowledgeGraphs(
@@ -142,12 +171,18 @@ function KGraphDashboardContent() {
             name: graph.name,
             description: graph.description || "",
             created: graph.created_at || "N/A",
-          })),
-        )
+            type: "graph"
+          }))
+        );
       }
     } catch (err) {
-      console.error("Error fetching knowledge graphs:", err)
+      console.error("Error fetching knowledge graphs:", err);
       // Keep using the mock data
+      toast({
+        title: "Note",
+        description: "Using demo knowledge graph data.",
+        variant: "default",
+      });
     }
   }
 
@@ -366,13 +401,23 @@ function KGraphDashboardContent() {
                                 <td className="px-6 py-4 text-muted-foreground">{graph.created}</td>
                                 <td className="px-6 py-4">
                                   <div className="flex gap-2">
-                                    <Button
-                                      variant="link"
-                                      className="text-primary hover:text-primary/80 p-0 h-auto"
-                                      onClick={() => handleManageSchema(graph.id)}
-                                    >
-                                      Manage Schema
-                                    </Button>
+                                    {graph.type === "schema" ? (
+                                      <Button
+                                        variant="link"
+                                        className="text-orange-500 hover:text-orange-600 hover:bg-orange-500/10"
+                                        onClick={() => handleViewSchema(graph.id, graph.name)}
+                                      >
+                                        View Schema
+                                      </Button>
+                                    ) : (
+                                      <Button
+                                        variant="link"
+                                        className="text-primary hover:text-primary/80 p-0 h-auto"
+                                        onClick={() => handleManageSchema(graph.id)}
+                                      >
+                                        Manage Schema
+                                      </Button>
+                                    )}
                                     <span className="text-muted-foreground">|</span>
                                     <Button
                                       variant="link"

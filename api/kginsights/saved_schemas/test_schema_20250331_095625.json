@@ -1,0 +1,91 @@
+{
+  "nodes": [
+    {
+      "label": "Customer",
+      "properties": {
+        "customerID": "string",
+        "gender": "string",
+        "SeniorCitizen": "boolean",
+        "Partner": "boolean",
+        "Dependents": "boolean",
+        "tenure": "integer",
+        "PhoneService": "boolean",
+        "MultipleLines": "string",
+        "MonthlyCharges": "float",
+        "TotalCharges": "float",
+        "Churn": "boolean"
+      }
+    },
+    {
+      "label": "InternetService",
+      "properties": {
+        "type": "string"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "name": "string"
+      }
+    },
+    {
+      "label": "Contract",
+      "properties": {
+        "type": "string"
+      }
+    },
+    {
+      "label": "PaymentMethod",
+      "properties": {
+        "method": "string"
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "type": "USES_INTERNET_SERVICE",
+      "source": "Customer",
+      "target": "InternetService",
+      "properties": {},
+      "startNode": "Customer",
+      "endNode": "InternetService"
+    },
+    {
+      "type": "SUBSCRIBED_TO",
+      "source": "Customer",
+      "target": "Service",
+      "properties": {},
+      "startNode": "Customer",
+      "endNode": "Service"
+    },
+    {
+      "type": "HAS_CONTRACT",
+      "source": "Customer",
+      "target": "Contract",
+      "properties": {
+        "PaperlessBilling": "boolean"
+      },
+      "startNode": "Customer",
+      "endNode": "Contract"
+    },
+    {
+      "type": "PAYS_WITH",
+      "source": "Customer",
+      "target": "PaymentMethod",
+      "properties": {},
+      "startNode": "Customer",
+      "endNode": "PaymentMethod"
+    }
+  ],
+  "indexes": [
+    "Customer(customerID)",
+    "InternetService(type)",
+    "Service(name)",
+    "Contract(type)",
+    "PaymentMethod(method)"
+  ],
+  "name": "Test Schema",
+  "description": "",
+  "source_id": "565313c0-e499-44de-adeb-a119c9343fc5",
+  "created_at": "2025-03-31T04:26:24.618Z"
+}
