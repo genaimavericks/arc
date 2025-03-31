@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  rsw-app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: rsw-app
+    restart: "no"
+    ports:
+      - "9090:9090"
+    environment:
+      - DB_TYPE=${DB_TYPE:-sqlite}
+      # PostgreSQL settings (used only if DB_TYPE=postgresql)
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - DB_NAME=${DB_NAME:-rsw}
+      # Add your OpenAI API key if needed
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    volumes:
+      # For SQLite persistence
+      - rsw-data:/app/api
+    profiles:
+      - default
+      - sqlite
+      - postgresql
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: rsw-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${DB_USER:-postgres}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+      - POSTGRES_DB=${DB_NAME:-rsw}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    profiles:
+      - postgresql
+
+volumes:
+  rsw-data:
+  postgres-data:

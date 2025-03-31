@@ -80,6 +80,7 @@ export function InsightsChatMessages({
                   {/* Display chart visualization if available */}
                   {message.visualization && message.visualization.type !== "none" && (
                     <div className="mt-3">
+                      {/* No debug information needed */}
                       <ChartVisualization 
                         data={message.visualization}
                         chartType={message.visualization.type}

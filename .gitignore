@@ -41,3 +41,16 @@ api/static/*
 .env
 api/.env
 npm
+
+**myenv**
+
+test-results
+db.logs
+settings.json
+*.log
+*.lock
+*.pid
+*.pyc
+
+playwright-report
+
