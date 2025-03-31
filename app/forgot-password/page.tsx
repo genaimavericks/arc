@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useAuth } from "@/lib/auth-context"
 import { useRouter } from "next/navigation"
+import Image from "next/image"
 
 export default function ForgotPasswordPage() {
   const [username, setUsername] = useState("")
@@ -22,6 +23,7 @@ export default function ForgotPasswordPage() {
   const [error, setError] = useState<string | null>(null)
   const { resetPasswordDirect, useFallbackMode } = useAuth()
   const router = useRouter()
+  const [isLogoAnimating, setIsLogoAnimating] = useState(false)
 
   // Password validation state
   const [passwordValidation, setPasswordValidation] = useState({
@@ -143,7 +145,16 @@ export default function ForgotPasswordPage() {
   }, [isSubmitted, router])
 
   return (
-    <main className="min-h-screen bg-black/[0.96] antialiased bg-grid-white/[0.02] relative overflow-hidden">
+    <main className="min-h-screen bg-background dark:bg-black/[0.96] antialiased bg-grid-white/[0.02] relative overflow-hidden">
+      {/* Return to login button */}
+      <Link
+        href="/login"
+        className="absolute top-6 left-6 z-20 w-10 h-10 flex items-center justify-center rounded-full bg-black/10 dark:bg-white/10 hover:bg-black/20 dark:hover:bg-white/20 transition-colors duration-200"
+        aria-label="Return to login page"
+      >
+        <ArrowLeft className="w-5 h-5 text-foreground" />
+      </Link>
+
       {/* Ambient background with moving particles */}
       <div className="h-full w-full absolute inset-0 z-0">
         <SparklesCore
@@ -153,7 +164,7 @@ export default function ForgotPasswordPage() {
           maxSize={1.4}
           particleDensity={100}
           className="w-full h-full"
-          particleColor="#FFFFFF"
+          particleColor="var(--foreground)"
         />
       </div>
 
@@ -162,20 +173,60 @@ export default function ForgotPasswordPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          className="w-full max-w-md p-8 bg-white/5 backdrop-blur-sm rounded-lg border border-white/10"
+          className="w-full max-w-md p-8 bg-white/5 dark:bg-white/5 bg-black/5 backdrop-blur-sm rounded-lg border border-white/10 dark:border-white/10 border-black/10"
         >
-          <div className="flex justify-center mb-6">
-            <KeyRound className="w-12 h-12 text-purple-500" />
+          <div className="flex flex-col items-center mb-6">
+            <motion.div
+              className="relative w-16 h-16"
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.95 }}
+              onHoverStart={() => setIsLogoAnimating(true)}
+              onHoverEnd={() => setIsLogoAnimating(false)}
+              onClick={() => setIsLogoAnimating(true)}
+            >
+              <motion.div
+                className="absolute inset-0 rounded-full bg-primary/20 z-0"
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{
+                  scale: isLogoAnimating ? 1.2 : 0,
+                  opacity: isLogoAnimating ? 1 : 0,
+                }}
+                transition={{ duration: 0.3 }}
+              />
+              <motion.div
+                animate={{
+                  rotate: isLogoAnimating ? [0, 10, -10, 0] : 0,
+                }}
+                transition={{
+                  duration: 0.5,
+                  ease: "easeInOut",
+                  times: [0, 0.2, 0.8, 1],
+                }}
+              >
+                <Image
+                  src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/no_bg_logo-M7cBq60PCuZ1sN7MH6T2WMZRrdyQMZ.png"
+                  alt="RSW Logo"
+                  width={64}
+                  height={64}
+                  className="object-contain relative z-10"
+                />
+              </motion.div>
+            </motion.div>
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary via-secondary to-accent font-bold text-sm mt-2">
+              Cognitive Data Expert
+            </span>
           </div>
 
-          <h1 className="text-3xl font-bold text-white text-center mb-6">Reset Password</h1>
+          <h1 className="text-2xl font-bold text-foreground text-center mb-6">Reset Password</h1>
 
           {error && (
-            <div className="bg-red-500/20 border border-red-500 text-red-200 px-4 py-2 rounded-md mb-4">{error}</div>
+            <div className="bg-red-100 border border-red-400 text-red-800 px-4 py-3 rounded-md mb-4 shadow-sm">
+              <p className="font-medium text-center">{error}</p>
+            </div>
           )}
 
           {useFallbackMode && !isSubmitted && (
-            <div className="bg-yellow-500/20 border border-yellow-500 text-yellow-200 px-4 py-2 rounded-md mb-4 flex items-start">
+            <div className="bg-yellow-100 border border-yellow-400 text-yellow-800 px-4 py-2 rounded-md mb-4 flex items-start">
               <AlertTriangle className="h-5 w-5 mr-2 mt-0.5 flex-shrink-0" />
               <div>
                 <p className="font-medium">Using Demo Mode</p>
@@ -189,13 +240,13 @@ export default function ForgotPasswordPage() {
               <div className="flex justify-center mb-4">
                 <CheckCircle className="w-16 h-16 text-green-500" />
               </div>
-              <h2 className="text-xl font-semibold text-white mb-2">Password Reset Successful</h2>
-              <p className="text-gray-400 mb-6">
+              <h2 className="text-xl font-semibold text-foreground mb-2">Password Reset Successful</h2>
+              <p className="text-foreground/70 mb-6">
                 Your password has been successfully reset. Redirecting to login page...
               </p>
               <Link
                 href="/login"
-                className="text-purple-600 dark:text-purple-400 hover:text-purple-500 dark:hover:text-purple-300 flex items-center justify-center"
+                className="text-primary hover:text-primary/80 flex items-center justify-center"
               >
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back to Login
@@ -203,13 +254,13 @@ export default function ForgotPasswordPage() {
             </div>
           ) : (
             <>
-              <p className="text-gray-400 mb-6">
+              <p className="text-foreground/70 mb-6">
                 Enter your username and new password to reset your account password.
               </p>
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label htmlFor="username" className="block text-sm font-medium text-gray-300 mb-1">
+                  <label htmlFor="username" className="block text-sm font-medium text-foreground/70 mb-1">
                     Username
                   </label>
                   <div className="relative">
@@ -219,7 +270,7 @@ export default function ForgotPasswordPage() {
                       type="text"
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
-                      className="pl-10 bg-white/5 border-white/10 text-white"
+                      className="pl-10 bg-white/5 dark:bg-white/5 bg-black/5 border-white/10 dark:border-white/10 border-black/10 text-foreground"
                       placeholder="Enter your username"
                       required
                     />
@@ -227,7 +278,7 @@ export default function ForgotPasswordPage() {
                 </div>
 
                 <div>
-                  <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-1">
+                  <label htmlFor="password" className="block text-sm font-medium text-foreground/70 mb-1">
                     New Password
                   </label>
                   <div className="relative">
@@ -237,7 +288,7 @@ export default function ForgotPasswordPage() {
                       type="password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className={`pl-10 pr-10 bg-white/5 border-white/10 text-white ${
+                      className={`pl-10 pr-10 bg-white/5 dark:bg-white/5 bg-black/5 border-white/10 dark:border-white/10 border-black/10 text-foreground ${
                         password && !passwordValidation.valid ? "border-red-500" : ""
                       }`}
                       placeholder="Enter new password"
@@ -256,25 +307,25 @@ export default function ForgotPasswordPage() {
                   
                   {password && (
                     <div className="mt-2 space-y-1">
-                      <p className="text-xs font-medium text-gray-300">Password must contain:</p>
+                      <p className="text-xs font-medium text-foreground/70">Password must contain:</p>
                       <ul className="space-y-1">
-                        <li className={`text-xs flex items-center ${passwordValidation.length ? "text-green-500" : "text-gray-400"}`}>
+                        <li className={`text-xs flex items-center ${passwordValidation.length ? "text-green-500" : "text-foreground/50"}`}>
                           {passwordValidation.length ? <Check className="h-3 w-3 mr-1" /> : <X className="h-3 w-3 mr-1" />}
                           At least 8 characters
                         </li>
-                        <li className={`text-xs flex items-center ${passwordValidation.hasUpperCase ? "text-green-500" : "text-gray-400"}`}>
+                        <li className={`text-xs flex items-center ${passwordValidation.hasUpperCase ? "text-green-500" : "text-foreground/50"}`}>
                           {passwordValidation.hasUpperCase ? <Check className="h-3 w-3 mr-1" /> : <X className="h-3 w-3 mr-1" />}
                           At least one uppercase letter
                         </li>
-                        <li className={`text-xs flex items-center ${passwordValidation.hasLowerCase ? "text-green-500" : "text-gray-400"}`}>
+                        <li className={`text-xs flex items-center ${passwordValidation.hasLowerCase ? "text-green-500" : "text-foreground/50"}`}>
                           {passwordValidation.hasLowerCase ? <Check className="h-3 w-3 mr-1" /> : <X className="h-3 w-3 mr-1" />}
                           At least one lowercase letter
                         </li>
-                        <li className={`text-xs flex items-center ${passwordValidation.hasNumber ? "text-green-500" : "text-gray-400"}`}>
+                        <li className={`text-xs flex items-center ${passwordValidation.hasNumber ? "text-green-500" : "text-foreground/50"}`}>
                           {passwordValidation.hasNumber ? <Check className="h-3 w-3 mr-1" /> : <X className="h-3 w-3 mr-1" />}
                           At least one number
                         </li>
-                        <li className={`text-xs flex items-center ${passwordValidation.hasSpecial ? "text-green-500" : "text-gray-400"}`}>
+                        <li className={`text-xs flex items-center ${passwordValidation.hasSpecial ? "text-green-500" : "text-foreground/50"}`}>
                           {passwordValidation.hasSpecial ? <Check className="h-3 w-3 mr-1" /> : <X className="h-3 w-3 mr-1" />}
                           Special character (recommended)
                         </li>
@@ -284,7 +335,7 @@ export default function ForgotPasswordPage() {
                 </div>
 
                 <div>
-                  <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-300 mb-1">
+                  <label htmlFor="confirmPassword" className="block text-sm font-medium text-foreground/70 mb-1">
                     Confirm Password
                   </label>
                   <div className="relative">
@@ -294,7 +345,7 @@ export default function ForgotPasswordPage() {
                       type="password"
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
-                      className={`pl-10 pr-10 bg-white/5 border-white/10 text-white ${
+                      className={`pl-10 pr-10 bg-white/5 dark:bg-white/5 bg-black/5 border-white/10 dark:border-white/10 border-black/10 text-foreground ${
                         confirmPassword && !passwordsMatch ? "border-red-500" : ""
                       }`}
                       placeholder="Confirm new password"
@@ -318,7 +369,7 @@ export default function ForgotPasswordPage() {
 
                 <Button
                   type="submit"
-                  className="w-full bg-violet-600 hover:bg-violet-700 text-white btn-glow"
+                  className="w-full bg-primary hover:bg-primary/90 text-white btn-glow"
                   disabled={isSubmitting || !passwordValidation.valid || !passwordsMatch || !username}
                 >
                   {isSubmitting ? "Resetting..." : "Reset Password"}
@@ -328,7 +379,7 @@ export default function ForgotPasswordPage() {
               <div className="mt-6 text-center">
                 <Link
                   href="/login"
-                  className="text-purple-600 dark:text-purple-400 hover:text-purple-500 dark:hover:text-purple-300 flex items-center justify-center"
+                  className="text-primary hover:text-primary/80 flex items-center justify-center"
                 >
                   <ArrowLeft className="w-4 h-4 mr-2" />
                   Back to Login

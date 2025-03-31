@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef } from "react"
-import { FileUp, X, FileText, Upload, AlertCircle } from "lucide-react"
+import { FileUp, X, FileText, Upload, AlertCircle, Eye } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -51,6 +51,8 @@ export function FileUpload({
   // Update the uploadProgress state to track multiple files
   const [uploadProgress, setUploadProgress] = useState<Record<number, number>>({})
   const [error, setError] = useState("")
+  const [previewData, setPreviewData] = useState<{ headers: string[], rows: any[][], fileName: string } | null>(null)
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false)
   const fileInputRef = useRef(null)
 
   const handleDrag = (e) => {
@@ -90,7 +92,7 @@ export function FileUpload({
   const handleFiles = (newFiles: File[]) => {
     // Filter out unsupported file types
     const validFiles = newFiles.filter((file) => {
-      const fileType = file.name.split(".").pop().toLowerCase()
+      const fileType = file.name.split(".").pop()?.toLowerCase() || "";
       if (fileType !== "csv" && fileType !== "json") {
         setError(`File ${file.name} is not supported. Only CSV and JSON files are allowed.`)
         return false
@@ -114,9 +116,16 @@ export function FileUpload({
 
   // Update the removeFile function to remove a specific file
   const removeFile = (index: number) => {
-    setFiles((prevFiles) => prevFiles.filter((_, i) => i !== index))
-    setUploadProgress({})
-    setError("")
+    setFiles((prevFiles) => {
+      const updatedFiles = prevFiles.filter((_, i) => i !== index);
+      // Clear preview data if the previewed file is removed
+      if (previewData && files[index] && previewData.fileName === files[index].name) {
+        setPreviewData(null);
+      }
+      return updatedFiles;
+    });
+    setUploadProgress({});
+    setError("");
   }
 
   // Update the handleUpload function to handle multiple files
@@ -415,6 +424,101 @@ export function FileUpload({
     onStatusChange("")
   }
 
+  // Function to preview file contents
+  const previewFile = async (file: File, index: number) => {
+    setIsPreviewLoading(true);
+    setPreviewData(null);
+    setError("");
+    
+    try {
+      const fileType = file.name.split(".").pop()?.toLowerCase() || "";
+      
+      if (fileType === "csv") {
+        // For CSV files
+        const text = await file.text();
+        const lines = text.split("\n");
+        const headers = lines[0].split(",").map(header => header.trim().replace(/^"|"$/g, ""));
+        
+        const rows = [];
+        // Get up to 100 rows (excluding header)
+        for (let i = 1; i < Math.min(lines.length, 101); i++) {
+          if (lines[i].trim()) {
+            const row = lines[i].split(",").map(cell => cell.trim().replace(/^"|"$/g, ""));
+            rows.push(row);
+          }
+        }
+        
+        setPreviewData({
+          headers,
+          rows,
+          fileName: file.name
+        });
+      } else if (fileType === "json") {
+        // For JSON files
+        const text = await file.text();
+        const data = JSON.parse(text);
+        
+        if (Array.isArray(data)) {
+          // If it's an array of objects
+          if (data.length > 0) {
+            if (typeof data[0] === 'object' && data[0] !== null) {
+              // Get headers from the first object
+              const headers = Object.keys(data[0]);
+              
+              // Get up to 100 rows
+              const rows = data.slice(0, 100).map(item => {
+                return headers.map(header => item[header]);
+              });
+              
+              setPreviewData({
+                headers,
+                rows,
+                fileName: file.name
+              });
+            } else {
+              // Simple array of values
+              const rows = data.slice(0, 100).map(item => [item]);
+              setPreviewData({
+                headers: ["Value"],
+                rows,
+                fileName: file.name
+              });
+            }
+          } else {
+            setPreviewData({
+              headers: [],
+              rows: [],
+              fileName: file.name
+            });
+          }
+        } else if (typeof data === 'object' && data !== null) {
+          // Single object
+          const headers = Object.keys(data);
+          const rows = [headers.map(header => data[header])];
+          
+          setPreviewData({
+            headers,
+            rows,
+            fileName: file.name
+          });
+        } else {
+          // Simple value
+          setPreviewData({
+            headers: ["Value"],
+            rows: [[data]],
+            fileName: file.name
+          });
+        }
+      }
+    } catch (err) {
+      console.error("Error previewing file:", err);
+      const errorMessage = err instanceof Error ? err.message : "Unknown error";
+      setError(`Error previewing file ${file.name}: ${errorMessage}`);
+    } finally {
+      setIsPreviewLoading(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <h3 className="text-xl font-semibold text-foreground mb-4 flex items-center">
@@ -495,15 +599,27 @@ export function FileUpload({
                   </div>
                 )}
 
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => removeFile(index)}
-                  disabled={isProcessing}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
+                <div className="flex items-center">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => previewFile(file, index)}
+                    disabled={isProcessing || isPreviewLoading}
+                    className="text-muted-foreground hover:text-foreground mr-1"
+                    title="Preview file"
+                  >
+                    <Eye className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => removeFile(index)}
+                    disabled={isProcessing}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
@@ -537,6 +653,72 @@ export function FileUpload({
               </span>
             )}
           </Button>
+        </div>
+      )}
+
+      {previewData && (
+        <div className="border rounded-lg p-4 mb-4 bg-card/50 overflow-x-auto">
+          <div className="flex justify-between items-center mb-3">
+            <h4 className="font-medium text-foreground">
+              Preview: {previewData.fileName} ({previewData.rows.length} rows)
+            </h4>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setPreviewData(null)}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+          
+          {previewData.headers.length > 0 ? (
+            <div className="max-h-[400px] overflow-auto">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="bg-muted/50">
+                    {previewData.headers.map((header, i) => (
+                      <th key={i} className="p-2 text-left border text-sm font-medium text-foreground">
+                        {header}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {previewData.rows.map((row, i) => (
+                    <tr key={i} className={i % 2 === 0 ? "bg-background" : "bg-muted/20"}>
+                      {row.map((cell, j) => (
+                        <td key={j} className="p-2 border text-sm text-muted-foreground">
+                          {typeof cell === 'object' ? JSON.stringify(cell) : String(cell)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-muted-foreground text-sm">No data available for preview</p>
+          )}
+        </div>
+      )}
+
+      {isPreviewLoading && (
+        <div className="flex justify-center items-center p-4 mb-4">
+          <svg
+            className="animate-spin h-5 w-5 text-primary mr-3"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+          >
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+            ></path>
+          </svg>
+          <span>Loading preview...</span>
         </div>
       )}
 
