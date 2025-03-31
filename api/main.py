@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 import os
 from pathlib import Path
 import dotenv
+import datetime
 
 # Load environment variables from .env file
 dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -97,7 +98,7 @@ async def get_open_api_endpoint():
 @app.get("/api/health")
 async def health_check():
     print("Health check endpoint called")
-    return {"status": "ok234"}
+    return {"status": "healthy", "timestamp": datetime.datetime.now().isoformat()}
 
 # Create initial admin user if it doesn't exist
 @app.on_event("startup")

@@ -3,34 +3,52 @@
  * This file provides a consistent way to access configuration values throughout the application
  */
 
+// This will be replaced at runtime with the actual configuration
+declare global {
+  interface Window {
+    __RSW_CONFIG__?: {
+      apiBaseUrl?: string;
+    };
+  }
+}
+
 /**
  * Get the base API URL for backend requests
  * Returns the base URL without the /api suffix
  */
 export function getApiBaseUrl(): string {
-  // For client-side requests, use NEXT_PUBLIC_API_URL if available
+  // For client-side requests
   if (typeof window !== 'undefined') {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || '/api';
-    
-    // If the API URL is a relative path, prepend the origin
-    if (apiUrl.startsWith('/')) {
-      return `${window.location.origin}`;
+    // First check if we have a runtime config (injected by the server)
+    if (window.__RSW_CONFIG__?.apiBaseUrl) {
+      return window.__RSW_CONFIG__.apiBaseUrl;
     }
     
-    // If the apiUrl ends with /api, remove it to get the base URL
+    // Then check environment variables
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+    if (apiUrl) {
+      // If the apiUrl ends with /api, remove it to get the base URL
+      if (apiUrl.endsWith('/api')) {
+        return apiUrl.substring(0, apiUrl.length - 4);
+      }
+      return apiUrl;
+    }
+    
+    // Last resort: use the current window location
+    return window.location.origin;
+  }
+  
+  // For server-side rendering
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (apiUrl) {
     if (apiUrl.endsWith('/api')) {
       return apiUrl.substring(0, apiUrl.length - 4);
     }
-    
     return apiUrl;
   }
   
-  // For server-side rendering, default to base URL
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || '/api';
-  if (apiUrl.endsWith('/api')) {
-    return apiUrl.substring(0, apiUrl.length - 4);
-  }
-  return apiUrl;
+  // Default fallback for server-side rendering
+  return '';
 }
 
 /**
