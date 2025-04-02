@@ -245,11 +245,13 @@ def has_any_permission(permissions: List[str]):
     Returns:
         A dependency function that checks if the current user has any of the permissions
     """
+    print(f"Checking before permissions for user")    
+
     def permission_checker(current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)):
+        print(f"Checking permissions for user {current_user.username}")    
         # Admin can access everything
         if current_user.role == "admin":
             return current_user
-            
         # Get the role from the database
         role = db.query(Role).filter(Role.name == current_user.role).first()
         if not role:
@@ -591,6 +593,7 @@ async def login_for_access_token(
     if user.role == "admin":
         permissions = AVAILABLE_PERMISSIONS
     
+    print(f"******User {user.username} has permissions: {permissions}")
     # Create access token
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(

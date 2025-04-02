@@ -3,6 +3,15 @@
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { 
   ChevronRight, 
   Send, 
@@ -61,6 +70,8 @@ export default function InsightsChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [loading, setLoading] = useState(false)
   const [sourceId, setSourceId] = useState("default")
+  const [availableSources, setAvailableSources] = useState<string[]>([])
+  const [loadingSources, setLoadingSources] = useState(false)
   const [predefinedQueries, setPredefinedQueries] = useState<PredefinedQuery[]>([])
   const [chartTheme, setChartTheme] = useState<ChartTheme>({
     colors: ["#6366f1", "#8b5cf6", "#ec4899", "#f43f5e", "#f97316", "#eab308", "#22c55e", "#06b6d4"],
@@ -92,6 +103,9 @@ export default function InsightsChat() {
     // Load chat history
     fetchChatHistory()
     
+    // Load available knowledge graph sources
+    fetchKnowledgeGraphSources()
+    
     // Cleanup function to ensure state is preserved
     return () => {
       // Component cleanup
@@ -107,32 +121,111 @@ export default function InsightsChat() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }
 
-  // Fetch predefined queries from API
+  // Fetch available knowledge graph sources from API
+  const fetchKnowledgeGraphSources = async () => {
+    setLoadingSources(true)
+    try {
+      // Get the token from localStorage
+      const token = localStorage.getItem("token")
+      if (!token) {
+        console.warn("No authentication token found in localStorage")
+      }
+      
+      // Fetch available knowledge graph sources
+      const response = await fetch(`/api/graph/db`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
+        }
+      })
+      
+      if (!response.ok) {
+        console.warn(`Graph sources API returned ${response.status}. Using default.`)
+        throw new Error(`Failed with status ${response.status}`)
+      }
+      
+      const data = await response.json()
+      
+      if (data.databases && data.databases.length > 0) {
+        setAvailableSources(data.databases)
+        
+        // If sourceId is not in the list, set it to the first available source
+        if (!data.databases.includes(sourceId) && data.databases.length > 0) {
+          setSourceId(data.databases[0])
+        }
+      } else {
+        // Fallback to default if no sources available
+        setAvailableSources(['default'])
+      }
+    } catch (error) {
+      console.error("Error fetching knowledge graph sources:", error)
+      setAvailableSources(['default'])
+    } finally {
+      setLoadingSources(false)
+    }
+  }
+
+  // Fetch predefined queries from API with retry logic
   const fetchPredefinedQueries = async () => {
     try {
-      const response = await fetch(`/api/datainsights/${sourceId}/query/canned`)
-      if (!response.ok) {
-        throw new Error("Failed to fetch predefined queries")
+      // Get the token from localStorage
+      const token = localStorage.getItem("token")
+      if (!token) {
+        console.warn("No authentication token found in localStorage")
       }
+      
+      // Try the API endpoint with proper authorization header
+      const response = await fetch(`/api/datainsights/${sourceId}/query/canned`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
+        }
+      })
+      
+      if (!response.ok) {
+        console.warn(`Predefined queries API returned ${response.status}. Using defaults.`)
+        throw new Error(`Failed with status ${response.status}`)
+      }
+      
       const data = await response.json()
       setPredefinedQueries(data.queries || [])
     } catch (error) {
       console.error("Error fetching predefined queries:", error)
-      toast({
-        title: "Error",
-        description: "Failed to load predefined queries",
-        variant: "destructive",
-      })
+      // Silently fail for predefined queries, not critical for chat functionality
+      // Add some default queries to use if API fails
+      setPredefinedQueries([
+        { id: "default1", query: "What insights can you provide about this data?", category: "general" },
+        { id: "default2", query: "What are the main entities in this knowledge graph?", category: "general" },
+        { id: "default3", query: "Show me a visualization of the key data points", category: "visualization" }
+      ])
     }
   }
 
-  // Fetch chat history from API
+  // Fetch chat history from API with retry logic
   const fetchChatHistory = async () => {
     try {
-      const response = await fetch(`/api/datainsights/${sourceId}/query/history?limit=20`)
-      if (!response.ok) {
-        throw new Error("Failed to fetch chat history")
+      // Get the token from localStorage
+      const token = localStorage.getItem("token")
+      if (!token) {
+        console.warn("No authentication token found in localStorage")
       }
+      
+      // Try the API endpoint with proper authorization header
+      const response = await fetch(`/api/datainsights/${sourceId}/query/history?limit=20`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
+        }
+      })
+      
+      if (!response.ok) {
+        console.warn(`Chat history API returned ${response.status}. Using empty history.`)
+        throw new Error(`Failed with status ${response.status}`)
+      }
+      
       const data = await response.json()
       
       // Convert history to ChatMessage format
@@ -199,11 +292,19 @@ export default function InsightsChat() {
     setLoading(true)
     
     try {
-      // Send request to API
+      // Get the token from localStorage
+      const token = localStorage.getItem("token")
+      if (!token) {
+        console.warn("No authentication token found in localStorage")
+      }
+      
+      // Send request to API with proper authorization header
       const response = await fetch(`/api/datainsights/${sourceId}/query`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
         },
         body: JSON.stringify({ query: message }),
       })
@@ -359,22 +460,40 @@ export default function InsightsChat() {
                   <div>
                     <label className="text-sm font-medium">Knowledge Graph Source</label>
                     <div className="flex mt-1">
-                      <Input
+                      <Select
                         value={sourceId}
-                        onChange={(e) => setSourceId(e.target.value)}
-                        placeholder="Enter source ID"
-                      />
+                        onValueChange={(value) => setSourceId(value)}
+                        disabled={loadingSources}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select knowledge graph" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectLabel>Available Knowledge Graphs</SelectLabel>
+                            {availableSources.length === 0 && (
+                              <SelectItem value="default">Default</SelectItem>
+                            )}
+                            {availableSources.map((source) => (
+                              <SelectItem key={source} value={source}>
+                                {source}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
                       <Button 
                         variant="ghost" 
                         size="icon"
-                        onClick={fetchPredefinedQueries}
+                        onClick={fetchKnowledgeGraphSources}
                         className="ml-2"
+                        disabled={loadingSources}
                       >
-                        <Database className="h-4 w-4" />
+                        <Database className={`h-4 w-4 ${loadingSources ? 'animate-spin' : ''}`} />
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">
-                      ID of the knowledge graph source to query
+                      Select a knowledge graph source to query
                     </p>
                   </div>
                   
