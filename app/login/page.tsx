@@ -2,11 +2,11 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useAuth } from "@/lib/auth-context"
 import { SparklesCore } from "@/components/sparkles"
 import { motion } from "framer-motion"
-import { Lock, Mail, ArrowLeft } from "lucide-react"
+import { Lock, Mail, ArrowLeft, X } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -19,6 +19,26 @@ export default function LoginPage() {
   const { login, isLoading, error } = useAuth()
   const router = useRouter()
   const [isLogoAnimating, setIsLogoAnimating] = useState(false)
+  const [showError, setShowError] = useState<string | null>(null)
+
+  // Update showError when error changes
+  useEffect(() => {
+    setShowError(error)
+    
+    // Set a timer to clear the error after 5 seconds
+    if (error) {
+      const timer = setTimeout(() => {
+        setShowError(null)
+      }, 5000)
+      
+      // Clean up the timer if component unmounts or error changes
+      return () => clearTimeout(timer)
+    }
+  }, [error])
+
+  const handleDismissError = () => {
+    setShowError(null)
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -100,9 +120,16 @@ export default function LoginPage() {
 
           <h1 className="text-2xl font-bold text-foreground text-center mb-6">Login</h1>
 
-          {error && (
-            <div className="bg-red-100 border border-red-400 text-red-800 px-4 py-3 rounded-md mb-4 shadow-sm">
-              <p className="font-medium text-center">{error}</p>
+          {showError && (
+            <div className="bg-red-100 border border-red-400 text-red-800 px-4 py-3 rounded-md mb-4 shadow-sm relative">
+              <button 
+                onClick={handleDismissError}
+                className="absolute top-2 right-2 text-red-600 hover:text-red-800"
+                aria-label="Close notification"
+              >
+                <X size={18} />
+              </button>
+              <p className="font-medium text-center pr-6">{showError}</p>
             </div>
           )}
 
