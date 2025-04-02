@@ -1,0 +1,47 @@
+RSW Project Development Guide
+
+Project Overview
+RSW is a Smart Data Intelligence (SDI) platform consisting of two core components:
+	•	DataPuur: Data acquisition, processing, and analytics
+	•	KGInsights: Knowledge graph management and insights
+Technical Stack
+	•	Frontend: Next.js with TypeScript and React
+	•	Backend: Python FastAPI
+	•	Authentication: JWT token-based
+	•	Authorization: Hierarchical permission system
+	•	Database: SQLAlchemy ORM
+Development Guidelines
+Permission System
+	•	Use the hierarchical permission model:
+	•	DataPuur: datapuur:read, datapuur:write, datapuur:manage
+	•	KGInsights: kginsights:read, kginsights:write, kginsights:manage
+	•	All protected routes must use the ProtectedRoute wrapper with appropriate permissions
+	•	Verify API endpoints correctly use has_permission() or has_any_permission() decorators
+Authentication Flow
+	•	All API requests (except public routes) must include JWT authentication
+	•	Preserve the token management in localStorage
+	•	Maintain appropriate session expiration and refresh mechanisms
+Frontend Guidelines
+	•	Follow the established component structure
+	•	Use the UI component library for consistent styling
+	•	Maintain responsive design for all screen sizes
+	•	Implement proper error handling and user feedback
+Backend Guidelines
+	•	Follow RESTful API design principles
+	•	Maintain database transaction integrity
+	•	Implement proper error handling and status codes
+	•	Use appropriate dependency injection via FastAPI Depends
+Integration Points
+	•	Ensure DataPuur and KGInsights components properly interact
+	•	Maintain shared data models and interfaces
+	•	Respect data flow patterns between components
+Testing & Documentation
+    •   Recommend README updates with any new features or changes
+    •   Recommend testing scripts updates as needed
+    •   Recommend documentation updates for API endpoints
+    •   Recommend any new environment variables updates (edited) 
+When Implementing Changes
+Identify all affected components before making changes and ask for user input
+Ensure backward compatibility when possible
+Update permissions appropriately for new features
+Validate newly generated code

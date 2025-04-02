@@ -1993,6 +1993,66 @@ async def get_data_sources(
     
     return sources
 
+@router.get("/sources/{source_id}", response_model=dict)
+async def get_source_details(
+    source_id: str,
+    current_user: User = Depends(has_any_permission(["datapuur:read", "kginsights:read"])),
+    db: Session = Depends(get_db)
+):
+    """
+    Get detailed information about a specific data source by its ID.
+    Includes file system information for direct access by authorized clients.
+    """
+    # Query the job
+    job = db.query(IngestionJob).filter(IngestionJob.id == source_id).first()
+    
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Source not found with ID: {source_id}")
+    
+    # Extract config
+    config = json.loads(job.config) if job.config and isinstance(job.config, str) else {}
+    
+    # Base source details
+    source_details = {
+        "id": job.id,
+        "name": job.name,
+        "type": job.type,
+        "status": job.status,
+        "created_at": job.start_time.isoformat() if isinstance(job.start_time, datetime) else job.start_time,
+        "completed_at": job.end_time.isoformat() if isinstance(job.end_time, datetime) else job.end_time,
+        "config": config
+    }
+    
+    # For file-based sources, add all file details from the UploadedFile model
+    if job.type == "file" and "file_id" in config:
+        file_id = config["file_id"]
+        file_info = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
+        
+        if file_info:
+            # Add all file details from the UploadedFile model
+            source_details["file"] = {
+                "id": file_info.id,
+                "filename": file_info.filename,
+                "path": file_info.path,
+                "type": file_info.type,
+                "uploaded_by": file_info.uploaded_by,
+                "uploaded_at": file_info.uploaded_at.isoformat() if isinstance(file_info.uploaded_at, datetime) else file_info.uploaded_at,
+                "chunk_size": file_info.chunk_size,
+                "schema": file_info.schema
+            }
+    
+    # For database sources, add database details
+    elif job.type == "database" and "db_type" in config:
+        source_details["database"] = {
+            "type": config.get("db_type"),
+            "connection_name": config.get("connection_name")
+        }
+    
+    # Log this access for security monitoring
+    log_activity(db, current_user.username, "Data access", f"Accessed detailed source information for {job.name} (ID: {source_id})")
+    
+    return source_details
+
 @router.get("/metrics", response_model=DataMetrics)
 async def get_data_metrics(
     current_user: User = Depends(has_permission("datapuur:read")),  # Updated permission

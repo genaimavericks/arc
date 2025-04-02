@@ -23,6 +23,7 @@ class FilePathInput(BaseModel):
 class SourceIdInput(BaseModel):
     source_id: str
     metadata: str = None  # Optional metadata about the data
+    file_path: str = None  # Add file_path field to accept path from frontend
 
 class SaveSchemaInput(BaseModel):
     schema: dict
@@ -200,43 +201,10 @@ async def build_schema_from_source(
     try:
         source_id = source_input.source_id
         
-        # Get the ingestion job
-        job = db.query(IngestionJob).filter(IngestionJob.id == source_id).first()
-        print(f"DEBUG: Found job: {job is not None}")
-        if not job:
-            raise HTTPException(status_code=404, detail=f"Source not found with ID: {source_id}")
-            
-        # Get the file path from the job config
-        config = json.loads(job.config) if job.config else {}
-        print(f"DEBUG: Job config: {config}")
-        
-        if job.type == "file" and "file_id" in config:
-            file_id = config["file_id"]
-            file_info = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
-            print(f"DEBUG: Found file info: {file_info is not None}")
-            
-            if not file_info:
-                raise HTTPException(status_code=404, detail=f"File not found for source ID: {source_id}")
-                
-            file_path = file_info.path
-            print(f"DEBUG: File path: {file_path}")
-            
-            # Handle different OS path formats
-            try:
-                if os.name == 'nt' and file_path.startswith('/'):
-                    # This is a Unix path but we're on Windows
-                    # Extract the filename and use the local uploads directory
-                    filename = os.path.basename(file_path)
-                    file_path = os.path.join(os.path.abspath("api/uploads"), filename)
-                    print(f"DEBUG: Converted path for Windows: {file_path}")
-                elif os.name != 'nt' and '\\' in file_path:
-                    # Convert Windows path to Unix path if needed
-                    file_path = file_path.replace('\\', '/')
-            except Exception as e:
-                raise HTTPException(
-                    status_code=400, 
-                    detail=f"File path error: {str(e)}. The file appears to be from a different operating system."
-                )
+        # Check if file_path is provided directly in the request
+        if source_input.file_path:
+            print(f"DEBUG: Using provided file path: {source_input.file_path}")
+            file_path = source_input.file_path
             
             # Validate file exists
             if not os.path.exists(file_path):
@@ -244,18 +212,35 @@ async def build_schema_from_source(
                     status_code=404, 
                     detail=f"File not found at path: {file_path}. Current OS: {os.name}"
                 )
-            
+                
             # Validate file is a CSV
             if not file_path.lower().endswith('.csv'):
                 raise HTTPException(status_code=400, detail="Only CSV files are supported")
-        else:
-            raise HTTPException(status_code=400, detail="Only file sources are supported")
+
+        # Process enhanced metadata if available
+        metadata = source_input.metadata
+        enhanced_metadata = {}
         
-        # Initialize agent with the provided file path
+        try:
+            # Check if metadata is a JSON string containing enhanced information
+            if metadata and isinstance(metadata, str) and (metadata.startswith('{') or metadata.startswith('[')):
+                enhanced_metadata = json.loads(metadata)
+                print(f"DEBUG: Enhanced metadata parsed: {enhanced_metadata.keys()}")
+                
+                # Extract user prompt from enhanced metadata if available
+                if isinstance(enhanced_metadata, dict) and "userPrompt" in enhanced_metadata:
+                    metadata = enhanced_metadata["userPrompt"]
+                    print(f"DEBUG: Extracted user prompt from metadata: {metadata}")
+        except json.JSONDecodeError:
+            # If not valid JSON, use as is (simple string)
+            print(f"DEBUG: Using metadata as plain text: {metadata}")
+            pass
+        
+        # Initialize agent with the provided file path and metadata
         agent_instance = GraphSchemaAgent(
             model=llm,
             csv_path=file_path,
-            metadata=source_input.metadata,
+            metadata=metadata,
             log=True,
             log_path='logs'
         )
