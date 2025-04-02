@@ -376,9 +376,6 @@ def validate_role(role_name: str, db: Session):
         if role_name == "admin":
             # Admin has all permissions
             permissions = AVAILABLE_PERMISSIONS
-        elif role_name == "user":
-            # Regular user has basic data read permissions
-            permissions = ["datapuur:read"]
         else:
             # Other roles have no permissions by default
             permissions = []
@@ -392,7 +389,7 @@ def validate_role(role_name: str, db: Session):
         role = Role(
             name=role_name,
             description=json.dumps(description_data),
-            is_system_role=(role_name in ["admin", "user", "researcher"])
+            is_system_role=(role_name in ["admin"])
         )
         
         # Add to database
@@ -410,8 +407,6 @@ def initialize_default_roles(db: Session):
     
     This function creates the following system roles if they don't exist:
     - admin: Has all permissions
-    - user: Has basic data read permissions
-    - researcher: Has data read/write and schema read permissions
     
     If the roles already exist, it ensures they have the correct permissions and system role flag.
     """
@@ -449,75 +444,6 @@ def initialize_default_roles(db: Session):
             print("Updated admin role with all permissions")
         except Exception as e:
             print(f"Error updating admin role: {str(e)}")
-    
-    # Create user role if it doesn't exist
-    user_role = db.query(Role).filter(Role.name == "user").first()
-    if not user_role:
-        permissions = ["datapuur:read"]
-        description_data = {
-            "text": "Regular user with limited access",
-            "permissions": permissions
-        }
-        
-        user_role = Role(
-            name="user",
-            description=json.dumps(description_data),
-            is_system_role=True
-        )
-        db.add(user_role)
-        print("Created user role with basic permissions")
-    else:
-        # Update existing user role to ensure it has correct permissions
-        try:
-            if user_role.description and user_role.description.startswith('{'):
-                description_data = json.loads(user_role.description)
-                description_data["permissions"] = ["datapuur:read"]
-            else:
-                description_data = {
-                    "text": user_role.description or "Regular user with limited access",
-                    "permissions": ["datapuur:read"]
-                }
-            
-            user_role.description = json.dumps(description_data)
-            user_role.is_system_role = True
-            user_role.updated_at = datetime.utcnow()
-            print("Updated user role with basic permissions")
-        except Exception as e:
-            print(f"Error updating user role: {str(e)}")
-    
-    # Create researcher role if it doesn't exist
-    researcher_role = db.query(Role).filter(Role.name == "researcher").first()
-    if not researcher_role:
-        permissions = ["datapuur:read", "datapuur:write", "kginsights:read"]
-        description_data = {
-            "text": "Researcher with data access",
-            "permissions": permissions
-        }
-        
-        researcher_role = Role(
-            name="researcher",
-            description=json.dumps(description_data),
-            is_system_role=True
-        )
-        db.add(researcher_role)
-        db.commit()
-        print("Created researcher role with data access permissions")
-    else:
-        # Update existing researcher role to ensure it has the right permissions
-        try:
-            if researcher_role.description and researcher_role.description.startswith('{'):
-                description_data = json.loads(researcher_role.description)
-                description_data["permissions"] = ["datapuur:read", "datapuur:write", "kginsights:read"]
-            else:
-                description_data = {
-                    "text": researcher_role.description or "Researcher with data access",
-                    "permissions": ["datapuur:read", "datapuur:write", "kginsights:read"]
-                }
-            
-            researcher_role.description = json.dumps(description_data)
-            db.commit()
-        except Exception as e:
-            print(f"Error updating researcher role: {e}")
 
     # Ensure that any role with kginsights:read also has datapuur:read
     roles_with_kginsights = db.query(Role).all()
@@ -538,10 +464,10 @@ def initialize_default_roles(db: Session):
 
     # Check for any other roles that might have been created with system role names
     # but are not properly marked as system roles
-    system_role_names = ["admin", "user", "researcher"]
+    system_role_names = ["admin"]
     other_system_roles = db.query(Role).filter(
         Role.name.in_(system_role_names),
-        Role.id.notin_([r.id for r in [admin_role, user_role, researcher_role] if r])
+        Role.id.notin_([admin_role.id] if admin_role else [])
     ).all()
     
     for role in other_system_roles:
@@ -551,7 +477,7 @@ def initialize_default_roles(db: Session):
     
     # Commit changes
     db.commit()
-    print(f"Updated role permissions. Admin ID: {admin_role.id}, User ID: {user_role.id}, Researcher ID: {researcher_role.id}")
+    print(f"Updated role permissions. Admin ID: {admin_role.id}")
 
 # Routes
 @router.post("/token", response_model=Token)
@@ -751,7 +677,7 @@ async def create_role(
     Create a new role.
     
     This endpoint allows users with the 'role:write' permission to create a new role.
-    The role name must be unique and cannot be one of the system roles (admin, user, researcher).
+    The role name must be unique and cannot be one of the system roles (admin).
     
     Args:
         role_create: The role data to create
@@ -768,7 +694,7 @@ async def create_role(
         )
     
     # Check if trying to create a system role
-    system_roles = ["admin", "user", "researcher"]
+    system_roles = ["admin"]
     if role_create.name.lower() in [r.lower() for r in system_roles]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -817,7 +743,7 @@ async def update_role(
     Update an existing role.
     
     This endpoint allows users with the 'role:write' permission to update an existing role.
-    System roles (admin, user, researcher) cannot be modified.
+    System roles (admin) cannot be modified.
     
     Args:
         role_id: The ID of the role to update
@@ -924,7 +850,7 @@ async def delete_role(
     Delete a role.
     
     This endpoint allows users with the 'role:write' permission to delete a role.
-    System roles (admin, user, researcher) cannot be deleted.
+    System roles (admin) cannot be deleted.
     
     Args:
         role_id: The ID of the role to delete
@@ -1070,7 +996,7 @@ def startup_event():
     Initialize default roles when the application starts.
     
     This function is called when the application starts to ensure that
-    the default roles (admin, user, researcher) exist in the database
+    the default roles (admin) exist in the database
     and have the correct permissions.
     """
     db = SessionLocal()

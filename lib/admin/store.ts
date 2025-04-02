@@ -88,20 +88,6 @@ export const defaultRoles: Role[] = [
     permissions: ["datapuur:read", "datapuur:write", "datapuur:manage", "user:read", "user:create", "user:update", "user:delete", "role:read", "role:create", "role:update", "role:delete", "kginsights:read", "kginsights:write", "kginsights:manage"],
     is_system_role: true
   },
-  {
-    id: 2,
-    name: "user",
-    description: "Regular user with limited access",
-    permissions: ["datapuur:read"],
-    is_system_role: true
-  },
-  {
-    id: 3,
-    name: "researcher",
-    description: "Researcher with data access",
-    permissions: ["datapuur:read", "datapuur:write", "kginsights:read"],
-    is_system_role: true
-  },
 ]
 
 // All available permissions for the system

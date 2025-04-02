@@ -43,15 +43,9 @@ def setup_default_role_permissions(db: Session):
             if role.name == "admin":
                 # Admin has all permissions
                 permissions = AVAILABLE_PERMISSIONS
-            elif role.name == "user":
-                # Regular users have read access
-                permissions = ["datapuur:read"]
-            elif role.name == "researcher":
-                # Researchers have data access
-                permissions = ["datapuur:read", "datapuur:write", "kginsights:read"]
             elif role.name == "superhero":
                 # Give superhero role access to everything except admin tasks
-                permissions = [p for p in AVAILABLE_PERMISSIONS if not p.startswith(("user:", "role:"))]
+                permissions = [p for p in AVAILABLE_PERMISSIONS if not p.startswith(("role:"))]
             
             # Store current description as text if it exists and isn't already JSON
             original_description = ""

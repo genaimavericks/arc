@@ -169,34 +169,6 @@ async def startup_event():
         db.commit()
         print("Created initial admin user")
     
-    # Create researcher user if it doesn't exist
-    researcher_user = db.query(User).filter(User.username == "researcher").first()
-    if not researcher_user:
-        hashed_password = User.get_password_hash("password")
-        researcher = User(
-            username="researcher",
-            email="researcher@example.com",
-            hashed_password=hashed_password,
-            role="researcher"
-        )
-        db.add(researcher)
-        db.commit()
-        print("Created initial researcher user")
-    
-    # Create regular user if it doesn't exist
-    regular_user = db.query(User).filter(User.username == "user").first()
-    if not regular_user:
-        hashed_password = User.get_password_hash("password")
-        user = User(
-            username="user",
-            email="user@example.com",
-            hashed_password=hashed_password,
-            role="user"
-        )
-        db.add(user)
-        db.commit()
-        print("Created initial regular user")
-    
     # Ensure roles have proper permissions
     try:
         from api.migrate_db import setup_default_role_permissions

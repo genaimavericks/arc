@@ -90,7 +90,6 @@ export async function fetchAdminData(): Promise<{
       stats: {
         total_users: 42,
         active_users: 38,
-        researchers: 15,
         regular_users: 26,
         system_uptime: "3 days, 7 hours",
         database_size: "42.5 MB",
@@ -103,22 +102,6 @@ export async function fetchAdminData(): Promise<{
           role: "admin",
           is_active: true,
           created_at: new Date().toISOString(), 
-        },
-        {
-          id: 2,
-          username: "researcher",
-          email: "researcher@example.com",
-          role: "researcher",
-          is_active: true,
-          created_at: new Date(Date.now() - 24 * 60 * 60000).toISOString(), 
-        },
-        {
-          id: 3,
-          username: "user",
-          email: "user@example.com",
-          role: "user",
-          is_active: true,
-          created_at: new Date(Date.now() - 48 * 60 * 60000).toISOString(), 
         },
       ],
       activity: [
@@ -133,7 +116,7 @@ export async function fetchAdminData(): Promise<{
         {
           id: 2,
           action: "Page visit",
-          username: "researcher",
+          username: "admin",
           timestamp: new Date(Date.now() - 15 * 60000).toISOString(), 
           details: "Visited dashboard page",
           page_url: "/datapuur/dashboard",

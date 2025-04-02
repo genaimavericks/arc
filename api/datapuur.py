@@ -2508,8 +2508,8 @@ def delete_dataset_endpoint(
     """
     Delete a dataset and all its associated data.
     
-    This endpoint requires the 'datapuur:manage' permission, which should be restricted
-    to admin and researcher roles.
+    This endpoint requires the 'datapuur:manage' permission, which is restricted
+    to admin role.
     """
     # Log the activity
     log_activity(

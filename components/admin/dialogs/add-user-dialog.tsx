@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useAdminStore } from "@/lib/admin/store"
 import { createUser } from "@/lib/admin/api"
@@ -22,7 +22,7 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
     username: "",
     email: "",
     password: "",
-    role: "user",
+    role: "admin",
     is_active: true,
   })
   
@@ -149,17 +149,17 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
         username: "",
         email: "",
         password: "",
-        role: "user",
+        role: "admin",
         is_active: true,
       })
 
       // Clear notification after 3 seconds
       setTimeout(() => setNotification(null), 3000)
     } catch (error) {
-      console.error("Error adding user:", error)
+      console.error("Error creating user:", error)
       setNotification({
         type: "error",
-        message: error.message || "Failed to create user",
+        message: `Failed to create user: ${error instanceof Error ? error.message : String(error)}`
       })
 
       // Clear notification after 3 seconds
@@ -273,10 +273,10 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
           <div className="space-y-2">
             <Label htmlFor="role">Role</Label>
             <Select value={newUser.role} onValueChange={(value) => setNewUser({ ...newUser, role: value })}>
-              <SelectTrigger className="bg-background border-input text-foreground">
+              <SelectTrigger>
                 <SelectValue placeholder="Select a role" />
               </SelectTrigger>
-              <SelectContent className="bg-popover border border-border text-popover-foreground">
+              <SelectContent>
                 {roles.map((role) => (
                   <SelectItem key={role.id} value={role.name}>
                     {role.name}
@@ -286,10 +286,14 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
             </Select>
           </div>
           <div className="flex items-center space-x-2">
-            <Switch
-              id="is_active"
-              checked={newUser.is_active}
-              onCheckedChange={(checked) => setNewUser({ ...newUser, is_active: checked })}
+            <Checkbox 
+              id="is_active" 
+              checked={newUser.is_active} 
+              onCheckedChange={(checked) => {
+                if (checked === true || checked === false) {
+                  setNewUser({ ...newUser, is_active: checked });
+                }
+              }}
             />
             <Label htmlFor="is_active">Active</Label>
           </div>

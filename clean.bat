@@ -23,6 +23,10 @@ if exist public\static (
     echo Removing public\static directory...
     rmdir /s /q public\static
 )
+if exist api\static (
+    echo Removing api\static directory...
+    rmdir /s /q api\static
+)
 if exist assets (
     echo Removing assets directory...
     rmdir /s /q assets

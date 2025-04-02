@@ -14,14 +14,14 @@ export function UsersTab() {
   const [editUserDialog, setEditUserDialog] = useState(false)
   const [deleteUserDialog, setDeleteUserDialog] = useState(false)
   const [addUserDialog, setAddUserDialog] = useState(false)
-  const [currentUser, setCurrentUser] = useState(null)
+  const [currentUser, setCurrentUser] = useState<{ id: number; username: string } | null>(null)
 
-  const openEditUserDialog = (user) => {
+  const openEditUserDialog = (user: { id: number; username: string }) => {
     setCurrentUser(user)
     setEditUserDialog(true)
   }
 
-  const openDeleteUserDialog = (user) => {
+  const openDeleteUserDialog = (user: { id: number; username: string }) => {
     setCurrentUser(user)
     setDeleteUserDialog(true)
   }
@@ -55,62 +55,60 @@ export function UsersTab() {
           </thead>
           <tbody>
             {users?.map((user) => (
-              <tr key={user.id} className="border-b border-border hover:bg-accent/50">
-                <td className="p-3 text-card-foreground">{user.id}</td>
-                <td className="p-3 text-card-foreground">{user.username}</td>
-                <td className="p-3 text-card-foreground">{user.email}</td>
-                <td className="p-3">
-                  <span
-                    className={`px-2 py-1 rounded-full text-xs ${
-                      user.role === "admin"
-                        ? "bg-purple-500 text-white"
-                        : user.role === "researcher"
-                          ? "bg-blue-500 text-white"
+                <tr key={user.id} className="border-b border-border hover:bg-accent/50">
+                  <td className="p-3 text-card-foreground">{user.id}</td>
+                  <td className="p-3 text-card-foreground">{user.username}</td>
+                  <td className="p-3 text-card-foreground">{user.email}</td>
+                  <td className="p-3">
+                    <span
+                      className={`px-2 py-1 rounded-full text-xs ${
+                        user.role === "admin"
+                          ? "bg-purple-500 text-white"
                           : "bg-gray-500 text-white"
-                    }`}
-                  >
-                    {user.role}
-                  </span>
-                </td>
-                <td className="p-3">
-                  <span
-                    className={`px-2 py-1 rounded-full text-xs ${
-                      user.is_active ? "bg-green-500 text-white" : "bg-red-500 text-white"
-                    }`}
-                  >
-                    {user.is_active ? "Active" : "Inactive"}
-                  </span>
-                </td>
-                <td className="p-3 text-muted-foreground">
-                  {user.created_at ? formatDate(user.created_at, false) : "N/A"}
-                </td>
-                <td className="p-3 text-muted-foreground">
-                  {user.updated_at ? formatDate(user.updated_at, false) : "N/A"}
-                </td>
-                <td className="p-3">
-                  <div className="flex space-x-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="border-violet-600 text-violet-600 hover:bg-violet-600/20 text-xs h-7"
-                      onClick={() => openEditUserDialog(user)}
+                      }`}
                     >
-                      Edit
-                    </Button>
-                    {user.username !== "admin" && (
+                      {user.role}
+                    </span>
+                  </td>
+                  <td className="p-3">
+                    <span
+                      className={`px-2 py-1 rounded-full text-xs ${
+                        user.is_active ? "bg-green-500 text-white" : "bg-red-500 text-white"
+                      }`}
+                    >
+                      {user.is_active ? "Active" : "Inactive"}
+                    </span>
+                  </td>
+                  <td className="p-3 text-muted-foreground">
+                    {user.created_at ? formatDate(user.created_at, false) : "N/A"}
+                  </td>
+                  <td className="p-3 text-muted-foreground">
+                    {user.updated_at ? formatDate(user.updated_at, false) : "N/A"}
+                  </td>
+                  <td className="p-3">
+                    <div className="flex space-x-2">
                       <Button
                         variant="outline"
                         size="sm"
-                        className="text-xs h-7 border-destructive text-destructive hover:bg-destructive/20"
-                        onClick={() => openDeleteUserDialog(user)}
+                        className="border-violet-600 text-violet-600 hover:bg-violet-600/20 text-xs h-7"
+                        onClick={() => openEditUserDialog(user)}
                       >
-                        Delete
+                        Edit
                       </Button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
+                      {user.username !== "admin" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-xs h-7 border-destructive text-destructive hover:bg-destructive/20"
+                          onClick={() => openDeleteUserDialog(user)}
+                        >
+                          Delete
+                        </Button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
           </tbody>
         </table>
       </div>
