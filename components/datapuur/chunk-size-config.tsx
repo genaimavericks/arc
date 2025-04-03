@@ -1,24 +1,49 @@
 "use client"
 
-import { useState } from "react"
+import { useState, ChangeEvent, FocusEvent } from "react"
 import { Slider } from "@/components/ui/slider"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 
-export function ChunkSizeConfig({ chunkSize, onChunkSizeChange, disabled = false }) {
-  const [localChunkSize, setLocalChunkSize] = useState(chunkSize)
+interface ChunkSizeConfigProps {
+  chunkSize: number
+  onChunkSizeChange: (size: number) => void
+  disabled?: boolean
+}
 
-  const handleSliderChange = (value) => {
+export function ChunkSizeConfig({ chunkSize, onChunkSizeChange, disabled = false }: ChunkSizeConfigProps) {
+  const [localChunkSize, setLocalChunkSize] = useState<number>(chunkSize)
+
+  const handleSliderChange = (value: number[]) => {
     const newValue = value[0]
     setLocalChunkSize(newValue)
     onChunkSizeChange(newValue)
   }
 
-  const handleInputChange = (e) => {
+  const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
     const value = Number.parseInt(e.target.value)
-    if (!isNaN(value) && value >= 100 && value <= 10000) {
-      setLocalChunkSize(value)
-      onChunkSizeChange(value)
+    if (!isNaN(value)) {
+      // Allow any valid input to be entered temporarily
+      if (value >= 100 && value <= 10000) {
+        // Only update the actual value if it's within range
+        setLocalChunkSize(value)
+        onChunkSizeChange(value)
+      } else if (e.target.value === "" || e.target.value === "1" || e.target.value === "10") {
+        // Allow typing "1", "10" on the way to typing "100" without validation
+        setLocalChunkSize(parseInt(e.target.value) || 0)
+      }
+    }
+  }
+
+  // When input loses focus, ensure the value is within valid range
+  const handleInputBlur = (e: FocusEvent<HTMLInputElement>) => {
+    const value = Number.parseInt(e.target.value)
+    if (isNaN(value) || value < 100) {
+      setLocalChunkSize(100)
+      onChunkSizeChange(100)
+    } else if (value > 10000) {
+      setLocalChunkSize(10000)
+      onChunkSizeChange(10000)
     }
   }
 
@@ -42,6 +67,7 @@ export function ChunkSizeConfig({ chunkSize, onChunkSizeChange, disabled = false
             step={100}
             value={localChunkSize}
             onChange={handleInputChange}
+            onBlur={handleInputBlur}
             disabled={disabled}
             className="text-right"
           />
@@ -67,4 +93,3 @@ export function ChunkSizeConfig({ chunkSize, onChunkSizeChange, disabled = false
     </div>
   )
 }
-
