@@ -55,4 +55,5 @@ settings.json
 playwright-report
 
 cache.db
-
+api/db.logs
+api/database.db

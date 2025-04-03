@@ -245,11 +245,10 @@ def has_any_permission(permissions: List[str]):
     Returns:
         A dependency function that checks if the current user has any of the permissions
     """
-    def permission_checker(current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)):
+    def permission_checker(current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)):  
         # Admin can access everything
         if current_user.role == "admin":
             return current_user
-            
         # Get the role from the database
         role = db.query(Role).filter(Role.name == current_user.role).first()
         if not role:
