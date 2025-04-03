@@ -59,29 +59,8 @@ app.add_middleware(ActivityLoggerMiddleware)
 
 # Direct datainsights API endpoint routes with authentication - must be defined before including the router
 
-# Direct route specifically for datainsights query history
-@app.get("/api/datainsights/{source_id}/query/history", include_in_schema=True)
-async def datainsights_history_direct(
-    source_id: str, 
-    limit: int = Query(10, ge=1, le=100),
-    current_user: User = Depends(has_any_permission(["kginsights:read"]))
-):
-    """Direct route for datainsights query history with authentication"""
-    print(f"Direct route for datainsights/{source_id}/query/history called with limit={limit}")
-    result = await get_query_history(source_id=source_id, limit=limit, current_user=current_user)
-    return result
-
-# Direct route specifically for datainsights canned queries
-@app.get("/api/datainsights/{source_id}/query/canned", include_in_schema=True)
-async def datainsights_canned_direct(
-    source_id: str, 
-    category: Optional[str] = None,
-    current_user: User = Depends(has_any_permission(["kginsights:read"]))
-):
-    """Direct route for datainsights canned queries with authentication"""
-    print(f"Direct route for datainsights/{source_id}/query/canned called with category={category}")
-    result = await get_predefined_queries(source_id=source_id, category=category, current_user=current_user)
-    return result
+# All datainsights API routes are now handled by the kgdatainsights_router
+# No direct routes needed here anymore
 
 # Register routers after defining all direct routes
 app.include_router(auth_router)
@@ -93,26 +72,8 @@ app.include_router(kgdatainsights_router, prefix="/api")
 
 app.include_router(admin_router)
 
-# Compatibility routes for KGInsights - directly call datainsights endpoints
-@app.get("/api/kg/insights/{source_id}/query/history")
-async def kg_insights_history_compat(
-    source_id: str, 
-    limit: int = 10,
-    current_user: User = Depends(has_any_permission(["kginsights:read"]))
-):
-    """Compatibility route for KGInsights query history - calls datainsights endpoint"""
-    # Directly call the datainsights API function instead of redirecting
-    return await get_query_history(source_id=source_id, limit=limit, current_user=current_user)
-
-@app.get("/api/kg/insights/{source_id}/query/canned")
-async def kg_insights_canned_compat(
-    source_id: str, 
-    category: Optional[str] = None,
-    current_user: User = Depends(has_any_permission(["kginsights:read"]))
-):
-    """Compatibility route for KGInsights canned queries - calls datainsights endpoint"""
-    # Directly call the datainsights API function instead of redirecting
-    return await get_predefined_queries(source_id=source_id, category=category, current_user=current_user)
+# Removed old compatibility routes for KGInsights
+# These are now handled by the kgdatainsights_router
 
 # Custom OpenAPI and Swagger UI endpoints
 @app.get("/api/docs", include_in_schema=False)
@@ -168,34 +129,6 @@ async def startup_event():
         db.add(admin)
         db.commit()
         print("Created initial admin user")
-    
-    # Create researcher user if it doesn't exist
-    researcher_user = db.query(User).filter(User.username == "researcher").first()
-    if not researcher_user:
-        hashed_password = User.get_password_hash("password")
-        researcher = User(
-            username="researcher",
-            email="researcher@example.com",
-            hashed_password=hashed_password,
-            role="researcher"
-        )
-        db.add(researcher)
-        db.commit()
-        print("Created initial researcher user")
-    
-    # Create regular user if it doesn't exist
-    regular_user = db.query(User).filter(User.username == "user").first()
-    if not regular_user:
-        hashed_password = User.get_password_hash("password")
-        user = User(
-            username="user",
-            email="user@example.com",
-            hashed_password=hashed_password,
-            role="user"
-        )
-        db.add(user)
-        db.commit()
-        print("Created initial regular user")
     
     # Ensure roles have proper permissions
     try:

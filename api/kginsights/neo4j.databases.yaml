@@ -1,0 +1,17 @@
+social_graph:
+  NEO4J_USERNAME=neo4j
+  NEO4J_DB=neo4j
+  NEO4J_URI=bolt://127.0.0.1:7690
+  NEO4J_PASSWORD=password1
+
+ecommerce_graph:
+  NEO4J_USERNAME=neo4j
+  NEO4J_DB=neo4j
+  NEO4J_URI=bolt://127.0.0.1:7691
+  NEO4J_PASSWORD=password2
+
+healthcare_graph:
+  NEO4J_USERNAME=neo4j
+  NEO4J_DB=neo4j
+  NEO4J_URI=bolt://127.0.0.1:7692
+  NEO4J_PASSWORD=password3

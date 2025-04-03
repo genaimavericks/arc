@@ -357,7 +357,7 @@ export function DataDashboard() {
     // For testing, always return true to make the button visible
     return true
     // Uncomment this when testing is complete:
-    // return userRole === "admin" || userRole === "researcher"
+    return userRole === "admin"
   }
 
   return (

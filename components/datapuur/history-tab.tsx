@@ -194,7 +194,7 @@ export function HistoryTab() {
         type: "csv",
         size: 1024 * 1024 * 2.5, // 2.5 MB
         uploaded_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString(), // 2 days ago
-        uploaded_by: "researcher",
+        uploaded_by: "admin",
         preview_url: "/api/datapuur/preview/1",
         download_url: "/api/datapuur/download/1",
         status: "available",
@@ -222,7 +222,7 @@ export function HistoryTab() {
         type: "json",
         size: 1024 * 1024 * 1.2, // 1.2 MB
         uploaded_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 5).toISOString(), // 5 days ago
-        uploaded_by: "researcher",
+        uploaded_by: "admin",
         preview_url: "/api/datapuur/preview/2",
         download_url: "/api/datapuur/download/2",
         status: "available",
@@ -285,7 +285,7 @@ export function HistoryTab() {
         type: "json",
         size: 1024 * 512, // 512 KB
         uploaded_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(), // 30 minutes ago
-        uploaded_by: "researcher",
+        uploaded_by: "admin",
         preview_url: "/api/datapuur/preview/4",
         download_url: "/api/datapuur/download/4",
         status: "failed",
@@ -305,7 +305,7 @@ export function HistoryTab() {
         type: "csv",
         size: 1024 * 1024 * 5.1, // 5.1 MB
         uploaded_at: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(), // 2 hours ago
-        uploaded_by: "researcher",
+        uploaded_by: "admin",
         preview_url: "/api/datapuur/preview/5",
         download_url: "/api/datapuur/download/5",
         status: "available",
@@ -367,7 +367,7 @@ export function HistoryTab() {
         type: "database",
         size: 1024 * 1024 * 15.2, // 15.2 MB
         uploaded_at: new Date(Date.now() - 1000 * 60 * 60 * 36).toISOString(), // 36 hours ago
-        uploaded_by: "researcher",
+        uploaded_by: "admin",
         preview_url: "/api/datapuur/preview/7",
         download_url: "/api/datapuur/download/7",
         status: "available",
@@ -959,7 +959,18 @@ export function HistoryTab() {
                       <td key={cellIndex} className="px-4 py-2 text-sm border-b border-border">
                         {cell !== null ? String(cell) : <span className="text-muted-foreground italic">NULL</span>}
                       </td>
-                    )) : (
+                    )) : typeof row === 'object' && row !== null ? (
+                      // Handle JSON objects (each row is an object with properties matching headers)
+                      headers.map((header: string, cellIndex: number) => (
+                        <td key={cellIndex} className="px-4 py-2 text-sm border-b border-border">
+                          {row[header] !== undefined && row[header] !== null 
+                            ? (typeof row[header] === 'object' 
+                                ? JSON.stringify(row[header]) 
+                                : String(row[header]))
+                            : <span className="text-muted-foreground italic">NULL</span>}
+                        </td>
+                      ))
+                    ) : (
                       <td className="px-4 py-2 text-sm border-b border-border">
                         {row !== null ? String(row) : <span className="text-muted-foreground italic">NULL</span>}
                       </td>

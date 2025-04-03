@@ -1533,6 +1533,17 @@ async def get_ingestion_preview(
                     if not isinstance(record, dict):
                         records[i] = {"value": record}
                 
+                # Ensure the data is JSON serializable by converting to and from JSON
+                try:
+                    # This will catch any non-serializable objects
+                    json_string = json.dumps(records)
+                    # Parse it back to ensure we have valid JSON objects
+                    records = json.loads(json_string)
+                except Exception as e:
+                    print(f"JSON serialization error: {str(e)}")
+                    # Fallback to a simpler structure if serialization fails
+                    records = [{"error": "Data could not be serialized", "index": i} for i in range(len(records))]
+                
                 # Log the structure for debugging
                 print(f"Preview response structure: data is a {type(records).__name__} with {len(records)} items")
                 
@@ -2568,8 +2579,8 @@ def delete_dataset_endpoint(
     """
     Delete a dataset and all its associated data.
     
-    This endpoint requires the 'datapuur:manage' permission, which should be restricted
-    to admin and researcher roles.
+    This endpoint requires the 'datapuur:manage' permission, which is restricted
+    to admin role.
     """
     # Log the activity
     log_activity(

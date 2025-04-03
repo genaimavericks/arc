@@ -61,7 +61,7 @@ export function EditUserDialog({ open, onOpenChange, user }: EditUserDialogProps
       console.error("Error updating user:", error)
       setNotification({
         type: "error",
-        message: error.message || "Failed to update user",
+        message: `Failed to update user: ${error instanceof Error ? error.message : String(error)}`,
       })
 
       // Clear notification after 3 seconds
@@ -149,4 +149,3 @@ export function EditUserDialog({ open, onOpenChange, user }: EditUserDialogProps
     </Dialog>
   )
 }
-

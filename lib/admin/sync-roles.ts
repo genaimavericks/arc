@@ -75,13 +75,6 @@ export async function syncRoles() {
         permissions: ["datapuur:read"],
         is_system_role: true
       },
-      {
-        id: 3,
-        name: "researcher",
-        description: "Researcher with data access",
-        permissions: ["datapuur:read", "datapuur:write", "kginsights:read"],
-        is_system_role: true
-      },
     ]
 
     setRoles(defaultRoles)
