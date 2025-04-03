@@ -117,7 +117,42 @@ export function SchemaChat({
     setLoading(true)
     
     try {
-      // Send request to API
+      // First, fetch the detailed source information to get the file path
+      const sourceResponse = await fetch(`/api/datapuur/sources/${selectedSource}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+      });
+      
+      if (!sourceResponse.ok) {
+        throw new Error(`Failed to fetch source details: ${sourceResponse.status}`);
+      }
+      
+      const sourceData = await sourceResponse.json();
+      
+      // Extract file path from source details
+      if (!sourceData.file || !sourceData.file.path) {
+        throw new Error("File path not found in source details");
+      }
+      
+      const filePath = sourceData.file.path;
+      const fileType = sourceData.file.type;
+      const fileName = sourceData.file.filename;
+      const fileMetadata = sourceData.file.schema; // Any pre-existing schema information
+      
+      // Enhanced metadata for schema generation
+      const enhancedMetadata = {
+        userPrompt: message,
+        fileName: fileName,
+        fileType: fileType,
+        sourceId: selectedSource,
+        sourceName: selectedSourceName,
+        existingSchema: fileMetadata
+      };
+      
+      // Now, send request to build schema API with the file path and enhanced metadata
       const response = await fetch("/api/graphschema/build-schema-from-source", {
         method: "POST",
         headers: {
@@ -126,7 +161,8 @@ export function SchemaChat({
         },
         body: JSON.stringify({
           source_id: selectedSource,
-          metadata: message
+          metadata: JSON.stringify(enhancedMetadata),
+          file_path: filePath
         }),
       })
       
