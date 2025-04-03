@@ -959,7 +959,18 @@ export function HistoryTab() {
                       <td key={cellIndex} className="px-4 py-2 text-sm border-b border-border">
                         {cell !== null ? String(cell) : <span className="text-muted-foreground italic">NULL</span>}
                       </td>
-                    )) : (
+                    )) : typeof row === 'object' && row !== null ? (
+                      // Handle JSON objects (each row is an object with properties matching headers)
+                      headers.map((header: string, cellIndex: number) => (
+                        <td key={cellIndex} className="px-4 py-2 text-sm border-b border-border">
+                          {row[header] !== undefined && row[header] !== null 
+                            ? (typeof row[header] === 'object' 
+                                ? JSON.stringify(row[header]) 
+                                : String(row[header]))
+                            : <span className="text-muted-foreground italic">NULL</span>}
+                        </td>
+                      ))
+                    ) : (
                       <td className="px-4 py-2 text-sm border-b border-border">
                         {row !== null ? String(row) : <span className="text-muted-foreground italic">NULL</span>}
                       </td>
