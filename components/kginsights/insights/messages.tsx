@@ -6,7 +6,7 @@ import { ChatMessage } from "../insights-chat"
 import { Loader2, User, BotMessageSquare } from "lucide-react"
 import { cn } from "@/lib/utils"
 // Use simple text rendering instead of ReactMarkdown
-import { useState } from "react"
+import { useState, useEffect, RefObject, useLayoutEffect } from "react"
 import { GraphVisualization } from "./graph-visualization"
 import { ChartVisualization } from "./chart-visualization"
 import { ChartTheme } from "./chart-visualization"
@@ -14,7 +14,7 @@ import { ChartTheme } from "./chart-visualization"
 interface InsightsChatMessagesProps {
   messages: ChatMessage[]
   loading: boolean
-  messagesEndRef: React.RefObject<HTMLDivElement | null>
+  messagesEndRef: RefObject<HTMLDivElement>
   chartTheme?: ChartTheme
 }
 
@@ -30,10 +30,83 @@ export function InsightsChatMessages({
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
 
+  // Enhanced function to scroll to bottom with force option
+  const scrollToBottom = (force: boolean = false) => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ 
+        behavior: force ? "auto" : "smooth",
+        block: "end"
+      });
+    }
+  };
+
+  // Use useLayoutEffect for synchronous execution before browser paint
+  useLayoutEffect(() => {
+    // Immediate scroll on mount to ensure initial position is correct
+    scrollToBottom(true);
+    
+    // Multiple scroll attempts with increasing delays to handle various rendering scenarios
+    const timers = [
+      setTimeout(() => scrollToBottom(true), 50),
+      setTimeout(() => scrollToBottom(true), 150),
+      setTimeout(() => scrollToBottom(true), 300),
+      setTimeout(() => scrollToBottom(true), 500)
+    ];
+    
+    return () => timers.forEach(timer => clearTimeout(timer));
+  }, []); // Only run on mount
+
+  // Use useEffect for reactive scrolling when messages change
+  useEffect(() => {
+    // Immediate scroll when messages change
+    scrollToBottom(true);
+    
+    // Multiple scroll attempts with increasing delays
+    const timers = [
+      setTimeout(() => scrollToBottom(true), 50),
+      setTimeout(() => scrollToBottom(true), 150),
+      setTimeout(() => scrollToBottom(true), 300),
+      setTimeout(() => scrollToBottom(true), 500)
+    ];
+    
+    return () => timers.forEach(timer => clearTimeout(timer));
+  }, [messages]);
+
+  // Additional effect to handle page navigation and visibility changes
+  useEffect(() => {
+    // Handle visibility change (when user returns to the tab)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        setTimeout(() => scrollToBottom(true), 100);
+      }
+    };
+
+    // Handle resize events which might affect layout
+    const handleResize = () => {
+      setTimeout(() => scrollToBottom(true), 100);
+    };
+
+    // Add event listeners
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('resize', handleResize);
+
+    // Cleanup
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
+  // Create a copy of messages array to avoid mutating props
+  const sortedMessages = [...messages].filter(message => message && typeof message === 'object' && message.role);
+
   return (
-    <ScrollArea className="h-full pr-4">
-      <div className="space-y-4 p-4">
-        {messages.filter(message => message && typeof message === 'object' && message.role).map((message) => (
+    <ScrollArea className="h-full pr-4 relative">
+      <div className="space-y-3 p-3 pb-2 flex flex-col min-h-full justify-end">
+        {/* Empty div at the top for proper spacing */}
+        <div className="flex-grow" />
+        
+        {sortedMessages.map((message) => (
           <div
             key={message.id}
             className={cn(
@@ -43,18 +116,18 @@ export function InsightsChatMessages({
           >
             <div className="flex items-end gap-2">
               {message.role !== "user" && (
-                <div className="rounded-full bg-primary/10 p-2 flex items-center justify-center">
+                <div className="rounded-full bg-primary/10 p-1.5 flex items-center justify-center">
                   {message.role === "assistant" ? (
-                    <BotMessageSquare className="h-4 w-4 text-primary" />
+                    <BotMessageSquare className="h-3.5 w-3.5 text-primary" />
                   ) : (
-                    <BotMessageSquare className="h-4 w-4 text-muted-foreground" />
+                    <BotMessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
                   )}
                 </div>
               )}
               
               <Card
                 className={cn(
-                  "px-4 py-3 max-w-[80%]",
+                  "px-3 py-2 max-w-[85%]",
                   message.role === "user" 
                     ? "bg-primary text-primary-foreground" 
                     : message.role === "system"
@@ -63,7 +136,7 @@ export function InsightsChatMessages({
                 )}
               >
                 <div className="space-y-2">
-                  <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap">
+                  <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap text-sm">
                     {message.content}
                   </div>
                   
@@ -149,8 +222,8 @@ export function InsightsChatMessages({
           </div>
         )}
         
-        {/* Empty div for scrolling to bottom */}
-        <div ref={messagesEndRef} />
+        {/* Empty div for scrolling to bottom - ensure it's always at the bottom and visible */}
+        <div ref={messagesEndRef} className="h-4" style={{ scrollMarginBottom: '100px' }} />
       </div>
     </ScrollArea>
   )
