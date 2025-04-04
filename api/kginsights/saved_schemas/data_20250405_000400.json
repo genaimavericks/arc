@@ -1,0 +1,55 @@
+{
+  "nodes": [
+    {
+      "label": "Customer",
+      "properties": {
+        "CustomerID": "string",
+        "Gender": "string",
+        "SeniorCitizen": "boolean",
+        "Partner": "boolean",
+        "Dependents": "boolean",
+        "tenure": "integer",
+        "PhoneService": "boolean",
+        "MultipleLines": "string",
+        "InternetService": "string",
+        "OnlineSecurity": "boolean",
+        "OnlineBackup": "boolean",
+        "DeviceProtection": "boolean",
+        "TechSupport": "boolean",
+        "StreamingTV": "boolean",
+        "StreamingMovies": "boolean",
+        "Contract": "string",
+        "PaperlessBilling": "boolean",
+        "PaymentMethod": "string",
+        "MonthlyCharges": "float",
+        "TotalCharges": "float",
+        "Churn": "boolean"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "ServiceName": "string"
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "type": "USES_SERVICE",
+      "source": "Customer",
+      "target": "Service",
+      "properties": {},
+      "startNode": "Customer",
+      "endNode": "Service"
+    }
+  ],
+  "indexes": [
+    "Customer(CustomerID)",
+    "Service(ServiceName)"
+  ],
+  "name": "Data",
+  "description": "",
+  "source_id": "3c076f01-9295-4fdc-b735-995232b311b6",
+  "created_at": "2025-04-04T18:34:00.224Z",
+  "cypher": "CREATE (customer:Customer {id: 'example-customer-id', CustomerID: 'example-customerid', Gender: 'example-gender', SeniorCitizen: 'example-seniorcitizen'});\nCREATE (service:Service {id: 'example-service-id', ServiceName: 'example-servicename'});\nMATCH (customer:Customer {id: 'example-customer-id'}), (service:Service {id: 'example-service-id'}) CREATE (customer)-[r:USES_SERVICE]->(service);"
+}

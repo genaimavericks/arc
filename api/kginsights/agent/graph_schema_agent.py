@@ -11,6 +11,7 @@ from langchain_core.output_parsers import JsonOutputParser
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 import json
+import os
 
 class AgentState(TypedDict):
     """Type definition for agent state."""
@@ -61,6 +62,7 @@ class GraphSchemaAgent:
 
     def _validate_csv_data(self, df: pd.DataFrame) -> Dict:
         """Validate CSV data quality."""
+        print(f"DEBUG: Validating CSV data with shape: {df.shape}")
         validation = {
             "is_valid": True,
             "errors": [],
@@ -81,54 +83,55 @@ class GraphSchemaAgent:
                 for col, count in missing[missing > 0].items()
             ])
             
-        # Check for potential ID columns without unique values
+        # Check for potential ID columns
         for col in df.columns:
-            if col.lower().endswith(('_id', 'id')):
-                if df[col].duplicated().any():
+            if "id" in col.lower():
+                unique_count = df[col].nunique()
+                total_count = len(df)
+                if unique_count < total_count:
                     validation["warnings"].append(
                         f"Column '{col}' appears to be an ID but contains duplicate values"
                     )
-                    
-        # Check data types
-        for col in df.columns:
-            try:
-                pd.to_numeric(df[col])
-            except:
-                pass
-            else:
-                if df[col].dtype == object:
-                    validation["warnings"].append(
-                        f"Column '{col}' contains numeric values but is stored as text"
-                    )
-                    
+        
+        print(f"DEBUG: Validation complete. Valid: {validation['is_valid']}, Warnings: {len(validation['warnings'])}, Errors: {len(validation['errors'])}")
         return validation
 
     def _analyze_csv_data(self, csv_path: str) -> Dict:
         """Analyze CSV data for schema inference."""
+        print(f"DEBUG: Analyzing CSV file at path: {csv_path}")
+        print(f"DEBUG: File exists: {os.path.exists(csv_path)}")
+        print(f"DEBUG: File size: {os.path.getsize(csv_path) if os.path.exists(csv_path) else 'N/A'} bytes")
+        
         try:
-            df = pd.read_csv(csv_path)
+            # Try different encodings if the default fails
+            encodings = ['utf-8', 'latin1', 'cp1252', 'ISO-8859-1']
+            df = None
+            exception = None
+            
+            for encoding in encodings:
+                try:
+                    print(f"DEBUG: Attempting to read CSV with encoding: {encoding}")
+                    df = pd.read_csv(csv_path, encoding=encoding)
+                    print(f"DEBUG: Successfully read CSV with encoding: {encoding}")
+                    break
+                except Exception as e:
+                    print(f"DEBUG: Failed to read CSV with encoding {encoding}: {str(e)}")
+                    exception = e
+            
+            if df is None:
+                print(f"ERROR: Failed to read CSV with all attempted encodings")
+                return {
+                    "is_valid": False,
+                    "error": f"Failed to read CSV file: {str(exception)}",
+                    "num_columns": 0,
+                    "num_rows": 0,
+                    "validation": {"warnings": [], "errors": [f"Failed to read CSV file: {str(exception)}"]}
+                }
+            
+            print(f"DEBUG: Successfully loaded CSV with shape: {df.shape}")
             
             # Basic validation
-            validation = {"warnings": []}
-            
-            # Check for missing values
-            null_counts = df.isnull().sum()
-            columns_with_nulls = null_counts[null_counts > 0]
-            if not columns_with_nulls.empty:
-                for col in columns_with_nulls.index:
-                    validation["warnings"].append(
-                        f"Column '{col}' has {null_counts[col]} missing values"
-                    )
-            
-            # Check for potential ID columns
-            for col in df.columns:
-                if "id" in col.lower():
-                    unique_count = df[col].nunique()
-                    total_count = len(df)
-                    if unique_count < total_count:
-                        validation["warnings"].append(
-                            f"Column '{col}' appears to be an ID but contains duplicate values"
-                        )
+            validation = self._validate_csv_data(df)
             
             # Get basic data info
             sample_data = df.head(5).to_dict(orient='records')

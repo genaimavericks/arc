@@ -32,6 +32,7 @@ class SourceIdInput(BaseModel):
 class SaveSchemaInput(BaseModel):
     schema: dict
     output_path: str = None  # Optional output path, if not provided will use default location
+    csv_file_path: str = None  # Path to the original CSV file used to generate the schema
 
 class SaveSchemaResponse(BaseModel):
     message: str
@@ -189,7 +190,8 @@ async def build_schema_from_path(file_input: FilePathInput):
         
         return {
             'schema': formatted_schema,
-            'cypher': formatted_cypher
+            'cypher': formatted_cypher,
+            'csv_file_path': file_path  # Include the CSV file path in the response
         }
     except HTTPException:
         raise
@@ -223,6 +225,51 @@ async def build_schema_from_source(
             # Validate file is a CSV
             if not file_path.lower().endswith('.csv'):
                 raise HTTPException(status_code=400, detail="Only CSV files are supported")
+        else:
+            # If file_path is not provided, try to get it from the source_id
+            print(f"DEBUG: No file path provided, retrieving from source_id: {source_id}")
+            
+            # Query the database to get the file path from the source_id
+            from models import UploadedFile, IngestionJob
+            
+            # Try to find the file in UploadedFile table
+            uploaded_file = db.query(UploadedFile).filter(UploadedFile.id == source_id).first()
+            
+            if uploaded_file and uploaded_file.file_path:
+                file_path = uploaded_file.file_path
+                print(f"DEBUG: Found file path in UploadedFile: {file_path}")
+            else:
+                # Try to find the file in IngestionJob table
+                ingestion_job = db.query(IngestionJob).filter(IngestionJob.id == source_id).first()
+                
+                if ingestion_job and ingestion_job.file_path:
+                    file_path = ingestion_job.file_path
+                    print(f"DEBUG: Found file path in IngestionJob: {file_path}")
+                else:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"Could not find file path for source_id: {source_id}"
+                    )
+            
+            # Validate file exists
+            if not os.path.exists(file_path):
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"File not found at path: {file_path}. Current OS: {os.name}"
+                )
+
+        # Additional debugging for file path
+        print(f"DEBUG: File exists check passed for: {file_path}")
+        print(f"DEBUG: File size: {os.path.getsize(file_path)} bytes")
+        print(f"DEBUG: File is readable: {os.access(file_path, os.R_OK)}")
+        
+        # Try to read a few lines from the file to verify it's accessible
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                first_few_lines = ''.join([f.readline() for _ in range(3)])
+                print(f"DEBUG: First few lines of file: {first_few_lines}")
+        except Exception as e:
+            print(f"WARNING: Could not read from file: {e}")
 
         # Process enhanced metadata if available
         metadata = source_input.metadata
@@ -244,23 +291,38 @@ async def build_schema_from_source(
             pass
         
         # Initialize agent with the provided file path and metadata
-        agent_instance = GraphSchemaAgent(
-            model=llm,
-            csv_path=file_path,
-            metadata=metadata,
-            log=True,
-            log_path='logs'
-        )
+        print(f"DEBUG: Initializing GraphSchemaAgent with file_path: {file_path}")
+        print(f"DEBUG: LLM type: {type(llm)}")
         
-        # Generate the schema
-        response = agent_instance.invoke_agent()
-        
-        # Get the generated schema and cypher
-        schema = agent_instance.get_schema()
-        cypher = agent_instance.get_cypher()
-        
-        if not schema:
-            raise HTTPException(status_code=404, detail='Schema generation failed')
+        try:
+            agent_instance = GraphSchemaAgent(
+                model=llm,
+                csv_path=file_path,
+                metadata=metadata,
+                log=True,
+                log_path='logs'
+            )
+            print(f"DEBUG: GraphSchemaAgent initialized successfully")
+            
+            # Generate the schema
+            print(f"DEBUG: Invoking GraphSchemaAgent")
+            response = agent_instance.invoke_agent()
+            print(f"DEBUG: GraphSchemaAgent invoked successfully")
+            
+            # Get the generated schema and cypher
+            schema = agent_instance.get_schema()
+            cypher = agent_instance.get_cypher()
+            
+            print(f"DEBUG: Schema retrieved: {schema is not None}")
+            print(f"DEBUG: Cypher retrieved: {cypher is not None}")
+            
+            if not schema:
+                raise HTTPException(status_code=404, detail='Schema generation failed')
+        except Exception as agent_error:
+            print(f"ERROR: GraphSchemaAgent error: {str(agent_error)}")
+            print(f"ERROR: Exception type: {type(agent_error).__name__}")
+            print(f"ERROR: Exception traceback: {traceback.format_exc()}")
+            raise HTTPException(status_code=500, detail=f"Schema generation failed: {str(agent_error)}")
             
         # Ensure cypher is a string
         if cypher is None:
@@ -271,7 +333,8 @@ async def build_schema_from_source(
         
         return {
             'schema': formatted_schema,
-            'cypher': formatted_cypher
+            'cypher': formatted_cypher,
+            'csv_file_path': file_path  # Include the CSV file path in the response
         }
     except HTTPException:
         raise
@@ -366,6 +429,19 @@ async def refine_schema(
         if not file_path.lower().endswith('.csv'):
             raise HTTPException(status_code=400, detail="Only CSV files are supported")
         
+        # Additional debugging for file path
+        print(f"DEBUG: File exists check passed for: {file_path}")
+        print(f"DEBUG: File size: {os.path.getsize(file_path)} bytes")
+        print(f"DEBUG: File is readable: {os.access(file_path, os.R_OK)}")
+        
+        # Try to read a few lines from the file to verify it's accessible
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                first_few_lines = ''.join([f.readline() for _ in range(3)])
+                print(f"DEBUG: First few lines of file: {first_few_lines}")
+        except Exception as e:
+            print(f"WARNING: Could not read from file: {e}")
+        
         # Initialize OpenAI model
         openai_api_key = os.environ.get("OPENAI_API_KEY")
         if not openai_api_key:
@@ -420,7 +496,8 @@ async def refine_schema(
             
         return {
             "schema": formatted_schema,
-            "cypher": formatted_cypher
+            "cypher": formatted_cypher,
+            "csv_file_path": file_path  # Include the CSV file path in the response
         }
     except HTTPException as e:
         raise
@@ -772,6 +849,12 @@ async def save_schema(
         print(f"DEBUG: save_schema called with schema data")
         
         schema_data = save_input.schema
+        csv_file_path = save_input.csv_file_path
+        
+        # Store CSV file path in schema data if provided
+        if csv_file_path:
+            schema_data['csv_file_path'] = csv_file_path
+            print(f"DEBUG: Storing CSV file path in schema: {csv_file_path}")
         
         # Ensure schema has a name
         if not schema_data.get('name'):
@@ -921,7 +1004,8 @@ async def save_schema(
                 name=schema_data.get('name'),
                 source_id=schema_data.get('source_id'),
                 description=schema_data.get('description', ''),
-                schema=json.dumps(schema_data)
+                schema=json.dumps(schema_data),
+                csv_file_path=csv_file_path  # Store the CSV file path in the database
             )
             db.add(db_schema)
             db.commit()
@@ -962,6 +1046,7 @@ async def get_schemas(
                     "description": schema.description or "",
                     "created_at": schema.created_at.isoformat() if schema.created_at else None,
                     "updated_at": schema.updated_at.isoformat() if schema.updated_at else None,
+                    "csv_file_path": schema.csv_file_path or ""
                 })
             except Exception as e:
                 print(f"Error processing schema {schema.id}: {e}")
@@ -996,6 +1081,7 @@ async def get_schema_by_id(
             "schema": schema.schema,  # Return the raw schema JSON string
             "created_at": schema.created_at.isoformat() if schema.created_at else None,
             "updated_at": schema.updated_at.isoformat() if schema.updated_at else None,
+            "csv_file_path": schema.csv_file_path or ""
         }
                 
         return result
