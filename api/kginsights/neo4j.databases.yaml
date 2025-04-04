@@ -16,6 +16,12 @@ healthcare_graph:
   NEO4J_URI: bolt://127.0.0.1:7692
   NEO4J_PASSWORD: password3
 
+foamfactory_graph:
+  NEO4J_USERNAME: neo4j
+  NEO4J_DB: neo4j
+  NEO4J_URI: bolt://172.104.129.10:7787
+  NEO4J_PASSWORD: neo4j123
+
 default:
   NEO4J_USERNAME: neo4j
   NEO4J_DB: neo4j

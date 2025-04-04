@@ -1,0 +1,763 @@
+import os
+import json
+import time
+import hashlib
+import threading
+from pathlib import Path
+from uuid import uuid4
+from typing import Dict, List, Optional, Any
+
+import httpx
+from fastapi import Depends, HTTPException
+from dotenv import load_dotenv
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
+from langchain_neo4j import (
+    Neo4jGraph,
+    Neo4jChatMessageHistory,
+    GraphCypherQAChain
+)
+
+from .templates.foamfactory.cypher_prompt_template import CYPHER_GENERATION_PROMPT
+from .templates.foamfactory.qa_prompt_template import QA_PROMPT
+from .cache import Cache
+from .cache import cacheable
+
+from ...kginsights.database_api import get_database_config, parse_connection_params
+
+# Load environment variables
+load_dotenv()
+
+# Output directories
+OUTPUT_DIR = Path("rsw/output/kgdatainsights")
+SCHEMA_DIR = OUTPUT_DIR / "schema"
+PROMPT_DIR = OUTPUT_DIR / "prompts"
+
+# Create directories if they don't exist
+SCHEMA_DIR.mkdir(parents=True, exist_ok=True)
+PROMPT_DIR.mkdir(parents=True, exist_ok=True)
+
+class SchemaAwareGraphAssistant:
+    """
+    Enhanced Graph Assistant that automatically manages schemas and prompts.
+    Extends the functionality of Neo4jGraphChatAssistant by adding schema and prompt management.
+    """
+    def __init__(self, source_id: str, session_id: str = None):
+        """
+        Initialize the Schema-Aware Graph Assistant.
+        
+        Args:
+            source_id: The ID of the graph source to query
+            session_id: Optional session ID for chat history, generated if not provided
+        """
+        self.source_id = source_id
+        self.session_id = session_id or f"session_{uuid4()}"
+
+        # Ensure we have the schema and prompt files
+        self._ensure_schema()
+        self._ensure_prompt()
+        
+        # Get Neo4j connection parameters from the database API
+        self.connection_params = self._get_connection_params()
+        print(f"Connection params: {self.connection_params}")
+        
+        # Initialize Neo4j Graph connection
+        self.graph = Neo4jGraph(
+            url=self.connection_params.get("uri"),
+            username=self.connection_params.get("username"),
+            password=self.connection_params.get("password"),
+            database=self.connection_params.get("database", "neo4j"),
+            enhanced_schema=True,
+            refresh_schema=False  # Disable schema refresh to avoid APOC dependency
+        )
+        
+        # Initialize Neo4j-backed chat history
+        self.history = Neo4jChatMessageHistory(
+            session_id=self.session_id,
+            url=self.connection_params.get("uri"),
+            username=self.connection_params.get("username"),
+            password=self.connection_params.get("password"),
+            database=self.connection_params.get("database", "neo4j")
+        )
+        
+        # Load the custom prompts for this source
+        self._load_prompts()
+        
+        # Initialize LLM first
+        self.llm = ChatOpenAI(model="gpt-4", temperature=0.2)
+        
+        # Initialize QA chain with Neo4j optimizations using modular LangChain pattern
+        try:
+            print(f"DEBUG: Initializing GraphCypherQAChain using langchain_neo4j pattern")
+            
+            # Create a structured chain configuration dictionary
+            chain_config = {
+                "llm": self.llm,
+                "graph": self.graph,
+                "verbose": True,
+                "return_intermediate_steps": True,
+                "allow_dangerous_requests": True
+            }
+            
+            # Only add prompts if they are properly loaded
+            if hasattr(self, 'cypher_prompt') and self.cypher_prompt:
+                print('DEBUG: cypher prompt found')
+                chain_config["cypher_prompt"] = self.cypher_prompt
+            
+            if hasattr(self, 'qa_prompt') and self.qa_prompt:
+                print('DEBUG: qa prompt found')
+                chain_config["qa_prompt"] = self.qa_prompt
+            
+            # Initialize with the validated configuration
+            self.chain = GraphCypherQAChain.from_llm(**chain_config)
+            print(f"DEBUG: Successfully initialized GraphCypherQAChain")
+            
+        except Exception as e:
+            print(f"ERROR: GraphCypherQAChain initialization failed: {str(e)}")
+            print(f"DEBUG: Error details: {traceback.format_exc()}")
+            
+            # Attempt a simpler fallback initialization with minimal options
+            try:
+                print(f"DEBUG: Attempting fallback initialization with minimal options")
+                self.chain = GraphCypherQAChain.from_llm(
+                    llm=self.llm,
+                    graph=self.graph,
+                    verbose=True
+                )
+                print(f"DEBUG: Fallback initialization successful")
+            except Exception as e2:
+                print(f"ERROR: All GraphCypherQAChain initialization attempts failed")
+                print(f"DEBUG: Second error: {str(e2)}")
+                raise RuntimeError(f"Cannot initialize Neo4j query chain: {str(e)} and then {str(e2)}")
+        
+        # Initialize cache
+        self.cache = Cache()
+    
+    def _get_connection_params(self) -> Dict[str, str]:
+        """Get Neo4j connection parameters from the database API"""
+        try:
+            # Use the database_api module to get connection params
+            config = get_database_config()
+            print('Database configuration' + str(config))
+            if self.source_id not in config:
+                # Fallback to default or environment variables if the source_id is not found
+                return {
+                    "uri": os.getenv("NEO4J_URI"),
+                    "username": os.getenv("NEO4J_USERNAME"),
+                    "password": os.getenv("NEO4J_PASSWORD"),
+                    "database": "neo4j"
+                }
+            
+            # Get connection parameters directly from JSON format
+            connection_params = config[self.source_id]
+            
+            # The JSON format already has the keys in the expected format
+            # Just need to ensure all required keys are present
+            params = {
+                "uri": connection_params.get("uri", ""),
+                "username": connection_params.get("username", ""),
+                "password": connection_params.get("password", ""),
+                "database": connection_params.get("database", "neo4j")
+            }
+            
+            return params
+            
+        except Exception as e:
+            print(f"Error getting connection parameters: {str(e)}")
+            # Fallback to environment variables
+            return {
+                "uri": os.getenv("NEO4J_URI"),
+                "username": os.getenv("NEO4J_USERNAME"),
+                "password": os.getenv("NEO4J_PASSWORD"),
+                "database": "neo4j"
+            }
+            
+    def _ensure_schema(self) -> None:
+        """Check if schema exists, fetch and save if needed"""
+        schema_file = SCHEMA_DIR / f"schema_{self.source_id}.json"
+        
+        # If schema file doesn't exist, fetch and save it
+        if not schema_file.exists():
+            print(f"Schema file for {self.source_id} not found. Fetching schema...")
+            
+            schema = self._fetch_neo4j_schema()
+            
+            # Save the schema to file
+            with open(schema_file, "w") as f:
+                json.dump(schema, f, indent=2)
+                
+            print(f"Schema saved to {schema_file}")
+    
+    def _fetch_neo4j_schema(self) -> Dict[str, Any]:
+        """Fetch the Neo4j schema using the connection parameters"""
+        params = self._get_connection_params()
+        
+        # Log connection parameters (hide password)
+        conn_debug = {
+            "uri": params.get("uri"),
+            "username": params.get("username"),
+            "database": params.get("database", "neo4j"),
+            "password": "*****" if params.get("password") else None
+        }
+        print(f"DEBUG: Attempting to connect to Neo4j with params: {conn_debug}")
+        
+        try:
+            # First attempt: Try using LangChain's Neo4jGraph with enhanced schema (uses APOC)
+            print(f"DEBUG: Creating Neo4jGraph connection for {self.source_id}")
+            temp_graph = Neo4jGraph(
+                url=params.get("uri"),
+                username=params.get("username"),
+                password=params.get("password"),
+                database=params.get("database", "neo4j"),
+                enhanced_schema=True,
+                refresh_schema=True  # Enable schema refresh to get latest schema
+            )
+            
+            # Get the schema and return it
+            print(f"DEBUG: Successfully connected to Neo4j for {self.source_id}")
+            print(f"DEBUG: Attempting to extract schema using enhanced method (requires APOC)")
+            schema = temp_graph.schema
+            print(f"DEBUG: Schema successfully extracted using enhanced method")
+            return schema
+            
+        except Exception as e:
+            print(f"ERROR: Enhanced schema extraction failed: {str(e)}")
+            print(f"DEBUG: Stack trace: ", traceback.format_exc())
+            print("INFO: Falling back to manual schema extraction without APOC...")
+            
+            # Second attempt: Use custom Cypher queries to extract schema without APOC
+            return self._fetch_schema_without_apoc(params)
+    
+    def _fetch_schema_without_apoc(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract schema using direct Cypher queries without relying on APOC"""
+        import traceback
+        from neo4j import GraphDatabase
+        
+        print(f"DEBUG: Creating direct Neo4j driver connection for {self.source_id}")
+        
+        try:
+            # Create a direct driver connection
+            driver = GraphDatabase.driver(
+                params.get("uri"),
+                auth=(params.get("username"), params.get("password"))
+            )
+            
+            # Test the connection before proceeding
+            print(f"DEBUG: Testing Neo4j connection")
+            driver.verify_connectivity()
+            print(f"DEBUG: Connection verified successfully")
+            
+            schema = {
+                "node_props": {},
+                "rel_props": {},
+                "relationships": []
+            }
+            
+            with driver.session(database=params.get("database", "neo4j")) as session:
+                print(f"DEBUG: Opened Neo4j session successfully")
+                
+                # 1. Get all node labels and their properties
+                print(f"DEBUG: Executing query to extract node labels and properties")
+                node_result = session.run("""
+                MATCH (n)
+                WITH DISTINCT labels(n) AS labels, keys(n) AS props
+                UNWIND labels AS label
+                RETURN label, collect(DISTINCT props) AS properties
+                """)
+                
+                print(f"DEBUG: Processing node labels results")
+                node_count = 0
+                for record in node_result:
+                    node_count += 1
+                    label = record["label"]
+                    props = [item for sublist in record["properties"] for item in sublist]
+                    schema["node_props"][label] = list(set(props))
+                print(f"DEBUG: Found {node_count} node labels in the database")
+                
+                # 2. Get all relationship types and their properties
+                print(f"DEBUG: Executing query to extract relationship types and properties")
+                rel_result = session.run("""
+                MATCH ()-[r]-()
+                WITH DISTINCT type(r) AS type, keys(r) AS props
+                RETURN type, collect(DISTINCT props) AS properties
+                """)
+                
+                print(f"DEBUG: Processing relationship types results")
+                rel_count = 0
+                for record in rel_result:
+                    rel_count += 1
+                    rel_type = record["type"]
+                    props = [item for sublist in record["properties"] for item in sublist]
+                    schema["rel_props"][rel_type] = list(set(props))
+                print(f"DEBUG: Found {rel_count} relationship types in the database")
+                
+                # 3. Get relationship structure (source and target node types)
+                print(f"DEBUG: Executing query to extract relationship structure")
+                structure_result = session.run("""
+                MATCH (src)-[r]->(dst)
+                WITH DISTINCT labels(src) AS source_labels, type(r) AS rel_type, labels(dst) AS target_labels
+                UNWIND source_labels AS source_label
+                UNWIND target_labels AS target_label
+                RETURN source_label, rel_type, target_label
+                """)
+                
+                print(f"DEBUG: Processing relationship structure results")
+                struct_count = 0
+                for record in structure_result:
+                    struct_count += 1
+                    schema["relationships"].append({
+                        "source": record["source_label"],
+                        "target": record["target_label"],
+                        "type": record["rel_type"]
+                    })
+                print(f"DEBUG: Found {struct_count} relationship structures in the database")
+                
+                print(f"DEBUG: Schema extraction completed successfully")
+                return schema
+                
+        except Exception as e:
+            print(f"ERROR: Manual schema extraction failed: {str(e)}")
+            print(f"DEBUG: Stack trace: ", traceback.format_exc())
+            raise
+        
+        finally:
+            print(f"DEBUG: Closing Neo4j driver connection")
+            driver.close()
+    
+    def _ensure_prompt(self) -> None:
+        """Check if prompts exist, create and save if needed"""
+        prompt_file = PROMPT_DIR / f"prompt_{self.source_id}.json"
+        
+        # If prompt file doesn't exist, create and save it
+        if not prompt_file.exists():
+            print(f"Prompt file for {self.source_id} not found. Creating prompts...")
+            
+            # Load the schema
+            schema_file = SCHEMA_DIR / f"schema_{self.source_id}.json"
+            if not schema_file.exists():
+                self._ensure_schema()  # Make sure schema exists
+            
+            with open(schema_file, "r") as f:
+                schema = json.load(f)
+            
+            # Generate prompts based on schema
+            prompts = self._generate_prompts(schema)
+            
+            # Save the prompts to file
+            with open(prompt_file, "w") as f:
+                json.dump(prompts, f, indent=2)
+                
+            print(f"Prompts saved to {prompt_file}")
+    
+    def _generate_prompts(self, schema: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate custom prompts using LLM based on the schema"""
+        # Initialize an LLM for prompt generation
+        prompt_generator_llm = ChatOpenAI(model="gpt-4", temperature=0.2)
+        
+        # Create a formatted schema summary
+        schema_summary = self._extract_schema_summary(schema)
+        
+        # Prepare a schema-based prompt for the LLM
+        schema_json = json.dumps(schema, indent=2)
+        schema_summary_json = json.dumps(schema_summary, indent=2)
+        
+        # Define a system prompt for prompt generation
+        system_prompt = """
+        You are a Knowledge Graph expert tasked with creating optimal prompts for Neo4j graph database interactions. 
+        You're being given a Neo4j graph schema in JSON format.
+        
+        Your job is to analyze the schema and generate two specialized prompt templates:
+        1. A Cypher query generation prompt that will help an LLM convert natural language questions to Cypher queries
+        2. A QA prompt that will help an LLM interpret Cypher query results and answer user questions
+        
+        These prompts should be tailored to the specific domain and structure of the knowledge graph as defined in the schema.
+        """
+        
+        # Define the prompt for generating the Cypher generation prompt
+        cypher_prompt_instruction = """
+        Please create a prompt template for generating Neo4j Cypher queries.
+        
+        The template should:
+        1. Be tailored to the specific domain and structure of this knowledge graph
+        2. Include specific node labels, relationship types, and important properties from the schema
+        3. Provide guidance on Neo4j Cypher best practices
+        4. Include examples of good query patterns based on this schema
+        5. Include placeholders for {{question}} where the user question will be inserted
+        
+        Do not use generic examples - use the actual node labels, relationship types and properties from the provided schema.
+        Keep the prompt concise but comprehensive enough to guide accurate Cypher query generation.
+        Focus on the most important entity types and relationships that would be commonly queried.
+        """
+        
+        # Define the prompt for generating the QA prompt
+        qa_prompt_instruction = """
+        Please create a prompt template for answering questions based on Neo4j query results.
+        
+        The template should:
+        1. Guide the response generation for questions about this specific knowledge graph
+        2. Include domain-specific guidance based on the node types and relationships in the schema
+        3. Provide instructions on how to interpret and present the query results
+        4. Include placeholders for {{question}}, {{query}}, and {{response}} 
+        5. Suggest how to handle common scenarios like empty results or large result sets
+        
+        Make the prompt specific to this graph's domain and structure, not generic.
+        Include specifics about the most important node types and relationships in this particular graph.
+        """
+        
+        # Define the prompt for generating sample queries
+        sample_queries_instruction = """
+        Please generate 10-15 sample natural language questions that would be useful and insightful for this specific knowledge graph.
+        
+        The questions should:
+        1. Reflect the actual structure and domain of this knowledge graph
+        2. Use the real node labels, relationship types and properties from the schema
+        3. Include a mix of simple and complex queries
+        4. Focus on questions that would provide meaningful insights
+        5. Be organized as a JSON array of strings
+        
+        Return ONLY the JSON array of sample questions, nothing else.
+        """
+        
+        try:
+            # Generate Cypher prompt template
+            print(f"Generating Cypher prompt template for {self.source_id}...")
+            cypher_messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Here is the Neo4j schema: {schema_summary_json}\n\n{cypher_prompt_instruction}"}
+            ]
+            cypher_response = prompt_generator_llm.invoke(cypher_messages)
+            cypher_prompt_template = cypher_response.content.strip()
+            
+            # Generate QA prompt template
+            print(f"Generating QA prompt template for {self.source_id}...")
+            qa_messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Here is the Neo4j schema: {schema_summary_json}\n\n{qa_prompt_instruction}"}
+            ]
+            qa_response = prompt_generator_llm.invoke(qa_messages)
+            qa_prompt_template = qa_response.content.strip()
+            
+            # Generate sample queries
+            print(f"Generating sample queries for {self.source_id}...")
+            sample_queries_messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Here is the Neo4j schema: {schema_summary_json}\n\n{sample_queries_instruction}"}
+            ]
+            sample_queries_response = prompt_generator_llm.invoke(sample_queries_messages)
+            
+            # Extract JSON array from response
+            try:
+                # Attempt to parse the response as JSON
+                sample_queries_text = sample_queries_response.content.strip()
+                # Extract JSON array if it's wrapped in markdown code blocks or additional text
+                if "```json" in sample_queries_text and "```" in sample_queries_text:
+                    # Extract content between ```json and ```
+                    json_content = sample_queries_text.split("```json")[1].split("```")[0].strip()
+                    sample_queries = json.loads(json_content)
+                elif "[" in sample_queries_text and "]" in sample_queries_text:
+                    # Find the first [ and last ] in the text
+                    start_idx = sample_queries_text.find("[")
+                    end_idx = sample_queries_text.rfind("]")+1
+                    json_content = sample_queries_text[start_idx:end_idx]
+                    sample_queries = json.loads(json_content)
+                else:
+                    # Try parsing the whole response
+                    sample_queries = json.loads(sample_queries_text)
+            except Exception as e:
+                print(f"Error parsing sample queries JSON: {e}")
+                # Fallback to default sample queries
+                sample_queries = [
+                    "What are the main entities in this knowledge graph?",
+                    "How many nodes and relationships are in the graph?",
+                    "What is the overall structure of this knowledge graph?"
+                ]
+                # Add some basic queries using schema elements if available
+                if schema_summary["node_labels"]:
+                    label = schema_summary["node_labels"][0]
+                    sample_queries.append(f"List all {label} nodes")
+                    sample_queries.append(f"What are the key properties of {label} nodes?")
+                if schema_summary["relationship_types"]:
+                    rel_type = schema_summary["relationship_types"][0]
+                    sample_queries.append(f"Show me relationships of type {rel_type}")
+            
+            # Create prompts dictionary
+            prompts = {
+                "source_id": self.source_id,
+                "schema_summary": schema_summary,
+                "cypher_prompt": cypher_prompt_template,
+                "qa_prompt": qa_prompt_template,
+                "sample_queries": sample_queries
+            }
+            
+            return prompts
+            
+        except Exception as e:
+            print(f"Error generating prompts with LLM: {e}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
+            
+            # Fallback to basic prompts if LLM generation fails
+            return self._generate_fallback_prompts(schema_summary)
+    
+    def _extract_schema_summary(self, schema: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract a summary of the schema for prompt generation"""
+        node_labels = []
+        relationship_types = []
+        properties_by_node = {}
+        relationships_by_node = {}
+        property_list = []
+        
+        # Process schema to extract information
+        if "nodes" in schema:
+            for node in schema["nodes"]:
+                label = node["labels"][0] if node.get("labels") else ""
+                if label:
+                    node_labels.append(label)
+                    
+                    # Extract properties for each node type
+                    if "properties" in node:
+                        properties_by_node[label] = node["properties"]
+                        for prop in node["properties"]:
+                            property_list.append(f"{label}.{prop}")
+        
+        # Process relationships and organize by source/target
+        if "relationships" in schema:
+            for rel in schema["relationships"]:
+                if "type" in rel:
+                    rel_type = rel["type"]
+                    relationship_types.append(rel_type)
+                    
+                    # Record which nodes have which relationships
+                    source = rel.get("source", "")
+                    target = rel.get("target", "")
+                    if source and target:
+                        if source not in relationships_by_node:
+                            relationships_by_node[source] = []
+                        relationships_by_node[source].append({"type": rel_type, "target": target})
+        
+        # Create schema summary
+        return {
+            "node_labels": node_labels,
+            "relationship_types": relationship_types,
+            "properties_by_node": properties_by_node,
+            "relationships_by_node": relationships_by_node,
+            "property_list": property_list[:50]  # Limit properties sample
+        }
+    
+    def _generate_fallback_prompts(self, schema_summary: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate basic fallback prompts if LLM generation fails"""
+        node_labels = schema_summary["node_labels"]
+        relationship_types = schema_summary["relationship_types"]
+        properties_by_node = schema_summary["properties_by_node"]
+        relationships_by_node = schema_summary["relationships_by_node"]
+        
+        # Create basic sample queries
+        sample_queries = [
+            "What are the most important nodes in the knowledge graph?",
+            "How many nodes and relationships are in the graph?",
+            "What is the overall structure of this knowledge graph?",
+        ]
+        
+        # Add some specific queries if schema elements are available
+        for label in node_labels[:3]:
+            sample_queries.append(f"List all {label} nodes")
+            if label in properties_by_node and properties_by_node[label]:
+                prop = properties_by_node[label][0] if properties_by_node[label] else None
+                if prop:
+                    sample_queries.append(f"Find {label} nodes with specific {prop} values")
+        
+        # Create basic Cypher generation prompt
+        node_labels_str = ", ".join(node_labels[:10]) if node_labels else "nodes"
+        rel_types_str = ", ".join(relationship_types[:10]) if relationship_types else "relationships"
+        
+        cypher_prompt_template = f"""
+        You are a Neo4j Cypher query generator. Translate natural language questions into Cypher queries for a knowledge graph with:
+        - Node labels: {node_labels_str}
+        - Relationship types: {rel_types_str}
+        
+        Follow these best practices:
+        1. Use parameterized queries to prevent injection attacks
+        2. Use MATCH patterns that respect the graph schema
+        3. Filter results with WHERE clauses as needed
+        4. Return only the data explicitly requested
+        5. Use ORDER BY and LIMIT for large result sets
+        
+        Please translate the following question into a Cypher query:
+        {{question}}
+        
+        Cypher query:
+        """
+        
+        # Create basic QA prompt
+        qa_prompt_template = f"""
+        You are a knowledge graph expert assistant. Help users understand data from a Neo4j graph database with:
+        - Node types: {node_labels_str}
+        - Relationship types: {rel_types_str}
+        
+        Provide clear explanations that relate to the user's question. Format any structured information appropriately.
+        
+        User question: {{question}}
+        Cypher query used: {{query}}
+        Query results: {{response}}
+        
+        Please provide a helpful response:
+        """
+        
+        # Create prompts dictionary
+        return {
+            "source_id": self.source_id,
+            "schema_summary": schema_summary,
+            "cypher_prompt": cypher_prompt_template,
+            "qa_prompt": qa_prompt_template,
+            "sample_queries": sample_queries
+        }
+        
+        return prompts
+    
+    def _load_prompts(self) -> None:
+        """Load custom prompts for this source"""
+        prompt_file = PROMPT_DIR / f"prompt_{self.source_id}.json"
+        
+        try:
+            # Default to None initially to detect loading issues
+            self.cypher_prompt = None
+            self.qa_prompt = None
+            
+            print(f"DEBUG: Loading prompts from {prompt_file}")
+            
+            if prompt_file.exists():
+                with open(prompt_file, "r") as f:
+                    prompts = json.load(f)
+                
+                print(f"DEBUG: Prompt file loaded successfully")
+                
+                # Convert string prompts to ChatPromptTemplate objects if needed
+                if "cypher_prompt" in prompts:
+                    cypher_prompt_text = prompts.get("cypher_prompt")
+                    # Check if it's already a structured object or a string
+                    if isinstance(cypher_prompt_text, str):
+                        print(f"DEBUG: Converting cypher_prompt string to ChatPromptTemplate")
+                        self.cypher_prompt = ChatPromptTemplate.from_template(cypher_prompt_text)
+                    else:
+                        self.cypher_prompt = cypher_prompt_text
+                else:
+                    print(f"DEBUG: Using default CYPHER_GENERATION_PROMPT")
+                    self.cypher_prompt = ChatPromptTemplate.from_template(CYPHER_GENERATION_PROMPT)
+                
+                if "qa_prompt" in prompts:
+                    qa_prompt_text = prompts.get("qa_prompt")
+                    # Check if it's already a structured object or a string
+                    if isinstance(qa_prompt_text, str):
+                        print(f"DEBUG: Converting qa_prompt string to ChatPromptTemplate")
+                        self.qa_prompt = ChatPromptTemplate.from_template(qa_prompt_text)
+                    else:
+                        self.qa_prompt = qa_prompt_text
+                else:
+                    # Create a minimal QA prompt if none exists
+                    print(f"DEBUG: Using default QA prompt template")
+                    self.qa_prompt = ChatPromptTemplate.from_template(QA_PROMPT)
+                
+                # Load sample queries
+                self.sample_queries = prompts.get("sample_queries", [])
+            else:
+                # Use defaults if no custom prompts available
+                print(f"DEBUG: No prompt file found. Using defaults.")
+                self.cypher_prompt = ChatPromptTemplate.from_template(CYPHER_GENERATION_PROMPT)
+                self.qa_prompt = ChatPromptTemplate.from_template(QA_PROMPT)
+                self.sample_queries = []
+        except Exception as e:
+            print(f"ERROR: Failed to load prompts: {str(e)}")
+            print(f"DEBUG: {traceback.format_exc()}")
+            
+            # Fall back to minimal prompts that work with the newer LangChain
+            print(f"DEBUG: Falling back to minimal default prompts")
+            self.cypher_prompt = ChatPromptTemplate.from_template(CYPHER_GENERATION_PROMPT)
+            self.qa_prompt = ChatPromptTemplate.from_template(QA_PROMPT)
+            self.sample_queries = []
+
+    def _format_history(self) -> str:
+        """Format last exchanges for context"""
+        return "\n".join(
+            f"{msg.content}" 
+            for msg in self.history.messages[-5:] if msg.type == "ai"
+        )
+
+    @cacheable()
+    def query(self, question: str) -> Dict[str, Any]:
+        """Process user queries against the knowledge graph"""
+        try:
+            print('*******DOing query')
+            # Execute chain with context
+            hist = self._format_history()
+            print(f"HISTORY TO BE USED: {hist}")
+            
+            # Add schema awareness to the query
+            start_time = time.time()
+            result = self.chain.invoke({
+                "query": question,
+                # "history": hist,
+            })
+            
+            query_time = time.time() - start_time
+            print(f"Query completed in {query_time:.2f} seconds")
+            
+            # Persist conversation
+            print(f"Persisting conversation: {result}")
+            self.history.add_user_message(question)
+            self.history.add_ai_message(result["result"])
+            
+            return result
+        
+        except Exception as e:
+            print(f"Research error: {str(e)}")
+            import traceback
+            print(f"Full error traceback: {traceback.format_exc()}")
+            return {"result": f"An error occurred while processing your query: {str(e)}. Please try again or contact support."}
+
+    def __del__(self):
+        # Close the cache connection when the object is garbage collected
+        if hasattr(self, 'cache'):
+            self.cache.close()
+
+# Singleton-like behavior with dict of assistants by source_id
+_assistants = {}
+_lock = threading.Lock()
+
+def get_schema_aware_assistant(source_id: str, session_id: str = None) -> SchemaAwareGraphAssistant:
+    """
+    Get a schema-aware assistant for the specified source_id.
+    Creates a new assistant if one doesn't exist, otherwise returns the existing one.
+    
+    Args:
+        source_id: ID of the graph source to query
+        session_id: Optional session ID for chat history
+        
+    Returns:
+        SchemaAwareGraphAssistant: The assistant for the source
+    """
+    # Create a unique key combining source_id and session_id
+    key = f"{source_id}:{session_id}" if session_id else source_id
+    
+    try:
+        with _lock:
+            if key not in _assistants:
+                # Log connection attempt for debugging
+                print(f"DEBUG: Creating new schema-aware assistant for {source_id}")
+                _assistants[key] = SchemaAwareGraphAssistant(source_id, session_id)
+                print(f"DEBUG: Successfully created assistant for {source_id}")
+            return _assistants[key]
+    except Exception as e:
+        # Log the error with detailed information
+        error_message = f"Error creating schema-aware assistant for {source_id}: {str(e)}"
+        print(f"ERROR: {error_message}")
+        
+        # Check for specific error types to provide better feedback
+        if "Could not use APOC procedures" in str(e):
+            print("DEBUG: APOC plugin issue detected. Ensure APOC is installed and configured.")
+        elif "authentication failed" in str(e).lower() or "unauthorized" in str(e).lower():
+            print("DEBUG: Authentication failed. Check Neo4j credentials.")
+        elif "connection refused" in str(e).lower() or "unreachable" in str(e).lower():
+            print("DEBUG: Connection failed. Check Neo4j server availability and network settings.")
+            
+        # Re-raise with a more informative message
+        raise RuntimeError(f"Failed to initialize schema-aware assistant: {error_message}") from e

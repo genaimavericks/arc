@@ -5,7 +5,9 @@ import asyncio
 from datetime import datetime
 import json
 import os
+from fastapi import APIRouter, Depends, HTTPException, Query
 from .agent.insights_data_agent import get_kg_answer, init_graph
+from .agent.schema_aware_agent import get_schema_aware_assistant
 from .visualization_analyzer import analyze_data_for_visualization, GraphData
 from ..models import User
 from ..auth import has_any_permission
@@ -124,6 +126,7 @@ async def analyze_data_visualization(
 async def process_query(
     source_id: str, 
     request: QueryRequest,
+    use_schema_aware: bool = Query(True, description="Use the schema-aware agent instead of default agent"),
     current_user: User = Depends(has_any_permission(["kginsights:read"]))
 ):
     """
@@ -132,18 +135,31 @@ async def process_query(
     Args:
         source_id: The ID of the data source
         request: The query request containing the query string
+        use_schema_aware: Whether to use the schema-aware agent
         
     Returns:
         QueryResponse: The response containing the query result
     """
     try:
-        # Initialize the graph if needed
-        await init_graph()
-        
-        # Get the answer from the knowledge graph
-        result = get_kg_answer(request.query)
+        print('Calling data insights api' + str(use_schema_aware))
+        # If using schema-aware agent
+        if use_schema_aware:
+            # Get or create the schema-aware assistant for this source
+            assistant = get_schema_aware_assistant(source_id)
+            
+            # Get the answer from the schema-aware agent
+            print('Calling query')
+            result = assistant.query(request.query)
+            print('Returned query result' + str(result))
+        else:
+            # Initialize the graph if needed
+            await init_graph()
+            
+            # Get the answer from the legacy knowledge graph agent
+            result = get_kg_answer(request.query)
         
         # Extract the result and intermediate steps
+        print('Returned query result' + str(result))
         answer = result.get("result", "No result found")
         # Handle intermediate_steps - ensure it's a dictionary or None
         intermediate_steps = result.get("intermediate_steps")

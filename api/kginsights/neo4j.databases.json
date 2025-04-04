@@ -1,0 +1,26 @@
+{
+  "social_graph": {
+    "username": "neo4j",
+    "database": "neo4j",
+    "uri": "bolt://127.0.0.1:7690",
+    "password": "password1"
+  },
+  "ecommerce_graph": {
+    "username": "neo4j",
+    "database": "neo4j",
+    "uri": "bolt://127.0.0.1:7691",
+    "password": "password2"
+  },
+  "healthcare_graph": {
+    "username": "neo4j",
+    "database": "neo4j",
+    "uri": "bolt://127.0.0.1:7692",
+    "password": "password3"
+  },
+  "foamfactory_graph": {
+    "username": "neo4j",
+    "database": "neo4j",
+    "uri": "bolt://172.104.129.10:7787",
+    "password": "neo4j123"
+  }
+}
