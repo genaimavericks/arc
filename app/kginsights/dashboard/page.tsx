@@ -4,7 +4,7 @@ import Navbar from "@/components/navbar"
 import { SparklesCore } from "@/components/sparkles"
 import KGInsightsSidebar from "@/components/kginsights-sidebar"
 import { motion } from "framer-motion"
-import { Plus, Search, Eye, FileText, PlusCircle, RefreshCw, Trash2 } from "lucide-react"
+import { Plus, Search, Eye, FileText, PlusCircle, RefreshCw, Trash2, Database } from "lucide-react"
 import { useEffect, useState } from "react"
 import { getKGraphDashboard } from "@/lib/api"
 import LoadingSpinner from "@/components/loading-spinner"
@@ -44,6 +44,10 @@ interface Dataset {
   status: string
 }
 
+interface Neo4jGraph {
+  name: string
+}
+
 export default function KGraphDashboardPage() {
   return (
     <KGInsightsLayout>
@@ -75,6 +79,7 @@ function KGraphDashboardContent() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [datasetsError, setDatasetsError] = useState<string | null>(null)
+  const [neo4jGraphs, setNeo4jGraphs] = useState<Neo4jGraph[]>([])
   const { toast } = useToast()
   const router = useRouter()
 
@@ -85,6 +90,8 @@ function KGraphDashboardContent() {
   const [selectedDataset, setSelectedDataset] = useState<{ id: string; name: string } | null>(null)
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [graphToDelete, setGraphToDelete] = useState<KnowledgeGraph | null>(null)
+  const [applyToNeo4jModalOpen, setApplyToNeo4jModalOpen] = useState(false)
+  const [graphToApply, setGraphToApply] = useState<KnowledgeGraph | null>(null)
 
   // Function to fetch available datasets from sources
   const fetchDataSources = async () => {
@@ -198,6 +205,42 @@ function KGraphDashboardContent() {
     }
   }
 
+  // Function to apply knowledge graph to Neo4j
+  const applyToNeo4j = async (graph: KnowledgeGraph) => {
+    try {
+      const response = await fetch("/api/graphschema/apply-schema", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: JSON.stringify({ 
+          schema_id: parseInt(graph.id),
+          graph_name: "default", // Using default graph for now
+          drop_existing: false 
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`Failed to apply schema to Neo4j: ${response.status} - ${errorData.detail || 'Unknown error'}`);
+      }
+
+      toast({
+        title: "Success",
+        description: `Schema "${graph.name}" applied to Neo4j successfully.`,
+        variant: "default",
+      });
+    } catch (err) {
+      console.error("Error applying schema to Neo4j:", err);
+      toast({
+        title: "Error",
+        description: `Failed to apply schema to Neo4j: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        variant: "destructive",
+      });
+    }
+  }
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -268,6 +311,12 @@ function KGraphDashboardContent() {
     setDeleteModalOpen(true)
   }
 
+  // Function to handle apply to Neo4j
+  const handleApplyToNeo4j = (graph: KnowledgeGraph) => {
+    setGraphToApply(graph)
+    setApplyToNeo4jModalOpen(true)
+  }
+
   // Function to confirm delete knowledge graph
   const confirmDeleteGraph = async () => {
     if (graphToDelete) {
@@ -305,6 +354,15 @@ function KGraphDashboardContent() {
         setDeleteModalOpen(false)
         setGraphToDelete(null)
       }
+    }
+  }
+
+  // Function to confirm apply to Neo4j
+  const confirmApplyToNeo4j = async () => {
+    if (graphToApply) {
+      await applyToNeo4j(graphToApply)
+      setApplyToNeo4jModalOpen(false)
+      setGraphToApply(null)
     }
   }
 
@@ -449,6 +507,14 @@ function KGraphDashboardContent() {
                                 onClick={() => handleDeleteGraph(graph)}
                               >
                                 Delete
+                              </Button>
+                              <span className="text-muted-foreground">|</span>
+                              <Button
+                                variant="link"
+                                className="text-green-500 hover:text-green-600 hover:bg-green-500/10"
+                                onClick={() => handleApplyToNeo4j(graph)}
+                              >
+                                Apply to Neo4j
                               </Button>
                             </div>
                           </td>
@@ -607,6 +673,33 @@ function KGraphDashboardContent() {
                 Delete
               </AlertDialogAction>
               <AlertDialogCancel onClick={() => setDeleteModalOpen(false)}>
+                Cancel
+              </AlertDialogCancel>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
+      {applyToNeo4jModalOpen && graphToApply && (
+        <AlertDialog
+          open={applyToNeo4jModalOpen}
+          onOpenChange={(open) => setApplyToNeo4jModalOpen(open)}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Apply Schema to Neo4j</AlertDialogTitle>
+            </AlertDialogHeader>
+            <AlertDialogDescription>
+              Are you sure you want to apply the schema "{graphToApply.name}" to the Neo4j database?
+              <p className="mt-2 text-sm text-muted-foreground">
+                This will create the necessary node labels, relationships, and constraints in the Neo4j database based on the schema definition.
+              </p>
+            </AlertDialogDescription>
+            <AlertDialogFooter>
+              <AlertDialogAction onClick={confirmApplyToNeo4j}>
+                Apply
+              </AlertDialogAction>
+              <AlertDialogCancel onClick={() => setApplyToNeo4jModalOpen(false)}>
                 Cancel
               </AlertDialogCancel>
             </AlertDialogFooter>

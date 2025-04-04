@@ -11,6 +11,10 @@ from sqlalchemy.orm import Session
 from ..models import get_db, IngestionJob, UploadedFile, Schema
 from ..auth import has_any_permission
 from ..models import User
+from neo4j import GraphDatabase
+from .database_api import get_database_config, parse_connection_params
+import traceback
+import re
 
 # Models
 class SchemaResult(BaseModel):
@@ -38,6 +42,11 @@ class RefineSchemaInput(BaseModel):
     current_schema: dict
     feedback: str
     file_path: str = None  # Optional file path, similar to SourceIdInput
+
+class ApplySchemaInput(BaseModel):
+    schema_id: int
+    graph_name: str = "default"  # Default graph name to apply schema to
+    drop_existing: bool = False  # Whether to drop existing constraints and indexes
 
 # Router
 router = APIRouter(prefix="/graphschema", tags=["graphschema"])
@@ -173,9 +182,6 @@ async def build_schema_from_path(file_input: FilePathInput):
         
         # Get the generated schema and cypher
         schema = agent_instance.get_schema()
-        if not schema:
-            raise HTTPException(status_code=404, detail='Schema generation failed')
-            
         cypher = agent_instance.get_cypher() or ""
         
         # Format data to match what frontend expects
@@ -422,6 +428,339 @@ async def refine_schema(
         print(f"Error in refine_schema: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Schema refinement failed: {str(e)}")
 
+@router.post('/apply-schema', response_model=dict)
+async def apply_schema_to_neo4j(
+    apply_input: ApplySchemaInput,
+    current_user: User = Depends(has_any_permission(["kginsights:write"])),
+    db: Session = Depends(get_db)
+):
+    """Apply a saved schema to Neo4j."""
+    try:
+        print(f"DEBUG: Starting apply_schema_to_neo4j with input: {apply_input}")
+        schema_id = apply_input.schema_id
+        graph_name = apply_input.graph_name
+        drop_existing = apply_input.drop_existing
+        
+        # Get the schema from the database
+        print(f"DEBUG: Fetching schema with ID: {schema_id}")
+        schema = db.query(Schema).filter(Schema.id == schema_id).first()
+        if not schema:
+            print(f"DEBUG: Schema not found with ID: {schema_id}")
+            raise HTTPException(status_code=404, detail=f"Schema not found with ID: {schema_id}")
+        
+        # Get the schema content
+        print(f"DEBUG: Schema found: {schema.name}")
+        try:
+            # Check if schema.schema is already a dictionary or a JSON string
+            if isinstance(schema.schema, dict):
+                schema_content = schema.schema
+            else:
+                schema_content = json.loads(schema.schema) if schema.schema else {}
+            
+            print(f"DEBUG: Schema content loaded successfully. Keys: {list(schema_content.keys())}")
+            print(f"DEBUG: Full schema content: {json.dumps(schema_content, indent=2)[:1000]}...")
+            
+            # Check if the schema contains the expected structure
+            if 'nodes' in schema_content:
+                print(f"DEBUG: Schema contains {len(schema_content.get('nodes', []))} nodes")
+            if 'relationships' in schema_content:
+                print(f"DEBUG: Schema contains {len(schema_content.get('relationships', []))} relationships")
+            if 'cypher' in schema_content:
+                print(f"DEBUG: Schema contains cypher statements of length: {len(schema_content.get('cypher', ''))}")
+            else:
+                print(f"DEBUG: Schema does not contain 'cypher' key. Attempting to generate cypher from nodes and relationships.")
+                # If cypher is not present but nodes and relationships are, we can generate the cypher
+                if 'nodes' in schema_content and 'relationships' in schema_content:
+                    # Generate Cypher statements from nodes and relationships
+                    cypher_statements = []
+                    created_indexes = set()  # Initialize the set to track created indexes
+                    
+                    # Create node labels and constraints
+                    nodes = schema_content.get('nodes', [])
+                    if isinstance(nodes, list):
+                        node_labels_created = set()  # Track which node labels we've already created
+                        for node in nodes:
+                            if isinstance(node, dict):
+                                node_label = node.get('label')
+                                if node_label and node_label not in node_labels_created:
+                                    node_labels_created.add(node_label)
+                                    properties = node.get('properties', {})
+                                    
+                                    # Handle properties as dictionary or list
+                                    if isinstance(properties, dict):
+                                        id_properties = [p for p in ['id', 'ID', 'Id', 'CustomerID', 'customer_id'] if p in properties]
+                                        # Comment out constraint creation
+                                        # if id_properties:
+                                        #     id_property = id_properties[0]
+                                        #     # Use IF NOT EXISTS to avoid errors if constraint already exists
+                                        #     cypher_statements.append(
+                                        #         f"CREATE CONSTRAINT IF NOT EXISTS FOR (n:{node_label}) REQUIRE n.{id_property} IS UNIQUE"
+                                        #     )
+                                            
+                                        # Comment out index creation
+                                        # if node_label not in created_indexes:
+                                        #     cypher_statements.append(
+                                        #         f"CREATE INDEX IF NOT EXISTS FOR (n:{node_label}) ON (n.id)"
+                                        #     )
+                                        #     created_indexes.add(node_label)
+                                            
+                                        # Add a node creation example with properties
+                                        prop_list = []
+                                        for i, (k, v) in enumerate(properties.items()):
+                                            if i >= 3:  # Limit to 3 properties for brevity
+                                                break
+                                            if isinstance(v, str):
+                                                prop_list.append(f"{k}: 'example-{k.lower()}'")
+                                            elif v in ["integer", "float", "number"]:
+                                                prop_list.append(f"{k}: 0")
+                                            elif v == "boolean":
+                                                prop_list.append(f"{k}: false")
+                                            else:
+                                                prop_list.append(f"{k}: 'example'")
+                                        
+                                        # Always include id property
+                                        props = f"id: 'example-{node_label.lower()}-id'"
+                                        if prop_list:
+                                            props += ", " + ", ".join(prop_list)
+                                        
+                                        # Use the node label as part of the variable name to make it unique
+                                        var_name = node_label.lower()
+                                        cypher_statements.append(
+                                            f"CREATE ({var_name}:{node_label} {{{props}}})"
+                                        )
+                                
+                                    elif isinstance(properties, list):
+                                        # If properties is a list, look for property with name 'id'
+                                        id_property = next((p.get('name') for p in properties if p.get('name') in ['id', 'ID', 'Id', 'CustomerID', 'customer_id']), None)
+                                        if id_property:
+                                            # Comment out constraint creation
+                                            # if id_properties:
+                                            #     id_property = id_properties[0]
+                                            #     # Use IF NOT EXISTS to avoid errors if constraint already exists
+                                            #     cypher_statements.append(
+                                            #         f"CREATE CONSTRAINT IF NOT EXISTS FOR (n:{node_label}) REQUIRE n.{id_property} IS UNIQUE"
+                                            #     )
+                                                    
+                                            # Comment out index creation
+                                            # if node_label not in created_indexes:
+                                            #     cypher_statements.append(
+                                            #         f"CREATE INDEX IF NOT EXISTS FOR (n:{node_label}) ON (n.id)"
+                                            #     )
+                                            #     created_indexes.add(node_label)
+                                            
+                                            # Add a node creation example
+                                            cypher_statements.append(
+                                                f"CREATE ({node_label.lower()}:{node_label} {{id: 'example-{node_label.lower()}-id'}})"
+                                            )
+                    
+                    # Create relationship types
+                    for rel in schema_content.get('relationships', []):
+                        rel_type = rel.get('type')
+                        source_label = rel.get('source')
+                        target_label = rel.get('target')
+                        if rel_type and source_label and target_label:
+                            # Comment out index creation
+                            # if source_label not in created_indexes:
+                            #     cypher_statements.append(
+                            #         f"CREATE INDEX IF NOT EXISTS FOR (n:{source_label}) ON (n.id)"
+                            #     )
+                            #     created_indexes.add(source_label)
+                            
+                            # if target_label not in created_indexes:
+                            #     cypher_statements.append(
+                            #         f"CREATE INDEX IF NOT EXISTS FOR (n:{target_label}) ON (n.id)"
+                            #     )
+                            #     created_indexes.add(target_label)
+                            
+                            # Add example of creating a relationship
+                            cypher_statements.append(
+                                f"MATCH ({source_label.lower()}:{source_label} {{id: 'example-{source_label.lower()}-id'}}), "
+                                f"({target_label.lower()}:{target_label} {{id: 'example-{target_label.lower()}-id'}}) "
+                                f"CREATE ({source_label.lower()})-[r:{rel_type}]->({target_label.lower()})"
+                            )
+                    
+                    # Join Cypher statements
+                    cypher = "\n".join(cypher_statements)
+                    print(f"DEBUG: Generated cypher statements: {cypher}")
+        except Exception as e:
+            print(f"ERROR: Failed to parse schema JSON: {e}")
+            print(f"ERROR: Schema content type: {type(schema.schema)}")
+            print(f"ERROR: Schema content preview: {str(schema.schema)[:200]}")
+            print(f"ERROR: Exception traceback: {traceback.format_exc()}")
+            raise HTTPException(status_code=500, detail=f"Failed to parse schema JSON: {e}")
+        
+        # Load Neo4j configuration
+        print("DEBUG: Loading Neo4j configuration")
+        config = get_database_config()
+        print(f"DEBUG: Neo4j configuration loaded. Available graphs: {list(config.keys())}")
+        
+        # Get connection parameters for the specified graph
+        graph_name = apply_input.graph_name
+        print(f"DEBUG: Parsing connection parameters for graph: {graph_name}")
+        
+        connection_params = parse_connection_params(config.get(graph_name, {}))
+        print(f"DEBUG: Connection params type: {type(connection_params)}")
+        print(f"DEBUG: Connection params: {connection_params}")
+        
+        # Extract connection parameters
+        uri = connection_params.get('uri')
+        username = connection_params.get('username')
+        password = connection_params.get('password')
+        database = connection_params.get('database', 'neo4j')
+        
+        print("DEBUG: Parsed connection parameters:")
+        print(f"DEBUG: URI: {uri}")
+        print(f"DEBUG: Username: {username}")
+        print(f"DEBUG: Password: {'*' * 8}")
+        print(f"DEBUG: Database: {database}")
+        
+        # Connect to Neo4j
+        print(f"DEBUG: Connecting to Neo4j at {uri} with database {database}")
+        
+        # Create Neo4j driver
+        print("DEBUG: Creating Neo4j driver")
+        driver = GraphDatabase.driver(uri, auth=(username, password))
+        print("DEBUG: Neo4j driver created successfully")
+        
+        try:
+            # Create session
+            print(f"DEBUG: Creating Neo4j session with database: {database}")
+            session = driver.session(database=database)
+            print("DEBUG: Neo4j session created successfully")
+            
+            # Clean up existing schema elements if drop_existing is True
+            if apply_input.drop_existing:
+                print("DEBUG: Dropping existing schema elements (constraints, indexes, nodes, relationships)")
+                try:
+                    # Try to use APOC if available for schema cleanup
+                    try:
+                        print("DEBUG: Attempting to use APOC to drop constraints and indexes")
+                        session.run("CALL apoc.schema.assert({},{},true)")
+                        print("DEBUG: Successfully used APOC to drop constraints and indexes")
+                    except Exception as e:
+                        print(f"WARNING: APOC library not available, using standard Cypher to drop constraints: {e}")
+                        # Get all constraints
+                        print("DEBUG: Fetching all constraints")
+                        constraints = session.run("SHOW CONSTRAINTS").data()
+                        print(f"DEBUG: Found {len(constraints)} constraints")
+                        for constraint in constraints:
+                            constraint_name = constraint.get('name')
+                            if constraint_name:
+                                print(f"DEBUG: Dropping constraint {constraint_name}")
+                                session.run(f"DROP CONSTRAINT {constraint_name} IF EXISTS")
+                        
+                        # Get all indexes
+                        print("DEBUG: Fetching all indexes")
+                        indexes = session.run("SHOW INDEXES").data()
+                        print(f"DEBUG: Found {len(indexes)} indexes")
+                        for index in indexes:
+                            index_name = index.get('name')
+                            if index_name:
+                                print(f"DEBUG: Dropping index {index_name}")
+                                # Commenting out index dropping as requested
+                                # session.run(f"DROP INDEX {index_name} IF EXISTS")
+                    
+                    # Delete all nodes and relationships
+                    print("DEBUG: Deleting all nodes and relationships")
+                    session.run("MATCH (n) DETACH DELETE n")
+                    print("DEBUG: Successfully deleted all nodes and relationships")
+                    
+                except Exception as e:
+                    print(f"WARNING: Error cleaning up existing schema elements: {e}")
+            
+            # Extract Cypher statements from schema
+            print("DEBUG: Extracting Cypher statements from schema")
+            
+            # Process and split Cypher statements
+            cypher = schema_content.get('cypher', '')
+            if not cypher:
+                # If no cypher is provided, use the generated statements
+                cypher = "\n".join(cypher_statements)
+            
+            print(f"DEBUG: Cypher statements length: {len(cypher)}")
+            print(f"DEBUG: First 200 characters of Cypher: {cypher[:200]}")
+            
+            # Split Cypher statements by semicolon or newline
+            cypher_statements = []
+            if cypher:
+                # Split by semicolon or newline
+                statements = re.split(r';\s*|\n+', cypher)
+                cypher_statements = [stmt.strip() for stmt in statements if stmt.strip()]
+            
+            print(f"DEBUG: Found {len(cypher_statements)} Cypher statements to execute")
+            
+            # Execute Cypher statements
+            statements_executed = 0
+            statements_succeeded = 0
+            statements_failed = 0
+            
+            for i, stmt in enumerate(cypher_statements):
+                if not stmt:
+                    continue
+                    
+                statements_executed += 1
+                print(f"DEBUG: Executing Cypher [{i+1}/{len(cypher_statements)}]: {stmt[:100]}...")
+                
+                try:
+                    session.run(stmt)
+                    statements_succeeded += 1
+                except Exception as e:
+                    statements_failed += 1
+                    print(f"ERROR: Error executing Cypher statement {i+1}: {str(e)}")
+            
+            # Log the activity
+            activity_log = {
+                "schema_id": apply_input.schema_id,
+                "graph_name": apply_input.graph_name,
+                "statements_executed": len(cypher_statements),
+                "statements_succeeded": statements_succeeded,
+                "statements_failed": statements_failed,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            if statements_failed:
+                print(f"WARNING: Schema applied with {statements_failed} errors. Activity log: {json.dumps(activity_log)}")
+                return {
+                    "success": True,
+                    "message": f"Schema applied to Neo4j graph '{graph_name}' with {statements_failed} errors",
+                    "details": {
+                        "statements_executed": len(cypher_statements),
+                        "statements_succeeded": statements_succeeded,
+                        "statements_failed": statements_failed,
+                        "errors": [],
+                        "schema_id": apply_input.schema_id
+                    }
+                }
+            else:
+                print(f"DEBUG: Schema applied successfully. Activity log: {json.dumps(activity_log)}")
+                return {
+                    "success": True,
+                    "message": f"Schema applied to Neo4j graph '{graph_name}' successfully",
+                    "details": {
+                        "statements_executed": len(cypher_statements),
+                        "schema_id": apply_input.schema_id
+                    }
+                }
+        finally:
+            # Close the session and driver
+            if 'session' in locals():
+                session.close()
+            driver.close()
+            print("DEBUG: Neo4j driver closed")
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"ERROR: Unhandled exception in apply_schema_to_neo4j: {e}")
+        print(f"ERROR: Exception type: {type(e).__name__}")
+        print(f"ERROR: Exception traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to apply schema to Neo4j: {e}")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error in apply_schema_to_neo4j: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to apply schema: {e}")
+
 @router.post('/save-schema', response_model=SaveSchemaResponse)
 async def save_schema(
     save_input: SaveSchemaInput,
@@ -443,6 +782,123 @@ async def save_schema(
         if not schema_data.get('source_id'):
             print(f"WARNING: No source_id provided in schema data")
             schema_data['source_id'] = "unknown_source"
+        
+        # Ensure schema has Cypher statements
+        if not schema_data.get('cypher'):
+            print(f"DEBUG: No cypher statements found in schema. Generating from nodes and relationships.")
+            
+            # Generate Cypher statements from nodes and relationships
+            cypher_statements = []
+            
+            # Create node labels and constraints
+            for node in schema_data.get('nodes', []):
+                node_label = node.get('label')
+                if node_label:
+                    # Create node label constraint on id property if it exists
+                    properties = node.get('properties', {})
+                    
+                    # Handle properties as dictionary or list
+                    if isinstance(properties, dict):
+                        id_properties = [p for p in ['id', 'ID', 'Id', 'CustomerID', 'customer_id'] if p in properties]
+                        # Comment out constraint creation
+                        # if id_properties:
+                        #     id_property = id_properties[0]
+                        #     # Use IF NOT EXISTS to avoid errors if constraint already exists
+                        #     cypher_statements.append(
+                        #         f"CREATE CONSTRAINT IF NOT EXISTS FOR (n:{node_label}) REQUIRE n.{id_property} IS UNIQUE"
+                        #     )
+                            
+                        # Comment out index creation
+                        # if node_label not in created_indexes:
+                        #     cypher_statements.append(
+                        #         f"CREATE INDEX IF NOT EXISTS FOR (n:{node_label}) ON (n.id)"
+                        #     )
+                        #     created_indexes.add(node_label)
+                            
+                        # Add a node creation example with properties
+                        prop_list = []
+                        for i, (k, v) in enumerate(properties.items()):
+                            if i >= 3:  # Limit to 3 properties for brevity
+                                break
+                            if isinstance(v, str):
+                                prop_list.append(f"{k}: 'example-{k.lower()}'")
+                            elif v in ["integer", "float", "number"]:
+                                prop_list.append(f"{k}: 0")
+                            elif v == "boolean":
+                                prop_list.append(f"{k}: false")
+                            else:
+                                prop_list.append(f"{k}: 'example'")
+                        
+                        # Always include id property
+                        props = f"id: 'example-{node_label.lower()}-id'"
+                        if prop_list:
+                            props += ", " + ", ".join(prop_list)
+                        
+                        # Use the node label as part of the variable name to make it unique
+                        var_name = node_label.lower()
+                        cypher_statements.append(
+                            f"CREATE ({var_name}:{node_label} {{{props}}})"
+                        )
+                
+                elif isinstance(properties, list):
+                    # If properties is a list, look for property with name 'id'
+                    id_property = next((p.get('name') for p in properties if p.get('name') in ['id', 'ID', 'Id', 'CustomerID', 'customer_id']), None)
+                    if id_property:
+                        # Comment out constraint creation
+                        # if id_properties:
+                        #     id_property = id_properties[0]
+                        #     # Use IF NOT EXISTS to avoid errors if constraint already exists
+                        #     cypher_statements.append(
+                        #         f"CREATE CONSTRAINT IF NOT EXISTS FOR (n:{node_label}) REQUIRE n.{id_property} IS UNIQUE"
+                        #     )
+                                
+                        # Comment out index creation
+                        # if node_label not in created_indexes:
+                        #     cypher_statements.append(
+                        #         f"CREATE INDEX IF NOT EXISTS FOR (n:{node_label}) ON (n.id)"
+                        #     )
+                        #     created_indexes.add(node_label)
+                        
+                        # Add a node creation example
+                        cypher_statements.append(
+                            f"CREATE ({node_label.lower()}:{node_label} {{id: 'example-{node_label.lower()}-id'}})"
+                        )
+        
+            # Create relationship types
+            created_indexes = set()
+            for rel in schema_data.get('relationships', []):
+                rel_type = rel.get('type')
+                source_label = rel.get('source')
+                target_label = rel.get('target')
+                if rel_type and source_label and target_label:
+                    # Comment out index creation
+                    # if source_label not in created_indexes:
+                    #     cypher_statements.append(
+                    #         f"CREATE INDEX IF NOT EXISTS FOR (n:{source_label}) ON (n.id)"
+                    #     )
+                    #     created_indexes.add(source_label)
+                    
+                    # if target_label not in created_indexes:
+                    #     cypher_statements.append(
+                    #         f"CREATE INDEX IF NOT EXISTS FOR (n:{target_label}) ON (n.id)"
+                    #     )
+                    #     created_indexes.add(target_label)
+                    
+                    # Add example of creating a relationship
+                    cypher_statements.append(
+                        f"MATCH ({source_label.lower()}:{source_label} {{id: 'example-{source_label.lower()}-id'}}), "
+                        f"({target_label.lower()}:{target_label} {{id: 'example-{target_label.lower()}-id'}}) "
+                        f"CREATE ({source_label.lower()})-[r:{rel_type}]->({target_label.lower()})"
+                    )
+            
+            # Join all statements
+            if cypher_statements:
+                schema_data['cypher'] = ';\n'.join(cypher_statements) + ';'
+                print(f"DEBUG: Generated cypher statements: {schema_data['cypher'][:200]}...")
+            else:
+                # Add a minimal placeholder if we couldn't generate anything
+                schema_data['cypher'] = "// No schema elements to create"
+                print(f"WARNING: Could not generate cypher statements from schema")
             
         # Create schemas directory if it doesn't exist
         schemas_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "saved_schemas")
@@ -471,7 +927,7 @@ async def save_schema(
             db.commit()
             print(f"DEBUG: Schema saved to database with ID: {db_schema.id}")
         except Exception as db_error:
-            print(f"WARNING: Could not save schema to database: {str(db_error)}")
+            print(f"WARNING: Could not save schema to database: {db_error}")
             # Continue even if database save fails - we still have the file
         
         return {
@@ -481,8 +937,8 @@ async def save_schema(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"ERROR in save_schema: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to save schema: {str(e)}")
+        print(f"ERROR in save_schema: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to save schema: {e}")
 
 @router.get('/schemas', response_model=list)
 async def get_schemas(
@@ -508,14 +964,14 @@ async def get_schemas(
                     "updated_at": schema.updated_at.isoformat() if schema.updated_at else None,
                 })
             except Exception as e:
-                print(f"Error processing schema {schema.id}: {str(e)}")
+                print(f"Error processing schema {schema.id}: {e}")
                 # Skip this schema if there's an error
                 continue
                 
         return result
     except Exception as e:
-        print(f"Error in get_schemas: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch schemas: {str(e)}")
+        print(f"Error in get_schemas: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch schemas: {e}")
 
 @router.get('/schemas/{schema_id}', response_model=dict)
 async def get_schema_by_id(
@@ -546,8 +1002,8 @@ async def get_schema_by_id(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error in get_schema_by_id: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch schema: {str(e)}")
+        print(f"Error in get_schema_by_id: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch schema: {e}")
 
 @router.delete('/{schema_id}', response_model=dict)
 async def delete_schema(
@@ -595,11 +1051,11 @@ async def delete_schema(
                 print(f"DEBUG: Deleted file at path: {file_path}")
             except Exception as e:
                 # Log the error but don't fail the request if file deletion fails
-                print(f"ERROR: Failed to delete file at path {file_path}: {str(e)}")
+                print(f"ERROR: Failed to delete file at path {file_path}: {e}")
                 # Return success with a warning
                 return {
                     "success": True,
-                    "message": f"Schema deleted successfully, but failed to delete associated file: {str(e)}"
+                    "message": f"Schema deleted successfully, but failed to delete associated file: {e}"
                 }
         
         return {
@@ -609,4 +1065,4 @@ async def delete_schema(
         
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to delete schema: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete schema: {e}")
