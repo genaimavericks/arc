@@ -37,6 +37,7 @@ class RefineSchemaInput(BaseModel):
     source_id: str
     current_schema: dict
     feedback: str
+    file_path: str = None  # Optional file path, similar to SourceIdInput
 
 # Router
 router = APIRouter(prefix="/graphschema", tags=["graphschema"])
@@ -283,48 +284,10 @@ async def refine_schema(
     try:
         source_id = refine_input.source_id
         
-        # Get the ingestion job
-        job = db.query(IngestionJob).filter(IngestionJob.id == source_id).first()
-        print(f"DEBUG: Found job: {job is not None}")
-        if not job:
-            raise HTTPException(status_code=404, detail=f"Source not found with ID: {source_id}")
-            
-        # Get the file path from the job config
-        config = json.loads(job.config) if job.config else {}
-        print(f"DEBUG: Job config: {config}")
-        
-        # Currently only supporting file sources
-        if job.type == "file":
-            # Get the file path
-            file_id = config.get("file_id")
-            if not file_id:
-                raise HTTPException(status_code=400, detail="No file ID found in job config")
-                
-            # Get the file record
-            file_record = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
-            if not file_record:
-                raise HTTPException(status_code=404, detail=f"File not found with ID: {file_id}")
-                
-            # Build the file path
-            file_path = file_record.path
-            print(f"DEBUG: File path: {file_path}")
-            
-            # Handle different OS path formats
-            try:
-                if os.name == 'nt' and file_path.startswith('/'):
-                    # This is a Unix path but we're on Windows
-                    # Extract the filename and use the local uploads directory
-                    filename = os.path.basename(file_path)
-                    file_path = os.path.join(os.path.abspath("api/uploads"), filename)
-                    print(f"DEBUG: Converted path for Windows: {file_path}")
-                elif os.name != 'nt' and '\\' in file_path:
-                    # Convert Windows path to Unix path if needed
-                    file_path = file_path.replace('\\', '/')
-            except Exception as e:
-                raise HTTPException(
-                    status_code=400, 
-                    detail=f"File path error: {str(e)}. The file appears to be from a different operating system."
-                )
+        # Check if file_path is provided directly in the request
+        if refine_input.file_path:
+            print(f"DEBUG: Using provided file path: {refine_input.file_path}")
+            file_path = refine_input.file_path
             
             # Validate file exists
             if not os.path.exists(file_path):
@@ -332,12 +295,70 @@ async def refine_schema(
                     status_code=404, 
                     detail=f"File not found at path: {file_path}. Current OS: {os.name}"
                 )
-            
+                
             # Validate file is a CSV
             if not file_path.lower().endswith('.csv'):
                 raise HTTPException(status_code=400, detail="Only CSV files are supported")
         else:
-            raise HTTPException(status_code=400, detail="Only file sources are supported")
+            # If file_path not provided, get it from the database (legacy approach)
+            print(f"DEBUG: No file path provided, retrieving from database")
+            
+            # Get the ingestion job
+            job = db.query(IngestionJob).filter(IngestionJob.id == source_id).first()
+            print(f"DEBUG: Found job: {job is not None}")
+            if not job:
+                raise HTTPException(status_code=404, detail=f"Source not found with ID: {source_id}")
+                
+            # Get the file path from the job config
+            config = json.loads(job.config) if job.config else {}
+            print(f"DEBUG: Job config: {config}")
+            
+            # Currently only supporting file sources
+            if job.type == "file":
+                # Get the file path
+                file_id = config.get("file_id")
+                if not file_id:
+                    raise HTTPException(status_code=400, detail="No file ID found in job config")
+                    
+                # Get the file record
+                file_record = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
+                if not file_record:
+                    raise HTTPException(status_code=404, detail=f"File not found with ID: {file_id}")
+                    
+                # Build the file path
+                file_path = file_record.path
+                print(f"DEBUG: File path from database: {file_path}")
+            else:
+                raise HTTPException(status_code=400, detail="Only file sources are supported")
+        
+        # Handle different OS path formats (for both direct and database paths)
+        try:
+            if os.name == 'nt' and file_path.startswith('/'):
+                # This is a Unix path but we're on Windows
+                # Extract the filename and use the local uploads directory
+                filename = os.path.basename(file_path)
+                file_path = os.path.join(os.path.abspath("api/uploads"), filename)
+                print(f"DEBUG: Converted path for Windows: {file_path}")
+            elif os.name != 'nt' and '\\' in file_path:
+                # Convert Windows path to Unix path if needed
+                file_path = file_path.replace('\\', '/')
+                print(f"DEBUG: Converted path for Unix: {file_path}")
+        except Exception as e:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"File path error: {str(e)}. The file appears to be from a different operating system."
+            )
+        
+        # Validate file exists
+        if not os.path.exists(file_path):
+            raise HTTPException(
+                status_code=404, 
+                detail=f"File not found at path: {file_path}. Current OS: {os.name}"
+            )
+        
+        # Validate file is a CSV
+        if not file_path.lower().endswith('.csv'):
+            raise HTTPException(status_code=400, detail="Only CSV files are supported")
         
         # Initialize OpenAI model
         openai_api_key = os.environ.get("OPENAI_API_KEY")
@@ -354,14 +375,28 @@ async def refine_schema(
         agent_instance = GraphSchemaAgent(
             model=llm,
             csv_path=file_path,
-            metadata=refine_input.feedback,
-            current_schema=refine_input.current_schema,
+            metadata=refine_input.feedback,  # User feedback for schema refinement
+            current_schema=refine_input.current_schema,  # Current schema to be refined
             log=True,
             log_path='logs'
         )
         
-        # Run the agent to refine the schema
-        agent_instance.invoke_agent()
+        print(f"DEBUG: Refining schema with feedback: {refine_input.feedback}")
+        print(f"DEBUG: Current schema structure: {json.dumps(refine_input.current_schema, indent=2)[:200]}...")
+        
+        # Explicitly set up the initial state to ensure current_schema is included
+        initial_state = {
+            "csv_path": file_path,
+            "messages": [],
+            "data_info": None,
+            "schema": None,
+            "cypher": None,
+            "error": None,
+            "current_schema": refine_input.current_schema  # Explicitly include current schema in initial state
+        }
+        
+        # Run the agent to refine the schema with the explicit initial state
+        agent_instance.invoke_agent(initial_state)
         
         # Get the refined schema and Cypher
         schema = agent_instance.get_schema()
@@ -513,3 +548,65 @@ async def get_schema_by_id(
     except Exception as e:
         print(f"Error in get_schema_by_id: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch schema: {str(e)}")
+
+@router.delete('/{schema_id}', response_model=dict)
+async def delete_schema(
+    schema_id: str,
+    current_user: User = Depends(has_any_permission(["kginsights:manage"])),
+    db: Session = Depends(get_db)
+):
+    """Delete a Neo4j schema by ID and remove associated files."""
+    print(f"DEBUG: delete_schema called with schema_id: {schema_id}")
+    try:
+        # Get the schema
+        schema = db.query(Schema).filter(Schema.id == schema_id).first()
+        if not schema:
+            raise HTTPException(status_code=404, detail=f"Schema not found with ID: {schema_id}")
+        
+        # Get the schema content
+        schema_content = json.loads(schema.schema) if schema.schema else {}
+        
+        # Get the source ID to find the associated file
+        source_id = schema.source_id
+        
+        # Find the associated ingestion job to get the file path
+        job = db.query(IngestionJob).filter(IngestionJob.id == source_id).first()
+        file_path = None
+        
+        if job:
+            # Get the file path from the job config
+            config = json.loads(job.config) if job.config else {}
+            file_id = config.get("file_id")
+            
+            if file_id:
+                # Get the file record
+                file_record = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
+                if file_record:
+                    file_path = file_record.path
+        
+        # Delete the schema from the database
+        db.delete(schema)
+        db.commit()
+        
+        # If there's a file path and it exists, delete the file
+        if file_path and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                print(f"DEBUG: Deleted file at path: {file_path}")
+            except Exception as e:
+                # Log the error but don't fail the request if file deletion fails
+                print(f"ERROR: Failed to delete file at path {file_path}: {str(e)}")
+                # Return success with a warning
+                return {
+                    "success": True,
+                    "message": f"Schema deleted successfully, but failed to delete associated file: {str(e)}"
+                }
+        
+        return {
+            "success": True,
+            "message": "Schema deleted successfully"
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to delete schema: {str(e)}")

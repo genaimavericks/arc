@@ -44,6 +44,7 @@ export function SchemaChat({
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [message, setMessage] = useState("")
   const [currentSchema, setCurrentSchema] = useState<any>(null)
+  const [filePath, setFilePath] = useState<string>("")  // Store file path for reuse
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
   const { toast } = useToast()
@@ -151,6 +152,9 @@ export function SchemaChat({
         sourceName: selectedSourceName,
         existingSchema: fileMetadata
       };
+      
+      // Store the file path for reuse during refinement
+      setFilePath(filePath);
       
       // Now, send request to build schema API with the file path and enhanced metadata
       const response = await fetch("/api/graphschema/build-schema-from-source", {
@@ -260,7 +264,7 @@ export function SchemaChat({
     setLoading(true)
     
     try {
-      // Send request to API for schema refinement
+      // Send request to API for schema refinement with file path
       const response = await fetch("/api/graphschema/refine-schema", {
         method: "POST",
         headers: {
@@ -270,7 +274,8 @@ export function SchemaChat({
         body: JSON.stringify({
           source_id: selectedSource,
           current_schema: currentSchema,
-          feedback: message
+          feedback: message,
+          file_path: filePath // Reuse stored file path
         }),
       })
       

@@ -4,7 +4,7 @@ import Navbar from "@/components/navbar"
 import { SparklesCore } from "@/components/sparkles"
 import KGInsightsSidebar from "@/components/kginsights-sidebar"
 import { motion } from "framer-motion"
-import { Plus, Search, Eye, FileText, PlusCircle, RefreshCw } from "lucide-react"
+import { Plus, Search, Eye, FileText, PlusCircle, RefreshCw, Trash2 } from "lucide-react"
 import { useEffect, useState } from "react"
 import { getKGraphDashboard } from "@/lib/api"
 import LoadingSpinner from "@/components/loading-spinner"
@@ -17,6 +17,16 @@ import { DatasetPreviewModal } from "@/components/kginsights/dataset-preview-mod
 import { SchemaViewerModal } from "@/components/kginsights/schema-viewer-modal"
 import { GenerateKGModal } from "@/components/kginsights/generate-kg-modal"
 import { KGInsightsLayout } from "@/components/kginsights/kginsights-layout"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 // Define interfaces for our data
 interface KnowledgeGraph {
@@ -73,6 +83,8 @@ function KGraphDashboardContent() {
   const [schemaModalOpen, setSchemaModalOpen] = useState(false)
   const [generateKGModalOpen, setGenerateKGModalOpen] = useState(false)
   const [selectedDataset, setSelectedDataset] = useState<{ id: string; name: string } | null>(null)
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [graphToDelete, setGraphToDelete] = useState<KnowledgeGraph | null>(null)
 
   // Function to fetch available datasets from sources
   const fetchDataSources = async () => {
@@ -250,6 +262,52 @@ function KGraphDashboardContent() {
     router.push("/kginsights/search")
   }
 
+  // Function to handle delete knowledge graph
+  const handleDeleteGraph = (graph: KnowledgeGraph) => {
+    setGraphToDelete(graph)
+    setDeleteModalOpen(true)
+  }
+
+  // Function to confirm delete knowledge graph
+  const confirmDeleteGraph = async () => {
+    if (graphToDelete) {
+      try {
+        // Use different endpoints based on the graph type
+        const endpoint = graphToDelete.type === "schema" 
+          ? `/api/graphschema/${graphToDelete.id}` 
+          : `/api/kginsights/graphs/${graphToDelete.id}`;
+          
+        const response = await fetch(endpoint, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        })
+
+        if (!response.ok) {
+          throw new Error(`Failed to delete ${graphToDelete.type}: ${response.status}`)
+        }
+
+        setKnowledgeGraphs(knowledgeGraphs.filter((graph) => graph.id !== graphToDelete.id))
+        toast({
+          title: "Success",
+          description: `${graphToDelete.type === "schema" ? "Schema" : "Knowledge graph"} deleted successfully.`,
+          variant: "default",
+        })
+      } catch (err) {
+        console.error(`Error deleting ${graphToDelete.type}:`, err)
+        toast({
+          title: "Error",
+          description: `Failed to delete ${graphToDelete.type === "schema" ? "schema" : "knowledge graph"}.`,
+          variant: "destructive",
+        })
+      } finally {
+        setDeleteModalOpen(false)
+        setGraphToDelete(null)
+      }
+    }
+  }
+
   // Animation variants
   const container = {
     hidden: { opacity: 0 },
@@ -383,6 +441,14 @@ function KGraphDashboardContent() {
                                 onClick={() => handleInsights(graph.id)}
                               >
                                 Insights
+                              </Button>
+                              <span className="text-muted-foreground">|</span>
+                              <Button
+                                variant="link"
+                                className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                                onClick={() => handleDeleteGraph(graph)}
+                              >
+                                Delete
                               </Button>
                             </div>
                           </td>
@@ -522,6 +588,30 @@ function KGraphDashboardContent() {
             datasetName={selectedDataset.name}
           />
         </>
+      )}
+
+      {deleteModalOpen && graphToDelete && (
+        <AlertDialog
+          open={deleteModalOpen}
+          onOpenChange={(open) => setDeleteModalOpen(open)}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Knowledge Graph</AlertDialogTitle>
+            </AlertDialogHeader>
+            <AlertDialogDescription>
+              Are you sure you want to delete the knowledge graph "{graphToDelete.name}"?
+            </AlertDialogDescription>
+            <AlertDialogFooter>
+              <AlertDialogAction onClick={confirmDeleteGraph}>
+                Delete
+              </AlertDialogAction>
+              <AlertDialogCancel onClick={() => setDeleteModalOpen(false)}>
+                Cancel
+              </AlertDialogCancel>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
     </div>
   )
