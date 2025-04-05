@@ -38,14 +38,14 @@ class Neo4jLoader:
             # Get database configuration
             db_config = get_database_config()
             if not db_config:
-                self.logger.error("Failed to get database configuration")
+                print("Failed to get database configuration")
                 return False
                 
             # Parse connection parameters for the specified graph
             graph_config = db_config.get(self.graph_name, {})
             self.connection_params = parse_connection_params(graph_config)
             if not self.connection_params:
-                self.logger.error(f"Failed to parse connection parameters for graph: {self.graph_name}")
+                print(f"Failed to parse connection parameters for graph: {self.graph_name}")
                 return False
                 
             # Create Neo4j driver
@@ -54,10 +54,10 @@ class Neo4jLoader:
             password = self.connection_params.get("password")
             
             if not all([uri, username, password]):
-                self.logger.error("Missing Neo4j connection parameters")
+                print("Missing Neo4j connection parameters")
                 return False
                 
-            self.logger.info(f"Connecting to Neo4j at {uri}")
+            print(f"Connecting to Neo4j at {uri}")
             self.driver = GraphDatabase.driver(uri, auth=(username, password))
             
             # Verify connection
@@ -65,22 +65,22 @@ class Neo4jLoader:
                 result = session.run("RETURN 1 as test")
                 test_value = result.single()["test"]
                 if test_value != 1:
-                    self.logger.error("Neo4j connection test failed")
+                    print("Neo4j connection test failed")
                     return False
                     
-            self.logger.info("Successfully connected to Neo4j")
+            print("Successfully connected to Neo4j")
             return True
             
         except Exception as e:
-            self.logger.error(f"Error connecting to Neo4j: {str(e)}")
-            self.logger.error(traceback.format_exc())
+            print(f"Error connecting to Neo4j: {str(e)}")
+            print(traceback.format_exc())
             return False
             
     def close(self):
         """Close the Neo4j driver connection."""
         if self.driver:
             self.driver.close()
-            self.logger.info("Neo4j connection closed")
+            print("Neo4j connection closed")
             
     def _create_node_cypher(self, label: str, properties: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
         """
@@ -176,7 +176,7 @@ class Neo4jLoader:
         }
         
         # Skip creating constraints and indexes as requested
-        self.logger.info("Skipping creation of constraints and indexes as requested")
+        print("Skipping creation of constraints and indexes as requested")
         
         return result
         
@@ -235,7 +235,7 @@ class Neo4jLoader:
                     "property": mapping.get("property", column)
                 })
         
-        self.logger.info(f"Node ID properties: {node_id_properties}")
+        print(f"Node ID properties: {node_id_properties}")
         
         # Track unique nodes to avoid duplicates
         unique_nodes = {}
@@ -246,7 +246,7 @@ class Neo4jLoader:
                 for node_label, properties in node_properties.items():
                     # Skip if no ID properties found for this node type
                     if not node_id_properties.get(node_label, []):
-                        self.logger.warning(f"No ID properties found for {node_label}, will create duplicate nodes")
+                        print(f"No ID properties found for {node_label}, will create duplicate nodes")
                         continue
                     
                     # Get the primary ID property for this node type
@@ -261,7 +261,7 @@ class Neo4jLoader:
                         if id_column in record and record[id_column]:
                             unique_values.add(record[id_column])
                     
-                    self.logger.info(f"Found {len(unique_values)} unique {node_label} nodes")
+                    print(f"Found {len(unique_values)} unique {node_label} nodes")
                     
                     # Create unique nodes
                     for unique_value in unique_values:
@@ -271,11 +271,17 @@ class Neo4jLoader:
                                 # Build properties dict for this node
                                 node_props = {}
                                 for prop in properties:
-                                    csv_column = prop.get("csv_column")
-                                    property_name = prop.get("property")
-                                    
-                                    if csv_column in record:
-                                        node_props[property_name] = record[csv_column]
+                                    # Check if prop is a dictionary or a string
+                                    if isinstance(prop, dict):
+                                        csv_column = prop.get("csv_column")
+                                        property_name = prop.get("property")
+                                        
+                                        if csv_column and property_name and csv_column in record:
+                                            node_props[property_name] = record[csv_column]
+                                    elif isinstance(prop, str):
+                                        # If prop is a string, use it as both property name and column name
+                                        if prop in record:
+                                            node_props[prop] = record[prop]
                                 
                                 # Skip if no properties
                                 if not node_props:
@@ -290,13 +296,41 @@ class Neo4jLoader:
                                         cypher += "SET " + ", ".join([f"n.{k} = ${k}" for k in node_props.keys() if k != id_property])
                                     
                                     # Prepare parameters
-                                    params = {"id_value": unique_value}
+                                    # Convert ID to string to ensure consistent type handling
+                                    id_value = str(unique_value) if unique_value is not None else None
+                                    params = {"id_value": id_value}
+                                    
+                                    print(f"ID value type: {type(id_value).__name__}, value: {id_value}")
+                                    
                                     for k, v in node_props.items():
                                         if k != id_property:  # ID is already in params
                                             params[k] = v
                                     
-                                    session.run(cypher, params)
-                                    result["nodes_created"] += 1
+                                    # Print detailed Cypher information for debugging
+                                    print(f"===== NODE CREATION =====")
+                                    print(f"Node Label: {node_label}")
+                                    print(f"ID Property: {id_property}={unique_value}")
+                                    print(f"Cypher Statement: {cypher}")
+                                    #print(f"Parameters: {json.dumps(params, indent=2)}")
+                                    
+                                    # Print the full executable Cypher for direct testing in Neo4j Browser
+                                    param_cypher = cypher
+                                    for param_name, param_value in params.items():
+                                        if isinstance(param_value, str):
+                                            param_cypher = param_cypher.replace(f"${param_name}", f"'{param_value}'")
+                                        else:
+                                            param_cypher = param_cypher.replace(f"${param_name}", str(param_value))
+                                    print(f"Executable Cypher: {param_cypher}")
+                                    
+                                    result_set = session.run(cypher, params)
+                                    summary = result_set.consume()
+                                    
+                                    # Check if node was created or matched
+                                    if summary.counters.nodes_created > 0:
+                                        print(f"Created new node {node_label} with ID {id_property}={unique_value}")
+                                        result["nodes_created"] += 1
+                                    else:
+                                        print(f"Matched existing node {node_label} with ID {id_property}={unique_value}")
                                     
                                     # Store the node for relationship creation
                                     if node_label not in unique_nodes:
@@ -305,7 +339,7 @@ class Neo4jLoader:
                                     
                                 except Exception as e:
                                     error_msg = f"Error creating node {node_label}: {str(e)}"
-                                    self.logger.error(error_msg)
+                                    print(error_msg)
                                     result["errors"].append(error_msg)
                                 
                                 # Move to next unique value
@@ -316,18 +350,87 @@ class Neo4jLoader:
                     if node_label in unique_nodes:
                         continue  # Already processed
                     
-                    self.logger.warning(f"Creating non-unique nodes for {node_label}")
+                    print(f"Creating non-unique nodes for {node_label}")
+                    
+                    # First, collect all unique values for this node type
+                    unique_values = set()
+                    for record in records:
+                        # For each property in this node type
+                        for prop in properties:
+                            # Check if prop is a dictionary or a string
+                            if isinstance(prop, dict):
+                                csv_column = prop.get("csv_column")
+                                if csv_column and csv_column in record:
+                                    unique_values.add(record[csv_column])
+                            elif isinstance(prop, str):
+                                # If prop is a string, use it as both property name and column name
+                                if prop in record:
+                                    unique_values.add(record[prop])
+                    
+                    print(f"Found {len(unique_values)} unique values for {node_label}")
+                    
+                    # Create a node for each unique value
+                    for value in unique_values:
+                        if not value:  # Skip empty values
+                            continue
+                            
+                        # Create a property dict with the value
+                        node_props = {}
+                        
+                        # Use the property name from the schema
+                        prop_name = None
+                        for prop in properties:
+                            if isinstance(prop, dict):
+                                prop_name = prop.get("property")
+                                if prop_name:
+                                    break
+                            elif isinstance(prop, str):
+                                prop_name = prop
+                                break
+                        
+                        if not prop_name:  # Skip if no property name found
+                            continue
+                            
+                        node_props[prop_name] = value
+                        
+                        # Create the node
+                        try:
+                            cypher = f"MERGE (n:{node_label} {{{prop_name}: $value}}) RETURN n"
+                            params = {"value": value}
+                            
+                            print(f"Creating {node_label} node with {prop_name}={value}")
+                            session.run(cypher, params)
+                            result["nodes_created"] += 1
+                            
+                            # Store the node for relationship creation
+                            if node_label not in unique_nodes:
+                                unique_nodes[node_label] = {}
+                            unique_nodes[node_label][value] = {prop_name: value}
+                            
+                        except Exception as e:
+                            error_msg = f"Error creating node {node_label}: {str(e)}"
+                            print(error_msg)
+                            result["errors"].append(error_msg)
+                    
+                    # Skip the original per-record processing for this node type
+                    continue
                     
                     # Process each record
                     for record in records:
                         # Build properties dict for this node
                         node_props = {}
                         for prop in properties:
-                            csv_column = prop.get("csv_column")
-                            property_name = prop.get("property")
-                            
-                            if csv_column in record:
-                                node_props[property_name] = record[csv_column]
+                            # Check if prop is a dictionary or a string
+                            if isinstance(prop, dict):
+                                csv_column = prop.get("csv_column")
+                                property_name = prop.get("property")
+                                
+                                if csv_column and property_name and csv_column in record:
+                                    node_props[property_name] = record[csv_column]
+                            elif isinstance(prop, str):
+                                # If prop is a string, use it as both property name and column name
+                                if prop in record:
+                                    node_props[prop] = record[prop]
                                 
                         # Skip if no properties
                         if not node_props:
@@ -373,13 +476,13 @@ class Neo4jLoader:
                             result["nodes_created"] += 1
                         except Exception as e:
                             error_msg = f"Error creating node {node_label}: {str(e)}"
-                            self.logger.error(error_msg)
+                            print(error_msg)
                             result["errors"].append(error_msg)
                             
         except Exception as e:
             error_msg = f"Error loading nodes: {str(e)}"
-            self.logger.error(error_msg)
-            self.logger.error(traceback.format_exc())
+            print(error_msg)
+            print(traceback.format_exc())
             result["errors"].append(error_msg)
             
         return result
@@ -416,7 +519,7 @@ class Neo4jLoader:
             
         # Analyze the records to find potential relationship columns
         relationship_columns = self._analyze_relationship_columns(records, relationships)
-        self.logger.info(f"Relationship columns: {relationship_columns}")
+        print(f"Relationship columns: {relationship_columns}")
         
         try:
             with self.driver.session() as session:
@@ -427,10 +530,10 @@ class Neo4jLoader:
                     target_label = rel.get("endNode") or rel.get("target")    # Support both naming conventions
                     
                     if not all([rel_type, source_label, target_label]):
-                        self.logger.warning(f"Incomplete relationship definition: {rel}")
+                        print(f"Incomplete relationship definition: {rel}")
                         continue
                     
-                    self.logger.info(f"Processing relationship: {source_label}-[{rel_type}]->{target_label}")
+                    print(f"Processing relationship: {source_label}-[{rel_type}]->{target_label}")
                     
                     # Find columns that might represent this relationship
                     rel_key = f"{source_label}_{rel_type}_{target_label}"
@@ -465,15 +568,70 @@ class Neo4jLoader:
                                 target_col = column
                                 break
                     
-                    self.logger.info(f"Using columns: {source_col} -> {target_col} for relationship {rel_type}")
+                    print(f"Using columns: {source_col} -> {target_col} for relationship {rel_type}")
                     
                     # Skip if we can't find suitable columns
                     if not source_col or not target_col:
-                        self.logger.warning(f"Could not find suitable columns for relationship {rel_type}")
+                        print(f"Could not find suitable columns for relationship {rel_type}")
                         continue
                     
                     # Process each record to create relationships
                     created_relationships = set()  # Track to avoid duplicates
+                    
+                    # Determine the property names to use for matching nodes
+                    # First, try to find the most likely ID property for each node label
+                    source_prop_name = None
+                    target_prop_name = None
+                    
+                    # Get all properties for source and target node labels
+                    source_props_query = f"MATCH (n:{source_label}) RETURN keys(n) as props LIMIT 1"
+                    target_props_query = f"MATCH (n:{target_label}) RETURN keys(n) as props LIMIT 1"
+                    
+                    try:
+                        source_props_result = session.run(source_props_query).single()
+                        if source_props_result:
+                            source_props = source_props_result["props"]
+                            print(f"Available properties for {source_label}: {source_props}")
+                            
+                            # Try to find a suitable ID property
+                            for prop in source_props:
+                                if prop.lower() in ['id', 'key', 'identifier', 'uuid', source_col.lower()]:
+                                    source_prop_name = prop
+                                    break
+                            
+                            # If no ID-like property found, use the first property
+                            if not source_prop_name and source_props:
+                                source_prop_name = source_props[0]
+                    except Exception as e:
+                        print(f"Error getting properties for {source_label}: {str(e)}")
+                    
+                    try:
+                        target_props_result = session.run(target_props_query).single()
+                        if target_props_result:
+                            target_props = target_props_result["props"]
+                            print(f"Available properties for {target_label}: {target_props}")
+                            
+                            # Try to find a suitable ID property
+                            for prop in target_props:
+                                if prop.lower() in ['id', 'key', 'identifier', 'uuid', target_col.lower()]:
+                                    target_prop_name = prop
+                                    break
+                            
+                            # If no ID-like property found, use the first property
+                            if not target_prop_name and target_props:
+                                target_prop_name = target_props[0]
+                    except Exception as e:
+                        print(f"Error getting properties for {target_label}: {str(e)}")
+                    
+                    # If we couldn't determine property names from the database, use the column names
+                    if not source_prop_name:
+                        source_prop_name = source_col
+                    if not target_prop_name:
+                        target_prop_name = target_col
+                    
+                    print(f"Using property '{source_prop_name}' for {source_label} nodes")
+                    print(f"Using property '{target_prop_name}' for {target_label} nodes")
+                    
                     for record in records:
                         if source_col not in record or target_col not in record:
                             continue
@@ -484,38 +642,135 @@ class Neo4jLoader:
                         # Skip if missing values
                         if not source_id_value or not target_id_value:
                             continue
+                        
+                        # Convert ID values to strings for consistent handling
+                        source_id_str = str(source_id_value) if source_id_value is not None else None
+                        target_id_str = str(target_id_value) if target_id_value is not None else None
                             
                         # Skip if already created this relationship
-                        rel_signature = f"{source_id_value}_{rel_type}_{target_id_value}"
+                        rel_signature = f"{source_id_str}_{rel_type}_{target_id_str}"
                         if rel_signature in created_relationships:
                             continue
                             
                         # Create relationship using MERGE to avoid duplicates
                         try:
-                            cypher = (
-                                f"MATCH (source:{source_label} {{id: $source_id}}), "
-                                f"(target:{target_label} {{id: $target_id}}) "
-                                f"MERGE (source)-[r:{rel_type}]->(target) "
-                                f"RETURN r"
-                            )
+                            # Log ID types and values for debugging
+                            print(f"Source ID type: {type(source_id_str).__name__}, value: {source_id_str}")
+                            print(f"Target ID type: {type(target_id_str).__name__}, value: {target_id_str}")
                             
-                            params = {
-                                "source_id": source_id_value,
-                                "target_id": target_id_value
-                            }
+                            # First verify that both nodes exist using the determined property names
+                            verify_source = f"MATCH (n:{source_label} {{{source_prop_name}: $id}}) RETURN count(n) as count"
+                            verify_target = f"MATCH (n:{target_label} {{{target_prop_name}: $id}}) RETURN count(n) as count"
                             
-                            session.run(cypher, params)
-                            result["relationships_created"] += 1
-                            created_relationships.add(rel_signature)
+                            # Print verification queries for debugging
+                            print("===== NODE VERIFICATION =====")
+                            # Use format method instead of f-strings with backslashes
+                            source_query = verify_source.replace('$id', "'{}'".format(source_id_str))
+                            target_query = verify_target.replace('$id', "'{}'".format(target_id_str))
+                            print(f"Source verification: {source_query}") 
+                            print(f"Target verification: {target_query}") 
+                            
+                            # Try to find all nodes of these types to help with debugging
+                            all_source_nodes_query = f"MATCH (n:{source_label}) RETURN n.{source_prop_name} as id LIMIT 10"
+                            all_target_nodes_query = f"MATCH (n:{target_label}) RETURN n.{target_prop_name} as id LIMIT 10"
+                            
+                            all_source_nodes = session.run(all_source_nodes_query).values()
+                            all_target_nodes = session.run(all_target_nodes_query).values()
+                            
+                            print(f"Sample {source_label} node IDs: {all_source_nodes}")
+                            print(f"Sample {target_label} node IDs: {all_target_nodes}")
+                            
+                            # Execute verification queries
+                            source_exists = session.run(verify_source, {"id": source_id_str}).single()
+                            target_exists = session.run(verify_target, {"id": target_id_str}).single()
+                            
+                            source_count = source_exists["count"] if source_exists else 0
+                            target_count = target_exists["count"] if target_exists else 0
+                            
+                            print(f"Relationship {rel_type}: Source {source_label}({source_prop_name}={source_id_value}) exists: {source_count > 0}")
+                            print(f"Relationship {rel_type}: Target {target_label}({target_prop_name}={target_id_value}) exists: {target_count > 0}")
+                            
+                            # Only proceed if both nodes exist
+                            if source_count > 0 and target_count > 0:
+                                cypher = (
+                                    f"MATCH (source:{source_label} {{{source_prop_name}: $source_id}}), "
+                                    f"(target:{target_label} {{{target_prop_name}: $target_id}}) "
+                                    f"MERGE (source)-[r:{rel_type}]->(target) "
+                                    f"RETURN r"
+                                )
+                                
+                                params = {
+                                    "source_id": source_id_str,
+                                    "target_id": target_id_str
+                                }
+                                
+                                # Print detailed Cypher information for debugging
+                                print(f"===== RELATIONSHIP CREATION =====")
+                                print(f"Relationship Type: {rel_type}")
+                                print(f"Source: {source_label}({source_prop_name}={source_id_str})")
+                                print(f"Target: {target_label}({target_prop_name}={target_id_str})")
+                                print(f"Cypher Statement: {cypher}")
+                                print(f"Parameters: {json.dumps(params, indent=2)}")
+                                
+                                # Print the full executable Cypher for direct testing in Neo4j Browser
+                                param_cypher = cypher
+                                for param_name, param_value in params.items():
+                                    if isinstance(param_value, str):
+                                        param_cypher = param_cypher.replace(f"${param_name}", f"'{param_value}'")
+                                    else:
+                                        param_cypher = param_cypher.replace(f"${param_name}", str(param_value))
+                                print(f"Executable Cypher: {param_cypher}")
+                                
+                                # Try a different approach with explicit node matching
+                                try:
+                                    # First, try to create the relationship with the original query
+                                    result_set = session.run(cypher, params)
+                                    summary = result_set.consume()
+                                    
+                                    # Check if relationship was created
+                                    if summary.counters.relationships_created > 0:
+                                        print(f"Successfully created relationship {rel_type} from {source_id_str} to {target_id_str}")
+                                        result["relationships_created"] += 1
+                                        created_relationships.add(rel_signature)
+                                    elif summary.counters.relationships_created == 0 and summary.counters.contains_updates:
+                                        # Relationship might have been matched but not created (already exists)
+                                        print(f"Relationship {rel_type} from {source_id_str} to {target_id_str} already exists")
+                                        created_relationships.add(rel_signature)
+                                    else:
+                                        # Try a more direct approach with explicit node creation and relationship
+                                        print(f"Initial relationship creation failed. Trying alternative approach...")
+                                        
+                                        # Create a simpler Cypher query that first ensures both nodes exist
+                                        alt_cypher = (
+                                            f"MERGE (source:{source_label} {{{source_prop_name}: '{source_id_str}'}}) "
+                                            f"MERGE (target:{target_label} {{{target_prop_name}: '{target_id_str}'}}) "
+                                            f"MERGE (source)-[r:{rel_type}]->(target) "
+                                            f"RETURN r"
+                                        )
+                                        
+                                        print(f"Alternative Cypher: {alt_cypher}")
+                                        alt_result = session.run(alt_cypher)
+                                        alt_summary = alt_result.consume()
+                                        
+                                        if alt_summary.counters.relationships_created > 0:
+                                            print(f"Successfully created relationship with alternative approach")
+                                            result["relationships_created"] += 1
+                                            created_relationships.add(rel_signature)
+                                        else:
+                                            print(f"Alternative approach also failed. No relationship created.")
+                                except Exception as e:
+                                    print(f"Error in alternative relationship creation approach: {str(e)}")
+                            else:
+                                print(f"Cannot create relationship - nodes don't exist: {source_label}({source_id_str}) to {target_label}({target_id_str})")
                             
                         except Exception as e:
                             error_msg = f"Error creating relationship {rel_type}: {str(e)}"
-                            self.logger.error(error_msg)
+                            print(error_msg)
                             result["errors"].append(error_msg)
         
         except Exception as e:
             error_msg = f"Error in relationship loading: {str(e)}"
-            self.logger.error(error_msg)
+            print(error_msg)
             self.logger.exception(e)
             result["errors"].append(error_msg)
             
@@ -580,6 +835,133 @@ class Neo4jLoader:
                         
         return result
         
+    async def inspect_database(self, schema: Dict[str, Any] = None) -> Dict[str, Any]:
+        """
+        Inspect the database to check for nodes and relationships.
+        
+        Args:
+            schema: Optional schema to check specific node labels and relationship types
+            
+        Returns:
+            Dict with inspection results
+        """
+        if not self.driver:
+            raise ValueError("Neo4j driver not initialized. Call connect() first.")
+            
+        result = {
+            "node_counts": {},
+            "relationship_counts": {},
+            "sample_nodes": {},
+            "sample_relationships": []
+        }
+        
+        try:
+            with self.driver.session() as session:
+                # Get node counts by label
+                print("===== DATABASE INSPECTION =====")
+                print("Checking node counts by label...")
+                
+                # If schema provided, check specific node labels
+                node_labels = []
+                if schema and "nodes" in schema:
+                    for node in schema.get("nodes", []):
+                        if "label" in node:
+                            node_labels.append(node["label"])
+                
+                # If no schema or empty node labels, get all labels
+                if not node_labels:
+                    labels_result = session.run("CALL db.labels() YIELD label RETURN label")
+                    node_labels = [record["label"] for record in labels_result]
+                
+                # Get count for each label
+                for label in node_labels:
+                    count_result = session.run(f"MATCH (n:{label}) RETURN count(n) as count").single()
+                    count = count_result["count"] if count_result else 0
+                    result["node_counts"][label] = count
+                    print(f"Node label '{label}': {count} nodes")
+                    
+                    # Get sample nodes
+                    if count > 0:
+                        sample_result = session.run(f"MATCH (n:{label}) RETURN n LIMIT 3")
+                        samples = [dict(record["n"]) for record in sample_result]
+                        result["sample_nodes"][label] = samples
+                        print(f"Sample {label} nodes: {json.dumps(samples, indent=2)}")
+                
+                # Get relationship counts by type
+                print("Checking relationship counts by type...")
+                
+                # If schema provided, check specific relationship types
+                rel_types = []
+                if schema and "relationships" in schema:
+                    for rel in schema.get("relationships", []):
+                        if "type" in rel:
+                            rel_types.append(rel["type"])
+                
+                # If no schema or empty rel types, get all types
+                if not rel_types:
+                    types_result = session.run("CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType")
+                    rel_types = [record["relationshipType"] for record in types_result]
+                
+                # Get count for each type
+                for rel_type in rel_types:
+                    count_result = session.run(f"MATCH ()-[r:{rel_type}]->() RETURN count(r) as count").single()
+                    count = count_result["count"] if count_result else 0
+                    result["relationship_counts"][rel_type] = count
+                    print(f"Relationship type '{rel_type}': {count} relationships")
+                    
+                    # Get sample relationships
+                    if count > 0:
+                        sample_result = session.run(
+                            f"MATCH (a)-[r:{rel_type}]->(b) "
+                            f"RETURN type(r) as type, a.id as source_id, labels(a)[0] as source_label, "
+                            f"b.id as target_id, labels(b)[0] as target_label LIMIT 3"
+                        )
+                        for record in sample_result:
+                            rel_info = {
+                                "type": record["type"],
+                                "source_label": record["source_label"],
+                                "source_id": record["source_id"],
+                                "target_label": record["target_label"],
+                                "target_id": record["target_id"]
+                            }
+                            result["sample_relationships"].append(rel_info)
+                            print(f"Sample relationship: {json.dumps(rel_info, indent=2)}")
+                
+                # Check for data inconsistencies
+                print("Checking for data inconsistencies...")
+                if schema and "relationships" in schema:
+                    for rel in schema.get("relationships", []):
+                        rel_type = rel.get("type")
+                        source = rel.get("source") or rel.get("startNode")
+                        target = rel.get("target") or rel.get("endNode")
+                        
+                        if all([rel_type, source, target]):
+                            # Check if there are nodes without relationships
+                            orphan_query = f"""
+                            MATCH (a:{source})
+                            WHERE NOT (a)-[:{rel_type}]->() 
+                            RETURN a.id as id LIMIT 5
+                            """
+                            orphans = session.run(orphan_query).values()
+                            if orphans:
+                                print(f"Found {source} nodes without {rel_type} relationships: {orphans}")
+                            
+                            # Check if there are relationships with missing nodes
+                            invalid_query = f"""
+                            MATCH (a:{source})-[r:{rel_type}]->(b:{target})
+                            WHERE a.id IS NULL OR b.id IS NULL
+                            RETURN count(r) as count
+                            """
+                            invalid_count = session.run(invalid_query).single()["count"]
+                            if invalid_count > 0:
+                                print(f"Found {invalid_count} {rel_type} relationships with missing node IDs")
+        
+        except Exception as e:
+            print(f"Error during database inspection: {str(e)}")
+            self.logger.exception(e)
+        
+        return result
+        
     async def clean_database(self) -> Dict[str, Any]:
         """
         Clean the database by removing all nodes and relationships.
@@ -602,13 +984,13 @@ class Neo4jLoader:
             with self.driver.session() as session:
                 # Try to use APOC if available for a clean wipe
                 try:
-                    self.logger.info("Attempting to clean database using APOC")
+                    print("Attempting to clean database using APOC")
                     session.run("CALL apoc.schema.assert({}, {})")
                     result["constraints_dropped"] += 1
                     result["indexes_dropped"] += 1
-                    self.logger.info("Successfully dropped all constraints and indexes using APOC")
+                    print("Successfully dropped all constraints and indexes using APOC")
                 except Exception as e:
-                    self.logger.warning(f"APOC not available or error using it: {str(e)}")
+                    print(f"APOC not available or error using it: {str(e)}")
                     
                     # Fallback to manual constraint and index dropping
                     try:
@@ -629,25 +1011,25 @@ class Neo4jLoader:
                                 result["indexes_dropped"] += 1
                     except Exception as e2:
                         error_msg = f"Error dropping constraints and indexes: {str(e2)}"
-                        self.logger.error(error_msg)
+                        print(error_msg)
                         result["errors"].append(error_msg)
                         
                 # Delete all nodes and relationships
                 try:
                     delete_result = session.run("MATCH (n) DETACH DELETE n RETURN count(n) as deleted")
                     result["nodes_deleted"] = delete_result.single()["deleted"]
-                    self.logger.info(f"Deleted {result['nodes_deleted']} nodes and their relationships")
+                    print(f"Deleted {result['nodes_deleted']} nodes and their relationships")
                 except Exception as e:
                     error_msg = f"Error deleting nodes and relationships: {str(e)}"
-                    self.logger.error(error_msg)
+                    print(error_msg)
                     result["errors"].append(error_msg)
                     
                 result["success"] = True
                 
         except Exception as e:
             error_msg = f"Error cleaning database: {str(e)}"
-            self.logger.error(error_msg)
-            self.logger.error(traceback.format_exc())
+            print(error_msg)
+            print(traceback.format_exc())
             result["errors"].append(error_msg)
             
         return result

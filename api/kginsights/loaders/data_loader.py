@@ -86,40 +86,40 @@ class DataLoader:
                 else:
                     self.schema = self.schema_data
                     
-                self.logger.info("Using provided schema data")
+                print("Using provided schema data")
                 return True
                 
             # Otherwise, load schema from database
             if not self.schema_id:
-                self.logger.error("No schema_id or schema_data provided")
+                print("No schema_id or schema_data provided")
                 self.status["errors"].append("No schema_id or schema_data provided")
                 return False
                 
             schema_record = db.query(Schema).filter(Schema.id == self.schema_id).first()
             if not schema_record:
-                self.logger.error(f"Schema with ID {self.schema_id} not found")
+                print(f"Schema with ID {self.schema_id} not found")
                 self.status["errors"].append(f"Schema with ID {self.schema_id} not found")
                 return False
                 
             # Parse schema JSON
             try:
                 self.schema = json.loads(schema_record.schema)
-                self.logger.info(f"Loaded schema: {schema_record.name}")
+                print(f"Loaded schema: {schema_record.name}")
                 
                 # If data_path is not provided, use the one from the schema
                 if not self.data_path and schema_record.csv_file_path:
                     self.data_path = schema_record.csv_file_path
-                    self.logger.info(f"Using CSV file path from schema: {self.data_path}")
+                    print(f"Using CSV file path from schema: {self.data_path}")
                     
                 return True
             except json.JSONDecodeError as e:
-                self.logger.error(f"Error parsing schema JSON: {str(e)}")
+                print(f"Error parsing schema JSON: {str(e)}")
                 self.status["errors"].append(f"Error parsing schema JSON: {str(e)}")
                 return False
                 
         except Exception as e:
-            self.logger.error(f"Error loading schema: {str(e)}")
-            self.logger.error(traceback.format_exc())
+            print(f"Error loading schema: {str(e)}")
+            print(traceback.format_exc())
             self.status["errors"].append(f"Error loading schema: {str(e)}")
             return False
             
@@ -131,7 +131,7 @@ class DataLoader:
             True if data path is valid, False otherwise
         """
         if not self.data_path:
-            self.logger.error("No data_path provided and none found in schema")
+            print("No data_path provided and none found in schema")
             self.status["errors"].append("No data_path provided and none found in schema")
             return False
             
@@ -140,13 +140,13 @@ class DataLoader:
         
         # Check if file exists
         if not os.path.exists(self.data_path):
-            self.logger.error(f"Data file does not exist: {self.data_path}")
+            print(f"Data file does not exist: {self.data_path}")
             self.status["errors"].append(f"Data file does not exist: {self.data_path}")
             return False
             
         # Check if file is readable
         if not os.access(self.data_path, os.R_OK):
-            self.logger.error(f"Data file is not readable: {self.data_path}")
+            print(f"Data file is not readable: {self.data_path}")
             self.status["errors"].append(f"Data file is not readable: {self.data_path}")
             return False
             
@@ -167,12 +167,12 @@ class DataLoader:
             validation = self.csv_connector.validate_file()
             if not validation["valid"]:
                 for error in validation["errors"]:
-                    self.logger.error(f"CSV validation error: {error}")
+                    print(f"CSV validation error: {error}")
                     self.status["errors"].append(f"CSV validation error: {error}")
                 return False
                 
             for warning in validation["warnings"]:
-                self.logger.warning(f"CSV validation warning: {warning}")
+                print(f"CSV validation warning: {warning}")
                 self.status["warnings"].append(f"CSV validation warning: {warning}")
                 
             # Initialize Neo4j loader
@@ -181,15 +181,15 @@ class DataLoader:
             # Connect to Neo4j
             connected = await self.neo4j_loader.connect()
             if not connected:
-                self.logger.error("Failed to connect to Neo4j")
+                print("Failed to connect to Neo4j")
                 self.status["errors"].append("Failed to connect to Neo4j")
                 return False
                 
             return True
             
         except Exception as e:
-            self.logger.error(f"Error initializing loaders: {str(e)}")
-            self.logger.error(traceback.format_exc())
+            print(f"Error initializing loaders: {str(e)}")
+            print(traceback.format_exc())
             self.status["errors"].append(f"Error initializing loaders: {str(e)}")
             return False
             
@@ -230,58 +230,116 @@ class DataLoader:
                 
             # Clean database if requested
             if self.drop_existing:
-                self.logger.info("Cleaning database before loading data")
+                print("Cleaning database before loading data")
                 clean_result = await self.neo4j_loader.clean_database()
                 if not clean_result["success"]:
                     for error in clean_result["errors"]:
-                        self.logger.error(f"Database cleaning error: {error}")
+                        print(f"Database cleaning error: {error}")
                         self.status["errors"].append(f"Database cleaning error: {error}")
                     self.status["status"] = "failed"
                     self.status["end_time"] = datetime.now().isoformat()
                     return self.status
                     
-                self.logger.info(f"Database cleaned: {clean_result['nodes_deleted']} nodes deleted")
+                print(f"Database cleaned: {clean_result['nodes_deleted']} nodes deleted")
                 
             # Skip creating constraints and indexes
-            self.logger.info("Skipping constraints and indexes creation as requested")
+            print("Skipping constraints and indexes creation as requested")
             self.status["constraints_created"] = 0
             self.status["indexes_created"] = 0
                 
+            # Debug schema structure
+            print("===== SCHEMA STRUCTURE =====")
+            print(f"Schema ID: {self.schema_id}")
+            
+            # Log nodes defined in schema
+            nodes = self.schema.get("nodes", [])
+            print(f"Schema contains {len(nodes)} node types:")
+            for idx, node in enumerate(nodes):
+                node_label = node.get("label")
+                node_props = node.get("properties", [])
+                print(f"Node {idx+1}: {node_label} with {len(node_props)} properties")
+                for prop in node_props:
+                    # Check if prop is a dictionary or a string
+                    if isinstance(prop, dict):
+                        prop_name = prop.get("property")
+                        csv_col = prop.get("csv_column")
+                        print(f"  - Property: {prop_name}, CSV Column: {csv_col}")
+                    else:
+                        # Handle case where prop is a string
+                        print(f"  - Property: {prop} (string format)")
+            
+            # Log relationships defined in schema
+            relationships = self.schema.get("relationships", [])
+            print(f"Schema contains {len(relationships)} relationship types:")
+            for idx, rel in enumerate(relationships):
+                rel_type = rel.get("type")
+                source = rel.get("source") or rel.get("startNode")
+                target = rel.get("target") or rel.get("endNode")
+                print(f"Relationship {idx+1}: {source}-[{rel_type}]->{target}")
+            
             # Get column mapping
             column_mapping = self.csv_connector.get_column_mapping(self.schema)
             if not column_mapping:
-                self.logger.warning("No column mapping found between CSV and schema")
+                print("No column mapping found between CSV and schema")
                 self.status["warnings"].append("No column mapping found between CSV and schema")
+            else:
+                print("===== COLUMN MAPPING =====")
+                for node_label, props in column_mapping.items():
+                    print(f"Node {node_label} mappings:")
+                    for prop in props:
+                        if isinstance(prop, dict):
+                            print(f"  - {prop.get('property')} <- {prop.get('csv_column')}")
+                        elif isinstance(prop, str):
+                            print(f"  - {prop} (direct mapping)")
                 
             # Process data in batches
-            self.logger.info(f"Starting data loading from {self.data_path}")
+            print(f"Starting data loading from {self.data_path}")
             try:
                 batch_count = 0
                 for batch in self.csv_connector.read_batches():
                     batch_count += 1
-                    self.logger.info(f"Processing batch {batch_count} with {len(batch)} records")
+                    print(f"Processing batch {batch_count} with {len(batch)} records")
                     
                     # Load nodes
                     node_result = await self.neo4j_loader.load_nodes(batch, self.schema, column_mapping)
                     self.status["nodes_created"] += node_result["nodes_created"]
                     
                     for error in node_result["errors"]:
-                        self.logger.warning(f"Node loading error: {error}")
+                        print(f"Node loading error: {error}")
                         self.status["warnings"].append(f"Node loading error: {error}")
                         
+                    # Debug schema relationships before loading
+                    relationships = self.schema.get("relationships", [])
+                    print(f"Found {len(relationships)} relationship definitions in schema")
+                    for idx, rel in enumerate(relationships):
+                        rel_type = rel.get("type")
+                        source = rel.get("source") or rel.get("startNode")
+                        target = rel.get("target") or rel.get("endNode")
+                        print(f"Relationship {idx+1}: {source}-[{rel_type}]->{target}")
+                    
+                    # Debug first few records to see what data we're working with
+                    if batch_count == 1:
+                        sample_record = batch[0] if batch else {}
+                        print(f"Sample record: {json.dumps(sample_record, indent=2)}")
+                        
+                        # Check for potential ID columns
+                        for col, val in sample_record.items():
+                            if "id" in col.lower() or "key" in col.lower():
+                                print(f"Potential ID column: {col} = {val}")
+                    
                     # Load relationships
                     rel_result = await self.neo4j_loader.load_relationships(batch, self.schema, column_mapping)
                     self.status["relationships_created"] += rel_result["relationships_created"]
                     
                     for error in rel_result["errors"]:
-                        self.logger.warning(f"Relationship loading error: {error}")
+                        print(f"Relationship loading error: {error}")
                         self.status["warnings"].append(f"Relationship loading error: {error}")
                         
                     self.status["records_processed"] += len(batch)
                     
             except Exception as e:
-                self.logger.error(f"Error processing data: {str(e)}")
-                self.logger.error(traceback.format_exc())
+                print(f"Error processing data: {str(e)}")
+                print(traceback.format_exc())
                 self.status["errors"].append(f"Error processing data: {str(e)}")
                 self.status["status"] = "failed"
                 self.status["end_time"] = datetime.now().isoformat()
@@ -291,14 +349,33 @@ class DataLoader:
             if self.neo4j_loader:
                 self.neo4j_loader.close()
                 
-            self.status["status"] = "completed"
-            self.status["end_time"] = datetime.now().isoformat()
-            self.logger.info(f"Data loading completed: {self.status['records_processed']} records processed")
+                # Inspect database to see what was actually created
+                print("Inspecting database after data loading...")
+                inspection_result = await self.neo4j_loader.inspect_database(self.schema)
+                
+                # Add inspection results to status
+                self.status["node_counts"] = inspection_result["node_counts"]
+                self.status["relationship_counts"] = inspection_result["relationship_counts"]
+                
+                # Check if relationships were actually created
+                total_relationships = sum(inspection_result["relationship_counts"].values())
+                if total_relationships == 0 and self.status["relationships_created"] > 0:
+                    print("Relationship creation reported success but no relationships found in database!")
+                    self.status["warnings"].append("Relationship creation reported success but no relationships found in database")
+                
+                self.status["status"] = "completed"
+                self.status["end_time"] = datetime.now().isoformat()
+                self.status["success"] = True
+                
+                print(f"Data loading completed: {self.status['records_processed']} records processed")
+                print(f"Created {self.status['nodes_created']} nodes and {self.status['relationships_created']} relationships")
+                print(f"Actual database state: {sum(inspection_result['node_counts'].values())} nodes and {total_relationships} relationships")
+                
             return self.status
             
         except Exception as e:
-            self.logger.error(f"Unhandled error in load_data: {str(e)}")
-            self.logger.error(traceback.format_exc())
+            print(f"Unhandled error in load_data: {str(e)}")
+            print(traceback.format_exc())
             self.status["errors"].append(f"Unhandled error in load_data: {str(e)}")
             self.status["status"] = "failed"
             self.status["end_time"] = datetime.now().isoformat()

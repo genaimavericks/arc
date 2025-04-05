@@ -413,6 +413,8 @@ Notes:
 - Relationship types should be in UPPERCASE
 - Choose meaningful and descriptive names for entities and relationships
 - Add indexes for properties that will be frequently queried
+- IMPORTANT: Always use the exact CSV column names as property names to ensure compatibility with the data loader
+- DO NOT rename properties from their original CSV column names
 - Include a "changes" array that describes what modifications were made based on the feedback""",
                 input_variables=["data_info", "metadata_section", "current_schema_section"]
             )
@@ -486,7 +488,9 @@ Notes:
 - Valid property types: string, integer, float, boolean, datetime
 - Relationship types should be in UPPERCASE
 - Choose meaningful and descriptive names for entities and relationships
-- Add indexes for properties that will be frequently queried""",
+- Add indexes for properties that will be frequently queried
+- IMPORTANT: Always use the exact CSV column names as property names to ensure compatibility with the data loader
+- DO NOT rename properties from their original CSV column names""",
                 input_variables=["data_info", "metadata_section"]
             )
             

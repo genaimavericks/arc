@@ -194,7 +194,14 @@ class CSVConnector:
                     # Handle properties as list
                     elif isinstance(properties, list):
                         for prop in properties:
-                            prop_name = prop.get("name")
+                            # Handle both dictionary and string properties
+                            if isinstance(prop, dict):
+                                prop_name = prop.get("name")
+                            elif isinstance(prop, str):
+                                prop_name = prop
+                            else:
+                                continue
+                                
                             if prop_name in header:
                                 # Check if this column might be an ID or reference
                                 analysis = column_analysis.get(prop_name, {})
