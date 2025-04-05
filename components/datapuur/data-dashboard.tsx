@@ -330,8 +330,10 @@ export function DataDashboard() {
     }
   }
 
-  const handleProfile = (datasetId: string) => {
-    router.push(`/datapuur/profile/${datasetId}`)
+  const handleProfile = (datasetId: string, e: React.MouseEvent) => {
+    // Navigate to the profile page with the dataset ID as a query parameter
+    e.preventDefault();
+    router.push(`/datapuur/profile?fileId=${datasetId}`);
   }
 
   const handleTransform = (datasetId: string) => {
@@ -466,7 +468,7 @@ export function DataDashboard() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => handleProfile(dataset.id)}
+                            onClick={(e) => handleProfile(dataset.id, e)}
                             title="Profile"
                             disabled={dataset.status.toLowerCase() !== "active"}
                           >

@@ -1988,6 +1988,8 @@ async def get_data_sources(
     
     # Add sources
     for job in completed_jobs:
+        if job.type == "profile":
+            continue
         sources.append(
             DataSource(
                 id=job.id,
@@ -2342,7 +2344,7 @@ async def preview_file(
             with open(file_path, 'r', encoding='utf-8') as jsonfile:
                 data = json.load(jsonfile)
             
-            # Function to flatten nested JSON (same as in ingestion process)
+            # Function to flatten nested JSON
             def flatten_json(nested_json, prefix=''):
                 flattened = {}
                 for key, value in nested_json.items():
@@ -2604,3 +2606,59 @@ def delete_dataset_endpoint(
 
 # Create data directory if it doesn't exist
 DATA_DIR.mkdir(exist_ok=True)
+
+# Schema for creating a job
+class CreateJobRequest(BaseModel):
+    job_id: str
+    job_type: str
+    status: str = "completed"
+    details: Dict = {}
+    name: Optional[str] = None
+    progress: Optional[int] = 100
+    error: Optional[str] = None
+    duration: Optional[str] = None
+    config: Optional[Dict] = None
+
+@router.post("/create-job", status_code=status.HTTP_201_CREATED)
+async def create_job(
+    request: CreateJobRequest,
+    current_user: User = Depends(has_permission("datapuur:write")),  # Using write permission
+    db: Session = Depends(get_db)
+):
+    """Create a job entry in the system for tracking purposes"""
+    try:
+        # Generate timestamps
+        now = datetime.now().isoformat()
+        
+        # Prepare job data
+        job_data = {
+            "name": request.name or f"{request.job_type.capitalize()} Job",
+            "type": request.job_type,
+            "status": request.status,
+            "progress": request.progress,
+            "start_time": now,
+            "end_time": now if request.status == "completed" else None,
+            "details": json.dumps(request.details) if request.details else None,
+            "error": request.error,
+            "duration": request.duration,
+            "config": request.config
+        }
+        
+        # Save job to database
+        save_ingestion_job(db, request.job_id, job_data)
+        
+        # Log activity
+        log_activity(
+            db=db,
+            username=current_user.username,
+            action=f"Create {request.job_type} Job",
+            details=f"Created job with ID: {request.job_id}"
+        )
+        
+        return {"id": request.job_id, "status": "created"}
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create job: {str(e)}"
+        )

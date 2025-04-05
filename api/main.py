@@ -22,10 +22,12 @@ if os.path.exists(dotenv_path):
 from api.models import User
 from api.db_config import get_db, init_db
 from api.auth import router as auth_router, has_any_permission
+#from api.ingestion import router as ingestion_router
 from api.datapuur import router as datapuur_router
 from api.kginsights import router as kginsights_router
 from api.kgdatainsights.data_insights_api import router as kgdatainsights_router, get_query_history, get_predefined_queries
 from api.kginsights.graphschemaapi import router as graphschema_router, build_schema_from_source, SourceIdInput, SchemaResult
+from api.profiler import router as profiler_router
 from api.admin import router as admin_router
 from api.middleware import ActivityLoggerMiddleware
 
@@ -64,11 +66,13 @@ app.add_middleware(ActivityLoggerMiddleware)
 
 # Register routers after defining all direct routes
 app.include_router(auth_router)
+#app.include_router(ingestion_router)
 app.include_router(datapuur_router)
 app.include_router(kginsights_router, prefix="/api")
 # The graphschema router should be included with just /api prefix since it already has /graphschema in its routes
 app.include_router(graphschema_router, prefix="/api")
 app.include_router(kgdatainsights_router, prefix="/api")
+app.include_router(profiler_router)
 
 app.include_router(admin_router)
 

@@ -35,16 +35,15 @@ export default function DataPuurSidebar() {
               <FileInput className="h-4 w-4" />
               <span>Ingestion</span>
             </Link>
-            {/* Add Profile menu item */}
             <Link
               href="/datapuur/profile"
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground",
-                pathname.includes("/datapuur/profile") ? "bg-accent" : "transparent",
+                pathname === "/datapuur/profile" || pathname.startsWith("/datapuur/profile") ? "bg-accent" : "transparent",
               )}
             >
               <BarChart2 className="h-4 w-4" />
-              <span> Data Profile</span>
+              <span>Data Profiles</span>
             </Link>
             <Link
               href="/datapuur/transformation"
@@ -83,4 +82,3 @@ export default function DataPuurSidebar() {
     </div>
   )
 }
-

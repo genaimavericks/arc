@@ -5,7 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Progress } from "@/components/ui/progress"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { AlertCircle, CheckCircle, Clock, RefreshCw, XCircle, FileText, Database, FolderOpen } from "lucide-react"
+import { AlertCircle, CheckCircle, Clock, RefreshCw, XCircle, FileText, Database, FolderOpen, BarChart } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import { getApiBaseUrl } from "@/lib/config"
 
@@ -102,6 +102,8 @@ export function IngestionMonitor({ jobs, onJobUpdated, errors = [], isPolling = 
         return <FileText className="h-4 w-4" />
       case "database":
         return <Database className="h-4 w-4" />
+      case "profile":
+        return <BarChart className="h-4 w-4" />
       default:
         return <FileText className="h-4 w-4" />
     }

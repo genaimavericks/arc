@@ -1,10 +1,12 @@
 "use client"
 
 import { useState, useRef } from "react"
-import { FileUp, X, FileText, Upload, AlertCircle, Eye } from "lucide-react"
+import { FileUp, X, FileText, Upload, AlertCircle, Eye, BarChart } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Label } from "@/components/ui/label"
 import { motion } from "framer-motion"
 import { getApiBaseUrl } from "@/lib/config"
 
@@ -53,9 +55,10 @@ export function FileUpload({
   const [error, setError] = useState("")
   const [previewData, setPreviewData] = useState<{ headers: string[], rows: any[][], fileName: string } | null>(null)
   const [isPreviewLoading, setIsPreviewLoading] = useState(false)
-  const fileInputRef = useRef(null)
+  const [generateProfile, setGenerateProfile] = useState(true)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const handleDrag = (e) => {
+  const handleDrag = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     e.stopPropagation()
     if (e.type === "dragenter" || e.type === "dragover") {
@@ -66,24 +69,24 @@ export function FileUpload({
   }
 
   // Update the drag and drop handler to accept multiple files
-  const handleDrop = (e) => {
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     e.stopPropagation()
     setDragActive(false)
 
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       // Process all dropped files
-      const droppedFiles = Array.from(e.dataTransfer.files)
+      const droppedFiles = Array.from(e.dataTransfer.files) as File[]
       handleFiles(droppedFiles)
     }
   }
 
   // Update the file input change handler to accept multiple files
-  const handleChange = (e) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     e.preventDefault()
     if (e.target.files && e.target.files.length > 0) {
       // Process all selected files
-      const selectedFiles = Array.from(e.target.files)
+      const selectedFiles = Array.from(e.target.files) as File[]
       handleFiles(selectedFiles)
     }
   }
@@ -297,6 +300,93 @@ export function FileUpload({
           }
           
           onStatusChange(`Ingestion job started for ${file.name} with ID: ${ingestData.job_id}`)
+          
+          // Update progress - ingestion started
+          setUploadProgress((prev) => ({ ...prev, [i]: 90 }))
+          
+          // If profile generation is enabled, request a profile for this file
+          if (generateProfile) {
+            try {
+              // First, get file details to get the file path
+              const fileDetailsResponse = await fetch(`${apiBaseUrl}/api/datapuur/ingestion-preview/${ingestData.job_id}`, {
+                method: "GET",
+                headers: {
+                  Authorization: `Bearer ${localStorage.getItem("token")}`,
+                },
+              });
+
+              if (!fileDetailsResponse.ok) {
+                console.error("Error fetching file details for profiling, but continuing with ingestion");
+              } else {
+                const fileDetails = await fileDetailsResponse.json();
+                console.log("$$$$$$$$$$$$$$$$$$$Preview generation started:", fileDetails);
+                
+                // Now call profile API with the file details
+                const profileResponse = await fetch(`${apiBaseUrl}/api/profiler/profile-data`, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${localStorage.getItem("token")}`,
+                  },
+                  body: JSON.stringify({
+                    file_id: ingestData.file_id,
+                    file_name: file.name,
+                    // The key fix: use the ingestion job id to create the correct file path
+                    // The backend stores the processed data as a parquet file with the job_id as the filename
+                    file_path: `${ingestData.job_id}.parquet`,
+                  }),
+                });
+                
+                if (!profileResponse.ok) {
+                  console.error("Error generating profile, but continuing with ingestion");
+                } else {
+                  const profileData = await profileResponse.json();
+                  console.log("Profile generation started:", profileData);
+                  
+                  // Create a job entry in the datapuur system for tracking
+                  const createJobResponse = await fetch(`${apiBaseUrl}/api/datapuur/create-job`, {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      Authorization: `Bearer ${localStorage.getItem("token")}`,
+                    },
+                    body: JSON.stringify({
+                      job_id: profileData.id,
+                      job_type: "profile",
+                      status: "completed", // Since profiling is synchronous, it's already completed
+                      details: {
+                        file_id: ingestData.file_id,
+                        file_name: file.name,
+                        profile_id: profileData.id
+                      }
+                    }),
+                  });
+                  
+                  if (!createJobResponse.ok) {
+                    console.error("Failed to create job entry for profile, but profile was generated successfully");
+                  }
+                  
+                  // Create a job for profile generation in the UI
+                  onJobCreated({
+                    id: profileData.id, // Using profile ID as job ID
+                    name: `Profile: ${file.name}`,
+                    type: "profile",
+                    status: "completed", // Since profiling is synchronous, it's already completed
+                    progress: 100,
+                    startTime: new Date().toISOString(),
+                    endTime: new Date().toISOString(), // Set end time since it's completed
+                    details: `Profile generated for: ${file.name}`,
+                  });
+                }
+              }
+            } catch (profileError) {
+              console.error("Profile generation error:", profileError);
+              // Don't throw error here - we still want to complete the main process
+            }
+          }
+          
+          // Update progress - complete
+          setUploadProgress((prev) => ({ ...prev, [i]: 100 }))
         } else {
           // Use XMLHttpRequest for smaller files (existing code)
           const xhr = new XMLHttpRequest()
@@ -403,6 +493,93 @@ export function FileUpload({
           }
           
           onStatusChange(`Ingestion job started for ${file.name} with ID: ${ingestData.job_id}`)
+          
+          // Update progress - ingestion started
+          setUploadProgress((prev) => ({ ...prev, [i]: 90 }))
+          
+          // If profile generation is enabled, request a profile for this file
+          if (generateProfile) {
+            try {
+              // First, get file details to get the file path
+              const fileDetailsResponse = await fetch(`${apiBaseUrl}/api/datapuur/sources/${ingestData.job_id}`, {
+                method: "GET",
+                headers: {
+                  Authorization: `Bearer ${localStorage.getItem("token")}`,
+                },
+              });
+
+              if (!fileDetailsResponse.ok) {
+                console.error("Error fetching file details for profiling, but continuing with ingestion");
+              } else {
+                const fileDetails = await fileDetailsResponse.json();
+                console.log("$$$$$$$$$$$$$$$$$$$ Sources File details:", fileDetails);
+                
+                // Now call profile API with the file details
+                const profileResponse = await fetch(`${apiBaseUrl}/api/profiler/profile-data`, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${localStorage.getItem("token")}`,
+                  },
+                  body: JSON.stringify({
+                    file_id: fileDetails.id,
+                    file_name: file.name,
+                    // The key fix: use the ingestion job id to create the correct file path
+                    // The backend stores the processed data as a parquet file with the job_id as the filename
+                    file_path: `${ingestData.job_id}.parquet`,
+                  }),
+                });
+                
+                if (!profileResponse.ok) {
+                  console.error("Error generating profile, but continuing with ingestion");
+                } else {
+                  const profileData = await profileResponse.json();
+                  console.log("Profile generation started:", profileData);
+                  
+                  // Create a job entry in the datapuur system for tracking
+                  const createJobResponse = await fetch(`${apiBaseUrl}/api/datapuur/create-job`, {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      Authorization: `Bearer ${localStorage.getItem("token")}`,
+                    },
+                    body: JSON.stringify({
+                      job_id: profileData.id,
+                      job_type: "profile",
+                      status: "completed", // Since profiling is synchronous, it's already completed
+                      details: {
+                        file_id: ingestData.file_id,
+                        file_name: file.name,
+                        profile_id: profileData.id
+                      }
+                    }),
+                  });
+                  
+                  if (!createJobResponse.ok) {
+                    console.error("Failed to create job entry for profile, but profile was generated successfully");
+                  }
+                  
+                  // Create a job for profile generation in the UI
+                  onJobCreated({
+                    id: profileData.id, // Using profile ID as job ID
+                    name: `Profile: ${file.name}`,
+                    type: "profile",
+                    status: "completed", // Since profiling is synchronous, it's already completed
+                    progress: 100,
+                    startTime: new Date().toISOString(),
+                    endTime: new Date().toISOString(), // Set end time since it's completed
+                    details: `Profile generated for: ${file.name}`,
+                  });
+                }
+              }
+            } catch (profileError) {
+              console.error("Profile generation error:", profileError);
+              // Don't throw error here - we still want to complete the main process
+            }
+          }
+          
+          // Update progress - complete
+          setUploadProgress((prev) => ({ ...prev, [i]: 100 }))
         }
       } catch (error) {
         console.error(`Error uploading file ${file.name}:`, error)
@@ -519,6 +696,12 @@ export function FileUpload({
     }
   }
 
+  const openFileDialog = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click()
+    }
+  }
+
   return (
     <div className="space-y-4">
       <h3 className="text-xl font-semibold text-foreground mb-4 flex items-center">
@@ -558,7 +741,7 @@ export function FileUpload({
           <div className="flex flex-col sm:flex-row justify-center gap-4">
             <Button
               className="bg-primary hover:bg-primary/90 text-primary-foreground"
-              onClick={() => fileInputRef.current.click()}
+              onClick={openFileDialog}
             >
               Select Files
             </Button>
@@ -622,6 +805,23 @@ export function FileUpload({
                 </div>
               </div>
             ))}
+          </div>
+
+          <div className="mt-4 flex flex-col gap-2 mb-4">
+            <div className="flex items-center space-x-2">
+              <Checkbox 
+                id="generateProfile" 
+                checked={generateProfile} 
+                onCheckedChange={(value) => setGenerateProfile(value === true)}
+              />
+              <Label htmlFor="generateProfile" className="cursor-pointer flex items-center">
+                <BarChart className="w-4 h-4 mr-2 text-muted-foreground" />
+                Generate data profile during ingestion
+              </Label>
+            </div>
+            <p className="text-xs text-muted-foreground ml-6">
+              Creates statistical analysis including data types, distributions, and quality metrics
+            </p>
           </div>
 
           <Button
