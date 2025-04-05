@@ -61,3 +61,4 @@ api/database.db
 data/
 uploads/
 api/uploads/
+api/db.logs
