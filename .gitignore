@@ -57,3 +57,4 @@ playwright-report
 cache.db
 api/db.logs
 api/database.db
+api/db.logs
