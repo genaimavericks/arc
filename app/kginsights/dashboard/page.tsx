@@ -241,42 +241,66 @@ function KGraphDashboardContent() {
     }
   }
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true)
-        // Keep the existing API call for KGraph dashboard data
-        const dashboardData = await getKGraphDashboard()
-        console.log("Successfully fetched KGraph dashboard data:", dashboardData)
+  // Function to handle view schema
+  const handleViewSchema = (id: string, name: string) => {
+    setSelectedDataset({ id, name })
+    setSchemaModalOpen(true)
+  }
 
-        // Fetch knowledge graphs
-        await fetchKnowledgeGraphs()
+  // Function to handle apply to Neo4j
+  const handleApplyToNeo4j = (graph: KnowledgeGraph) => {
+    setGraphToApply(graph)
+    setApplyToNeo4jModalOpen(true)
+  }
 
-        // Fetch available datasets from sources
-        await fetchDataSources()
-
-        setError(null)
-      } catch (err) {
-        console.error("Error fetching KGraph dashboard data:", err)
-        setError("Failed to load KGraph dashboard data. Using fallback data.")
-      } finally {
-        setLoading(false)
+  // Function to handle load data to Neo4j
+  const handleLoadDataToNeo4j = async (id: string, name: string) => {
+    try {
+      // Show loading toast
+      toast({
+        title: "Loading Data",
+        description: `Loading data for schema "${name}"...`,
+        variant: "default",
+      })
+      
+      // Call the API to load data directly from the schema without specifying a graph
+      // The backend will handle graph selection based on available configurations
+      const response = await fetch(`/api/graphschema/schemas/${id}/load-data?drop_existing=false`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+          "Content-Type": "application/json",
+        },
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.detail || `Failed to load data: ${response.status}`)
       }
+      
+      const result = await response.json()
+      
+      // Show success toast
+      toast({
+        title: "Success",
+        description: `Data loaded successfully for schema "${name}"`,
+        variant: "default",
+      })
+      
+    } catch (error) {
+      console.error("Error loading data:", error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to load data",
+        variant: "destructive",
+      })
     }
-
-    fetchData()
-  }, [])
+  }
 
   // Function to handle dataset preview
   const handlePreview = (datasetId: string, datasetName: string) => {
     setSelectedDataset({ id: datasetId, name: datasetName })
     setPreviewModalOpen(true)
-  }
-
-  // Function to handle schema view
-  const handleViewSchema = (datasetId: string, datasetName: string) => {
-    setSelectedDataset({ id: datasetId, name: datasetName })
-    setSchemaModalOpen(true)
   }
 
   // Function to handle KG generation
@@ -309,12 +333,6 @@ function KGraphDashboardContent() {
   const handleDeleteGraph = (graph: KnowledgeGraph) => {
     setGraphToDelete(graph)
     setDeleteModalOpen(true)
-  }
-
-  // Function to handle apply to Neo4j
-  const handleApplyToNeo4j = (graph: KnowledgeGraph) => {
-    setGraphToApply(graph)
-    setApplyToNeo4jModalOpen(true)
   }
 
   // Function to confirm delete knowledge graph
@@ -382,6 +400,36 @@ function KGraphDashboardContent() {
     show: { opacity: 1, y: 0 },
   }
 
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true)
+        // Keep the existing API call for KGraph dashboard data
+        const dashboardData = await getKGraphDashboard()
+        console.log("Successfully fetched KGraph dashboard data:", dashboardData)
+
+        // Fetch knowledge graphs
+        await fetchKnowledgeGraphs()
+
+        // Fetch available datasets from sources
+        await fetchDataSources()
+
+        setError(null)
+      } catch (err) {
+        console.error("Error fetching KGraph dashboard data:", err)
+        setError("Failed to load KGraph dashboard data. Using fallback data.")
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchData()
+  }, [])
+
+  // If we have an error but also have dashboard data (from fallback),
+  // we'll show a warning but still render the UI
+  const showErrorBanner = error
+
   if (loading) {
     return (
       <div className="flex-1 p-8 flex items-center justify-center">
@@ -389,10 +437,6 @@ function KGraphDashboardContent() {
       </div>
     )
   }
-
-  // If we have an error but also have dashboard data (from fallback),
-  // we'll show a warning but still render the UI
-  const showErrorBanner = error
 
   return (
     <div className="flex-1 p-8">
@@ -476,13 +520,31 @@ function KGraphDashboardContent() {
                           <td className="px-6 py-4">
                             <div className="flex gap-2">
                               {graph.type === "schema" ? (
-                                <Button
-                                  variant="link"
-                                  className="text-orange-500 hover:text-orange-600 hover:bg-orange-500/10"
-                                  onClick={() => handleViewSchema(graph.id, graph.name)}
-                                >
-                                  View Schema
-                                </Button>
+                                <>
+                                  <Button
+                                    variant="link"
+                                    className="text-orange-500 hover:text-orange-600 hover:bg-orange-500/10"
+                                    onClick={() => handleViewSchema(graph.id, graph.name)}
+                                  >
+                                    View Schema
+                                  </Button>
+                                  <span className="text-muted-foreground">|</span>
+                                  <Button
+                                    variant="link"
+                                    className="text-blue-500 hover:text-blue-600 hover:bg-blue-500/10"
+                                    onClick={() => handleApplyToNeo4j(graph)}
+                                  >
+                                    Apply to Neo4j
+                                  </Button>
+                                  <span className="text-muted-foreground">|</span>
+                                  <Button
+                                    variant="link"
+                                    className="text-green-500 hover:text-green-600 hover:bg-green-500/10"
+                                    onClick={() => handleLoadDataToNeo4j(graph.id, graph.name)}
+                                  >
+                                    Load Data
+                                  </Button>
+                                </>
                               ) : (
                                 <Button
                                   variant="link"

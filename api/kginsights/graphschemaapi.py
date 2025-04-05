@@ -4,15 +4,20 @@ from pydantic import BaseModel
 from .agent.graph_schema_agent import GraphSchemaAgent
 from langchain_openai import ChatOpenAI
 import os
-import io
 import json
+import uuid
+import time
+import traceback
 from datetime import datetime
+from pathlib import Path
 from sqlalchemy.orm import Session
 from ..models import get_db, IngestionJob, UploadedFile, Schema
 from ..auth import has_any_permission
 from ..models import User
+from ..db_config import SessionLocal
 from neo4j import GraphDatabase
 from .database_api import get_database_config, parse_connection_params
+from .loaders.data_loader import DataLoader
 import traceback
 import re
 
@@ -48,6 +53,14 @@ class ApplySchemaInput(BaseModel):
     schema_id: int
     graph_name: str = "default"  # Default graph name to apply schema to
     drop_existing: bool = False  # Whether to drop existing constraints and indexes
+
+class LoadDataInput(BaseModel):
+    schema_id: int
+    data_path: str = None  # Optional path to data source
+    use_source_data: bool = True  # Whether to use the original source data
+    graph_name: str = "default"  # Default graph name to load data into
+    batch_size: int = 1000  # Number of records to process in each batch
+    drop_existing: bool = False  # Whether to drop existing data before loading
 
 # Router
 router = APIRouter(prefix="/graphschema", tags=["graphschema"])
@@ -203,7 +216,7 @@ async def build_schema_from_path(file_input: FilePathInput):
 async def build_schema_from_source(
     source_input: SourceIdInput,
     current_user: User = Depends(has_any_permission(["kginsights:read", "datapuur:read"])),
-    db: Session = Depends(get_db)
+    db: SessionLocal = Depends(get_db)
 ):
     """Generate Neo4j schema from a source ID and return the results."""
     print(f"DEBUG: build_schema_from_source called with source_id: {source_input.source_id}")
@@ -346,7 +359,7 @@ async def build_schema_from_source(
 async def refine_schema(
     refine_input: RefineSchemaInput,
     current_user: User = Depends(has_any_permission(["kginsights:read", "datapuur:read"])),
-    db: Session = Depends(get_db)
+    db: SessionLocal = Depends(get_db)
 ):
     """Refine an existing Neo4j schema based on user feedback."""
     print(f"DEBUG: refine_schema called with source_id: {refine_input.source_id}")
@@ -509,7 +522,7 @@ async def refine_schema(
 async def apply_schema_to_neo4j(
     apply_input: ApplySchemaInput,
     current_user: User = Depends(has_any_permission(["kginsights:write"])),
-    db: Session = Depends(get_db)
+    db: SessionLocal = Depends(get_db)
 ):
     """Apply a saved schema to Neo4j."""
     try:
@@ -842,7 +855,7 @@ async def apply_schema_to_neo4j(
 async def save_schema(
     save_input: SaveSchemaInput,
     current_user: User = Depends(has_any_permission(["kginsights:write"])),
-    db: Session = Depends(get_db)
+    db: SessionLocal = Depends(get_db)
 ):
     """Save the generated schema to the database and as a JSON file."""
     try:
@@ -1000,16 +1013,17 @@ async def save_schema(
         
         try:
             # Save schema to database
-            db_schema = Schema(
-                name=schema_data.get('name'),
-                source_id=schema_data.get('source_id'),
+            schema_record = Schema(
+                name=schema_data.get('name', f"schema_{datetime.now().isoformat()}"),
+                source_id=str(current_user.id),  # Using user ID as source_id
                 description=schema_data.get('description', ''),
-                schema=json.dumps(schema_data),
-                csv_file_path=csv_file_path  # Store the CSV file path in the database
+                schema=json.dumps(save_input.schema),
+                csv_file_path=save_input.csv_file_path
+                # created_at and updated_at have default values
             )
-            db.add(db_schema)
+            db.add(schema_record)
             db.commit()
-            print(f"DEBUG: Schema saved to database with ID: {db_schema.id}")
+            print(f"DEBUG: Schema saved to database with ID: {schema_record.id}")
         except Exception as db_error:
             print(f"WARNING: Could not save schema to database: {db_error}")
             # Continue even if database save fails - we still have the file
@@ -1027,7 +1041,7 @@ async def save_schema(
 @router.get('/schemas', response_model=list)
 async def get_schemas(
     current_user: User = Depends(has_any_permission(["kginsights:read", "datapuur:read"])),
-    db: Session = Depends(get_db)
+    db: SessionLocal = Depends(get_db)
 ):
     """Get all saved schemas from the database."""
     try:
@@ -1062,7 +1076,7 @@ async def get_schemas(
 async def get_schema_by_id(
     schema_id: int,
     current_user: User = Depends(has_any_permission(["kginsights:read", "datapuur:read"])),
-    db: Session = Depends(get_db)
+    db: SessionLocal = Depends(get_db)
 ):
     """Get a specific schema by ID from the database."""
     try:
@@ -1091,64 +1105,287 @@ async def get_schema_by_id(
         print(f"Error in get_schema_by_id: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch schema: {e}")
 
-@router.delete('/{schema_id}', response_model=dict)
+@router.delete("/{schema_id}")
 async def delete_schema(
     schema_id: str,
     current_user: User = Depends(has_any_permission(["kginsights:manage"])),
-    db: Session = Depends(get_db)
+    db: SessionLocal = Depends(get_db)
 ):
-    """Delete a Neo4j schema by ID and remove associated files."""
-    print(f"DEBUG: delete_schema called with schema_id: {schema_id}")
+    """
+    Delete a schema by ID.
+    
+    First removes the database record, then cleans up any associated files.
+    """
     try:
-        # Get the schema
-        schema = db.query(Schema).filter(Schema.id == schema_id).first()
-        if not schema:
-            raise HTTPException(status_code=404, detail=f"Schema not found with ID: {schema_id}")
-        
-        # Get the schema content
-        schema_content = json.loads(schema.schema) if schema.schema else {}
-        
-        # Get the source ID to find the associated file
-        source_id = schema.source_id
-        
-        # Find the associated ingestion job to get the file path
-        job = db.query(IngestionJob).filter(IngestionJob.id == source_id).first()
-        file_path = None
-        
-        if job:
-            # Get the file path from the job config
-            config = json.loads(job.config) if job.config else {}
-            file_id = config.get("file_id")
+        # Validate schema ID
+        try:
+            schema_id_int = int(schema_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Schema ID must be an integer")
             
-            if file_id:
-                # Get the file record
-                file_record = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
-                if file_record:
-                    file_path = file_record.path
-        
-        # Delete the schema from the database
+        # Get schema from database
+        schema = db.query(Schema).filter(Schema.id == schema_id_int).first()
+        if not schema:
+            raise HTTPException(status_code=404, detail=f"Schema {schema_id} not found")
+            
+        # Store file paths before deletion
+        files_to_clean = []
+        if schema.csv_file_path and os.path.exists(schema.csv_file_path):
+            files_to_clean.append(schema.csv_file_path)
+            
+        # Delete database record
         db.delete(schema)
         db.commit()
         
-        # If there's a file path and it exists, delete the file
-        if file_path and os.path.exists(file_path):
+        # Clean up files
+        for file_path in files_to_clean:
             try:
-                os.remove(file_path)
-                print(f"DEBUG: Deleted file at path: {file_path}")
+                if os.path.exists(file_path):
+                    os.remove(file_path)
             except Exception as e:
-                # Log the error but don't fail the request if file deletion fails
-                print(f"ERROR: Failed to delete file at path {file_path}: {e}")
-                # Return success with a warning
-                return {
-                    "success": True,
-                    "message": f"Schema deleted successfully, but failed to delete associated file: {e}"
-                }
+                print(f"Warning: Could not delete file {file_path}: {str(e)}")
+                
+        return {"message": f"Schema {schema_id} deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Error deleting schema: {str(e)}"
+        )
+
+@router.post("/cleanup-schemas")
+async def cleanup_schemas(
+    current_user: User = Depends(has_any_permission(["kginsights:manage"])),
+    db: SessionLocal = Depends(get_db)
+):
+    """
+    Clean up the schemas table by removing entries where the associated CSV files don't exist.
+    
+    Args:
+        current_user: Current authenticated user with manage permissions
+        db: Database session
+        
+    Returns:
+        Dict with cleanup results
+    """
+    try:
+        # Get all schemas
+        schemas = db.query(Schema).all()
+        removed_count = 0
+        preserved_count = 0
+        
+        for schema in schemas:
+            # Check if CSV file exists
+            # Normalize path for cross-platform compatibility
+            csv_path = Path(schema.csv_file_path).resolve() if schema.csv_file_path else None
+            if csv_path and not csv_path.exists():
+                print(f"Removing schema {schema.id}: CSV file not found at {csv_path}")
+                db.delete(schema)
+                removed_count += 1
+            else:
+                preserved_count += 1
+                
+        # Commit changes
+        db.commit()
         
         return {
-            "success": True,
-            "message": "Schema deleted successfully"
+            "message": f"Schema cleanup completed",
+            "removed": removed_count,
+            "preserved": preserved_count
         }
         
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to delete schema: {e}")
+        print(f"Error in cleanup_schemas: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Error cleaning up schemas: {str(e)}")
+
+@router.post("/load-data")
+@router.post("/schemas/{schema_id}/load-data")
+async def load_data_to_neo4j(
+    load_input: LoadDataInput = None,
+    schema_id: int = None,
+    graph_name: str = None,
+    drop_existing: bool = False,
+    current_user: User = Depends(has_any_permission(["kginsights:write"])),
+    db: SessionLocal = Depends(get_db)
+):
+    """
+    Load data into Neo4j from a CSV file based on a schema.
+    
+    Args:
+        load_input: Input parameters for data loading
+        current_user: Current authenticated user
+        db: Database session
+        
+    Returns:
+        Dict with loading results
+    """
+    try:
+        # Handle both URL patterns
+        # If called via /schemas/{schema_id}/load-data with query parameters
+        if schema_id is not None and load_input is None:
+            # Create load_input from path and query parameters
+            load_input = LoadDataInput(
+                schema_id=schema_id,
+                graph_name=graph_name or "default",
+                drop_existing=drop_existing,
+                use_source_data=True,
+                data_path=None  # Will use schema's CSV path
+            )
+            print(f"DEBUG: Using path parameters: schema_id={schema_id}, graph_name={graph_name}")
+        
+        print(f"DEBUG: Starting data loading process for schema ID: {load_input.schema_id}")
+        
+        # Validate schema_id
+        schema = db.query(Schema).filter(Schema.id == load_input.schema_id).first()
+        if not schema:
+            raise HTTPException(status_code=404, detail=f"Schema with ID {load_input.schema_id} not found")
+            
+        # Determine data path and normalize for cross-platform compatibility
+        data_path = None
+        
+        # Check if a custom data path was provided
+        if load_input.data_path:
+            data_path = Path(load_input.data_path).resolve()
+            print(f"DEBUG: Using provided data path: {data_path}")
+            
+        # If no custom path, try to use schema's CSV file path
+        elif load_input.use_source_data:
+            if schema.csv_file_path and schema.csv_file_path.strip():
+                data_path = Path(schema.csv_file_path).resolve()
+                print(f"DEBUG: Using CSV file path from schema: {data_path}")
+            else:
+                # Try to find a default sample CSV file
+                sample_dir = Path(os.path.dirname(os.path.abspath(__file__))) / "samples"
+                if sample_dir.exists():
+                    # Look for CSV files in the samples directory
+                    csv_files = list(sample_dir.glob("*.csv"))
+                    if csv_files:
+                        data_path = csv_files[0]  # Use the first CSV file found
+                        print(f"DEBUG: Using default sample CSV file: {data_path}")
+                        
+                        # Update the schema with this CSV file path for future use
+                        schema.csv_file_path = str(data_path)
+                        db.commit()
+                        print(f"DEBUG: Updated schema with CSV file path: {data_path}")
+                    
+        # If we still don't have a data path, raise an error
+        if not data_path:
+            raise HTTPException(
+                status_code=400, 
+                detail="No data path available. Either provide data_path parameter, "
+                       "update the schema with a csv_file_path, or place a CSV file in the samples directory."
+            )
+                
+        # Verify data path exists
+        if not data_path.exists():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Data path does not exist: {data_path}"
+            )
+            
+        # Initialize data loader
+        loader = DataLoader(
+            schema_id=load_input.schema_id,
+            data_path=str(data_path),  # Convert Path to string
+            graph_name=load_input.graph_name,
+            batch_size=load_input.batch_size,
+            drop_existing=load_input.drop_existing
+        )
+        
+        # Load data
+        print(f"DEBUG: Loading data from {data_path} into Neo4j graph {load_input.graph_name}")
+        result = await loader.load_data(db)
+        
+        # Check for errors
+        if result["status"] == "failed":
+            error_message = "Data loading failed"
+            if result["errors"]:
+                error_message = f"Data loading failed: {result['errors'][0]}"
+            raise HTTPException(status_code=500, detail=error_message)
+            
+        return {
+            "message": "Data loaded successfully",
+            "result": result
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"ERROR: Unhandled exception in load_data_to_neo4j: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Error loading data: {str(e)}")
+
+# Neo4j graphs endpoint removed - now using database configuration directly in other endpoints
+
+@router.post("/schemas/{schema_id}/load-data")
+async def load_data_from_schema(
+    schema_id: int,
+    graph_name: str = "default",
+    drop_existing: bool = False,
+    current_user: User = Depends(has_any_permission(["kginsights:write"])),
+    db: SessionLocal = Depends(get_db)
+):
+    """
+    Load data directly from a schema's associated file path.
+    
+    Args:
+        schema_id: ID of the schema
+        graph_name: Name of the Neo4j graph to load data into
+        drop_existing: Whether to drop existing data in the graph
+        current_user: Current authenticated user
+        db: Database session
+        
+    Returns:
+        Dict with loading results
+    """
+    try:
+        print(f"DEBUG: Starting direct data loading process for schema ID: {schema_id}")
+        
+        # Validate schema_id
+        schema = db.query(Schema).filter(Schema.id == schema_id).first()
+        if not schema:
+            raise HTTPException(status_code=404, detail=f"Schema with ID {schema_id} not found")
+            
+        # Check if schema has an associated file path
+        if not schema.csv_file_path:
+            raise HTTPException(
+                status_code=400, 
+                detail="Schema does not have an associated CSV file path"
+            )
+            
+        # Initialize data loader
+        loader = DataLoader(
+            schema_id=schema_id,
+            data_path=schema.csv_file_path,
+            graph_name=graph_name,
+            batch_size=1000,  # Default batch size
+            drop_existing=drop_existing
+        )
+        
+        # Load data
+        print(f"DEBUG: Loading data from {schema.csv_file_path} into Neo4j graph {graph_name}")
+        result = await loader.load_data(db)
+        
+        # Check for errors
+        if result["status"] == "failed":
+            error_message = "Data loading failed"
+            if result["errors"]:
+                error_message = f"Data loading failed: {result['errors'][0]}"
+            raise HTTPException(status_code=500, detail=error_message)
+            
+        return {
+            "message": "Data loaded successfully",
+            "result": result
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"ERROR: Unhandled exception in load_data_from_schema: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Error loading data: {str(e)}")
