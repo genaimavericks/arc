@@ -191,11 +191,17 @@ export function SchemaChat({
       // Update messages with assistant response
       setMessages((prevMessages) => [...prevMessages, assistantMessage])
       
-      // Call the callback to update the parent component
-      onSchemaGenerated(data.schema, data.cypher)
+      // Add the file path to the schema
+      const schemaWithFilePath = {
+        ...data.schema,
+        csv_file_path: filePath
+      };
       
-      // Store the current schema for refinement
-      setCurrentSchema(data.schema)
+      // Call the callback to update the parent component with the enhanced schema
+      onSchemaGenerated(schemaWithFilePath, data.cypher)
+      
+      // Store the current schema for refinement (with file path)
+      setCurrentSchema(schemaWithFilePath)
       
       toast({
         title: "Success",
@@ -307,17 +313,26 @@ export function SchemaChat({
         const schemaForVisualization = { ...data.schema };
         delete schemaForVisualization.changes;
         
+        // Ensure the CSV file path is preserved
+        schemaForVisualization.csv_file_path = filePath;
+        
         // Call the callback to update the parent component with the cleaned schema
         onSchemaGenerated(schemaForVisualization, data.cypher);
         
         // Update the current schema for future refinements
         setCurrentSchema(schemaForVisualization);
       } else {
+        // Ensure the CSV file path is preserved
+        const schemaWithFilePath = {
+          ...data.schema,
+          csv_file_path: filePath
+        };
+        
         // Call the callback to update the parent component
-        onSchemaGenerated(data.schema, data.cypher);
+        onSchemaGenerated(schemaWithFilePath, data.cypher);
         
         // Update the current schema for future refinements
-        setCurrentSchema(data.schema);
+        setCurrentSchema(schemaWithFilePath);
       }
       
       toast({

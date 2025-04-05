@@ -1,0 +1,69 @@
+{
+  "nodes": [
+    {
+      "label": "Customer",
+      "properties": {
+        "CustomerID": "string",
+        "Gender": "string",
+        "SeniorCitizen": "boolean",
+        "Partner": "boolean",
+        "Dependents": "boolean",
+        "tenure": "integer",
+        "PhoneService": "boolean",
+        "MultipleLines": "string",
+        "InternetService": "string",
+        "OnlineSecurity": "boolean",
+        "OnlineBackup": "boolean",
+        "DeviceProtection": "boolean",
+        "TechSupport": "boolean",
+        "StreamingTV": "boolean",
+        "StreamingMovies": "boolean",
+        "PaperlessBilling": "boolean",
+        "Churn": "boolean"
+      }
+    },
+    {
+      "label": "Contract",
+      "properties": {
+        "ContractType": "string",
+        "MonthlyCharges": "float",
+        "TotalCharges": "float"
+      }
+    },
+    {
+      "label": "Payment",
+      "properties": {
+        "PaymentMethod": "string"
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "type": "HAS_CONTRACT",
+      "source": "Customer",
+      "target": "Contract",
+      "properties": {},
+      "startNode": "Customer",
+      "endNode": "Contract"
+    },
+    {
+      "type": "HAS_PAYMENT",
+      "source": "Customer",
+      "target": "Payment",
+      "properties": {},
+      "startNode": "Customer",
+      "endNode": "Payment"
+    }
+  ],
+  "indexes": [
+    "Customer(CustomerID)",
+    "Contract(ContractType)",
+    "Payment(PaymentMethod)"
+  ],
+  "csv_file_path": "C:\\development\\workspace\\rsw\\api\\uploads\\2bbdaa8e-af16-44c3-a7b1-771c280028ec.csv",
+  "name": "ChurnData",
+  "description": "",
+  "source_id": "251fce4c-eba8-4bea-ba62-3bf12c641a64",
+  "created_at": "2025-04-05T06:24:00.316Z",
+  "cypher": "CREATE (customer:Customer {id: 'example-customer-id', CustomerID: 'example-customerid', Gender: 'example-gender', SeniorCitizen: 'example-seniorcitizen'});\nCREATE (contract:Contract {id: 'example-contract-id', ContractType: 'example-contracttype', MonthlyCharges: 'example-monthlycharges', TotalCharges: 'example-totalcharges'});\nCREATE (payment:Payment {id: 'example-payment-id', PaymentMethod: 'example-paymentmethod'});\nMATCH (customer:Customer {id: 'example-customer-id'}), (contract:Contract {id: 'example-contract-id'}) CREATE (customer)-[r:HAS_CONTRACT]->(contract);\nMATCH (customer:Customer {id: 'example-customer-id'}), (payment:Payment {id: 'example-payment-id'}) CREATE (customer)-[r:HAS_PAYMENT]->(payment);"
+}

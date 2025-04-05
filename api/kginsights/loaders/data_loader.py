@@ -242,15 +242,10 @@ class DataLoader:
                     
                 self.logger.info(f"Database cleaned: {clean_result['nodes_deleted']} nodes deleted")
                 
-            # Create constraints and indexes
-            self.logger.info("Creating constraints and indexes")
-            constraint_result = await self.neo4j_loader.create_constraints_and_indexes(self.schema)
-            self.status["constraints_created"] = constraint_result["constraints_created"]
-            self.status["indexes_created"] = constraint_result["indexes_created"]
-            
-            for error in constraint_result["errors"]:
-                self.logger.warning(f"Constraint/index error: {error}")
-                self.status["warnings"].append(f"Constraint/index error: {error}")
+            # Skip creating constraints and indexes
+            self.logger.info("Skipping constraints and indexes creation as requested")
+            self.status["constraints_created"] = 0
+            self.status["indexes_created"] = 0
                 
             # Get column mapping
             column_mapping = self.csv_connector.get_column_mapping(self.schema)
@@ -275,7 +270,7 @@ class DataLoader:
                         self.status["warnings"].append(f"Node loading error: {error}")
                         
                     # Load relationships
-                    rel_result = await self.neo4j_loader.load_relationships(batch, self.schema)
+                    rel_result = await self.neo4j_loader.load_relationships(batch, self.schema, column_mapping)
                     self.status["relationships_created"] += rel_result["relationships_created"]
                     
                     for error in rel_result["errors"]:

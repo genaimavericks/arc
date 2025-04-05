@@ -56,7 +56,7 @@ class ApplySchemaInput(BaseModel):
 
 class LoadDataInput(BaseModel):
     schema_id: int
-    data_path: str = None  # Optional path to data source
+    data_path: str = ''  # Optional path to data source - empty string instead of None
     use_source_data: bool = True  # Whether to use the original source data
     graph_name: str = "default"  # Default graph name to load data into
     batch_size: int = 1000  # Number of records to process in each batch
@@ -1073,32 +1073,67 @@ async def get_schemas(
         raise HTTPException(status_code=500, detail=f"Failed to fetch schemas: {e}")
 
 @router.get('/schemas/{schema_id}', response_model=dict)
-async def get_schema_by_id(
+async def get_schema(
     schema_id: int,
     current_user: User = Depends(has_any_permission(["kginsights:read", "datapuur:read"])),
     db: SessionLocal = Depends(get_db)
 ):
-    """Get a specific schema by ID from the database."""
+    """Get a specific schema by ID."""
     try:
         # Query the schema from the database
         schema = db.query(Schema).filter(Schema.id == schema_id).first()
         
         if not schema:
             raise HTTPException(status_code=404, detail=f"Schema with ID {schema_id} not found")
+        
+        # Check for uploaded files if no CSV file path is specified
+        csv_file_path = schema.csv_file_path or ""
+        if not csv_file_path and schema.source_id:
+            try:
+                # Look for uploaded files - use the id field since UploadedFile doesn't have source_id
+                # The schema.source_id might be the file ID in some cases
+                uploaded_file = db.query(UploadedFile).filter(UploadedFile.id == schema.source_id).first()
+                if uploaded_file and uploaded_file.path:
+                    csv_file_path = uploaded_file.path
+                    print(f"DEBUG: Found uploaded file for schema {schema_id}: {csv_file_path}")
+                    
+                    # Update the schema with this CSV file path for future use
+                    schema.csv_file_path = csv_file_path
+                    db.commit()
+                    print(f"DEBUG: Updated schema with CSV file path from uploaded file")
+            except Exception as e:
+                print(f"DEBUG: Error checking for uploaded files: {e}")
+                # Continue even if this check fails
+        
+        # Check for ingestion jobs if still no CSV file path
+        if not csv_file_path and schema.source_id:
+            try:
+                # Look for ingestion jobs associated with this source_id
+                ingestion_job = db.query(IngestionJob).filter(IngestionJob.source_id == schema.source_id).first()
+                if ingestion_job and ingestion_job.file_path:
+                    csv_file_path = ingestion_job.file_path
+                    print(f"DEBUG: Found ingestion job for schema {schema_id}: {csv_file_path}")
+                    
+                    # Update the schema with this CSV file path for future use
+                    schema.csv_file_path = csv_file_path
+                    db.commit()
+                    print(f"DEBUG: Updated schema with CSV file path from ingestion job")
+            except Exception as e:
+                print(f"DEBUG: Error checking for ingestion jobs: {e}")
+                # Continue even if this check fails
             
-        # Format the schema for the frontend
-        result = {
+        # Return the schema data
+        return {
             "id": schema.id,
             "name": schema.name,
             "source_id": schema.source_id,
             "description": schema.description or "",
-            "schema": schema.schema,  # Return the raw schema JSON string
             "created_at": schema.created_at.isoformat() if schema.created_at else None,
             "updated_at": schema.updated_at.isoformat() if schema.updated_at else None,
-            "csv_file_path": schema.csv_file_path or ""
+            "schema": schema.schema,
+            "csv_file_path": csv_file_path
         }
                 
-        return result
     except HTTPException:
         raise
     except Exception as e:
@@ -1234,7 +1269,7 @@ async def load_data_to_neo4j(
                 graph_name=graph_name or "default",
                 drop_existing=drop_existing,
                 use_source_data=True,
-                data_path=None  # Will use schema's CSV path
+                data_path=''  # Empty string instead of None to avoid validation error
             )
             print(f"DEBUG: Using path parameters: schema_id={schema_id}, graph_name={graph_name}")
         
@@ -1248,8 +1283,9 @@ async def load_data_to_neo4j(
         # Determine data path and normalize for cross-platform compatibility
         data_path = None
         
+        print(f"DEBUG: Using schema: {schema}, CSV Path : {schema.csv_file_path}")
         # Check if a custom data path was provided
-        if load_input.data_path:
+        if load_input.data_path and load_input.data_path.strip():
             data_path = Path(load_input.data_path).resolve()
             print(f"DEBUG: Using provided data path: {data_path}")
             
@@ -1273,12 +1309,29 @@ async def load_data_to_neo4j(
                         db.commit()
                         print(f"DEBUG: Updated schema with CSV file path: {data_path}")
                     
+        # If we still don't have a data path, check for uploaded files associated with the schema
+        if not data_path and schema.source_id:
+            try:
+                # Check if there are any uploaded files with ID matching the source_id
+                uploaded_file = db.query(UploadedFile).filter(UploadedFile.id == schema.source_id).first()
+                if uploaded_file and uploaded_file.path:
+                    data_path = Path(uploaded_file.path).resolve()
+                    print(f"DEBUG: Using uploaded file path: {data_path}")
+                    
+                    # Update the schema with this CSV file path for future use
+                    schema.csv_file_path = str(data_path)
+                    db.commit()
+                    print(f"DEBUG: Updated schema with CSV file path from uploaded file: {data_path}")
+            except Exception as e:
+                print(f"DEBUG: Error checking for uploaded files: {e}")
+                # Continue with the process even if this check fails
+                    
         # If we still don't have a data path, raise an error
         if not data_path:
             raise HTTPException(
                 status_code=400, 
                 detail="No data path available. Either provide data_path parameter, "
-                       "update the schema with a csv_file_path, or place a CSV file in the samples directory."
+                       "update the schema with a csv_file_path, or upload a CSV file."
             )
                 
         # Verify data path exists

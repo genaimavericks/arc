@@ -131,7 +131,7 @@ class CSVConnector:
             
         return result
     
-    def get_column_mapping(self, schema: Dict[str, Any]) -> Dict[str, str]:
+    def get_column_mapping(self, schema: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         """
         Get mapping between CSV columns and node properties based on schema.
         
@@ -139,7 +139,7 @@ class CSVConnector:
             schema: The schema definition
             
         Returns:
-            Dict mapping CSV columns to node properties
+            Dict mapping CSV columns to node properties with additional metadata
         """
         mapping = {}
         
@@ -150,6 +150,27 @@ class CSVConnector:
                 header = next(reader, None)
                 if not header:
                     return mapping
+                
+                # First, read a sample of the data to understand the column values
+                sample_data = []
+                for _ in range(10):  # Read up to 10 rows for sampling
+                    row = next(reader, None)
+                    if row:
+                        sample_data.append(row)
+                
+                # Analyze columns to determine which might be IDs or references
+                column_analysis = {}
+                for i, col in enumerate(header):
+                    values = [row[i] for row in sample_data if i < len(row)]
+                    unique_values = set(values)
+                    column_analysis[col] = {
+                        "unique_count": len(unique_values),
+                        "total_count": len(values),
+                        "is_likely_id": len(unique_values) == len(values) and len(values) > 0,
+                        "is_likely_reference": len(unique_values) < len(values) and len(unique_values) > 1
+                    }
+                
+                self.logger.info(f"Column analysis: {column_analysis}")
                     
                 # For each node in the schema, map columns to properties
                 for node in schema.get("nodes", []):
@@ -160,9 +181,14 @@ class CSVConnector:
                     if isinstance(properties, dict):
                         for prop_name in properties.keys():
                             if prop_name in header:
+                                # Check if this column might be an ID or reference
+                                analysis = column_analysis.get(prop_name, {})
                                 mapping[prop_name] = {
                                     "node_label": node_label,
-                                    "property": prop_name
+                                    "property": prop_name,
+                                    "is_likely_id": analysis.get("is_likely_id", False),
+                                    "is_likely_reference": analysis.get("is_likely_reference", False),
+                                    "unique_count": analysis.get("unique_count", 0)
                                 }
                     
                     # Handle properties as list
@@ -170,12 +196,18 @@ class CSVConnector:
                         for prop in properties:
                             prop_name = prop.get("name")
                             if prop_name in header:
+                                # Check if this column might be an ID or reference
+                                analysis = column_analysis.get(prop_name, {})
                                 mapping[prop_name] = {
                                     "node_label": node_label,
-                                    "property": prop_name
+                                    "property": prop_name,
+                                    "is_likely_id": analysis.get("is_likely_id", False),
+                                    "is_likely_reference": analysis.get("is_likely_reference", False),
+                                    "unique_count": analysis.get("unique_count", 0)
                                 }
         except Exception as e:
             self.logger.error(f"Error creating column mapping: {str(e)}")
+            self.logger.exception(e)
             
         return mapping
     

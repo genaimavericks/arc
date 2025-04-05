@@ -42,7 +42,8 @@ class Neo4jLoader:
                 return False
                 
             # Parse connection parameters for the specified graph
-            self.connection_params = parse_connection_params(db_config, self.graph_name)
+            graph_config = db_config.get(self.graph_name, {})
+            self.connection_params = parse_connection_params(graph_config)
             if not self.connection_params:
                 self.logger.error(f"Failed to parse connection parameters for graph: {self.graph_name}")
                 return False
@@ -157,13 +158,13 @@ class Neo4jLoader:
         
     async def create_constraints_and_indexes(self, schema: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Create constraints and indexes based on schema.
+        Skip creating constraints and indexes based on schema.
         
         Args:
             schema: The schema definition
             
         Returns:
-            Dict with results of constraint and index creation
+            Dict with results of constraint and index creation (always empty)
         """
         if not self.driver:
             raise ValueError("Neo4j driver not initialized. Call connect() first.")
@@ -174,94 +175,16 @@ class Neo4jLoader:
             "errors": []
         }
         
-        try:
-            with self.driver.session() as session:
-                # Create constraints for nodes
-                for node in schema.get("nodes", []):
-                    node_label = node.get("label")
-                    if not node_label:
-                        continue
-                        
-                    properties = node.get("properties", {})
-                    
-                    # Handle properties as dictionary
-                    if isinstance(properties, dict):
-                        # Look for ID properties to create constraints on
-                        id_properties = [p for p in ['id', 'ID', 'Id', 'CustomerID', 'customer_id'] 
-                                        if p in properties]
-                        
-                        if id_properties:
-                            id_property = id_properties[0]
-                            try:
-                                # Create constraint if it doesn't exist
-                                cypher = (
-                                    f"CREATE CONSTRAINT IF NOT EXISTS FOR (n:{node_label}) "
-                                    f"REQUIRE n.{id_property} IS UNIQUE"
-                                )
-                                session.run(cypher)
-                                result["constraints_created"] += 1
-                                self.logger.info(f"Created constraint on {node_label}.{id_property}")
-                            except Exception as e:
-                                error_msg = f"Error creating constraint on {node_label}.{id_property}: {str(e)}"
-                                self.logger.error(error_msg)
-                                result["errors"].append(error_msg)
-                                
-                        # Create index on the node label if it doesn't exist
-                        try:
-                            cypher = f"CREATE INDEX IF NOT EXISTS FOR (n:{node_label}) ON (n.id)"
-                            session.run(cypher)
-                            result["indexes_created"] += 1
-                            self.logger.info(f"Created index on {node_label}.id")
-                        except Exception as e:
-                            error_msg = f"Error creating index on {node_label}.id: {str(e)}"
-                            self.logger.error(error_msg)
-                            result["errors"].append(error_msg)
-                    
-                    # Handle properties as list
-                    elif isinstance(properties, list):
-                        # Look for ID properties to create constraints on
-                        id_property = next((p.get('name') for p in properties 
-                                        if p.get('name') in ['id', 'ID', 'Id', 'CustomerID', 'customer_id']), None)
-                        
-                        if id_property:
-                            try:
-                                # Create constraint if it doesn't exist
-                                cypher = (
-                                    f"CREATE CONSTRAINT IF NOT EXISTS FOR (n:{node_label}) "
-                                    f"REQUIRE n.{id_property} IS UNIQUE"
-                                )
-                                session.run(cypher)
-                                result["constraints_created"] += 1
-                                self.logger.info(f"Created constraint on {node_label}.{id_property}")
-                            except Exception as e:
-                                error_msg = f"Error creating constraint on {node_label}.{id_property}: {str(e)}"
-                                self.logger.error(error_msg)
-                                result["errors"].append(error_msg)
-                                
-                        # Create index on the node label if it doesn't exist
-                        try:
-                            cypher = f"CREATE INDEX IF NOT EXISTS FOR (n:{node_label}) ON (n.id)"
-                            session.run(cypher)
-                            result["indexes_created"] += 1
-                            self.logger.info(f"Created index on {node_label}.id")
-                        except Exception as e:
-                            error_msg = f"Error creating index on {node_label}.id: {str(e)}"
-                            self.logger.error(error_msg)
-                            result["errors"].append(error_msg)
-                            
-        except Exception as e:
-            error_msg = f"Error creating constraints and indexes: {str(e)}"
-            self.logger.error(error_msg)
-            self.logger.error(traceback.format_exc())
-            result["errors"].append(error_msg)
-            
+        # Skip creating constraints and indexes as requested
+        self.logger.info("Skipping creation of constraints and indexes as requested")
+        
         return result
         
     async def load_nodes(
         self, 
         records: List[Dict[str, Any]], 
         schema: Dict[str, Any],
-        column_mapping: Dict[str, Dict[str, str]]
+        column_mapping: Dict[str, Dict[str, Any]]
     ) -> Dict[str, Any]:
         """
         Load nodes into Neo4j from CSV records.
@@ -269,7 +192,7 @@ class Neo4jLoader:
         Args:
             records: List of records from CSV
             schema: The schema definition
-            column_mapping: Mapping of CSV columns to node properties
+            column_mapping: Mapping of CSV columns to node properties with metadata
             
         Returns:
             Dict with results of node loading
@@ -284,6 +207,9 @@ class Neo4jLoader:
         
         # Group columns by node label
         node_properties = {}
+        node_id_properties = {}
+        
+        # Identify which properties are likely IDs for each node label
         for column, mapping in column_mapping.items():
             node_label = mapping.get("node_label")
             if not node_label:
@@ -291,18 +217,109 @@ class Neo4jLoader:
                 
             if node_label not in node_properties:
                 node_properties[node_label] = []
+                node_id_properties[node_label] = []
                 
+            # Add to general properties
             node_properties[node_label].append({
                 "csv_column": column,
-                "property": mapping.get("property", column)
+                "property": mapping.get("property", column),
+                "is_likely_id": mapping.get("is_likely_id", False),
+                "is_likely_reference": mapping.get("is_likely_reference", False),
+                "unique_count": mapping.get("unique_count", 0)
             })
             
+            # If this is likely an ID property, add to ID properties
+            if mapping.get("is_likely_id", False) or "id" in column.lower():
+                node_id_properties[node_label].append({
+                    "csv_column": column,
+                    "property": mapping.get("property", column)
+                })
+        
+        self.logger.info(f"Node ID properties: {node_id_properties}")
+        
+        # Track unique nodes to avoid duplicates
+        unique_nodes = {}
+        
         try:
             with self.driver.session() as session:
-                # Process each record
-                for record in records:
-                    # Create nodes for each node label
-                    for node_label, properties in node_properties.items():
+                # First pass: Create unique nodes for each node type
+                for node_label, properties in node_properties.items():
+                    # Skip if no ID properties found for this node type
+                    if not node_id_properties.get(node_label, []):
+                        self.logger.warning(f"No ID properties found for {node_label}, will create duplicate nodes")
+                        continue
+                    
+                    # Get the primary ID property for this node type
+                    id_property = node_id_properties[node_label][0]["property"]
+                    id_column = node_id_properties[node_label][0]["csv_column"]
+                    
+                    # Track unique values for this node type
+                    unique_values = set()
+                    
+                    # First pass to collect unique values
+                    for record in records:
+                        if id_column in record and record[id_column]:
+                            unique_values.add(record[id_column])
+                    
+                    self.logger.info(f"Found {len(unique_values)} unique {node_label} nodes")
+                    
+                    # Create unique nodes
+                    for unique_value in unique_values:
+                        # Find the first record with this ID value
+                        for record in records:
+                            if id_column in record and record[id_column] == unique_value:
+                                # Build properties dict for this node
+                                node_props = {}
+                                for prop in properties:
+                                    csv_column = prop.get("csv_column")
+                                    property_name = prop.get("property")
+                                    
+                                    if csv_column in record:
+                                        node_props[property_name] = record[csv_column]
+                                
+                                # Skip if no properties
+                                if not node_props:
+                                    continue
+                                
+                                # Create node with MERGE to avoid duplicates
+                                try:
+                                    cypher = f"MERGE (n:{node_label} {{{id_property}: $id_value}}) "
+                                    
+                                    # Add SET clause for other properties
+                                    if len(node_props) > 1:  # More than just the ID
+                                        cypher += "SET " + ", ".join([f"n.{k} = ${k}" for k in node_props.keys() if k != id_property])
+                                    
+                                    # Prepare parameters
+                                    params = {"id_value": unique_value}
+                                    for k, v in node_props.items():
+                                        if k != id_property:  # ID is already in params
+                                            params[k] = v
+                                    
+                                    session.run(cypher, params)
+                                    result["nodes_created"] += 1
+                                    
+                                    # Store the node for relationship creation
+                                    if node_label not in unique_nodes:
+                                        unique_nodes[node_label] = {}
+                                    unique_nodes[node_label][unique_value] = node_props
+                                    
+                                except Exception as e:
+                                    error_msg = f"Error creating node {node_label}: {str(e)}"
+                                    self.logger.error(error_msg)
+                                    result["errors"].append(error_msg)
+                                
+                                # Move to next unique value
+                                break
+                
+                # For node types without ID properties, create them for each record
+                for node_label, properties in node_properties.items():
+                    if node_label in unique_nodes:
+                        continue  # Already processed
+                    
+                    self.logger.warning(f"Creating non-unique nodes for {node_label}")
+                    
+                    # Process each record
+                    for record in records:
                         # Build properties dict for this node
                         node_props = {}
                         for prop in properties:
@@ -316,9 +333,42 @@ class Neo4jLoader:
                         if not node_props:
                             continue
                             
-                        # Create node
+                        # Create node using MERGE to avoid duplicates
                         try:
-                            cypher, params = self._create_node_cypher(node_label, node_props)
+                            # Generate a unique property if possible
+                            id_prop = None
+                            id_value = None
+                            
+                            # Try to find a property that could serve as an identifier
+                            for prop_name, prop_value in node_props.items():
+                                if prop_name.lower() in ['id', 'key', 'identifier', 'uuid']:
+                                    id_prop = prop_name
+                                    id_value = prop_value
+                                    break
+                            
+                            # If no ID property found, use all properties for uniqueness
+                            if id_prop and id_value:
+                                cypher = f"MERGE (n:{node_label} {{{id_prop}: $id_value}}) "
+                                
+                                # Add SET clause for other properties
+                                if len(node_props) > 1:  # More than just the ID
+                                    cypher += "SET " + ", ".join([f"n.{k} = ${k}" for k in node_props.keys() if k != id_prop])
+                                
+                                # Prepare parameters
+                                params = {"id_value": id_value}
+                                for k, v in node_props.items():
+                                    if k != id_prop:  # ID is already in params
+                                        params[k] = v
+                            else:
+                                # Create a property string for the MERGE clause
+                                prop_string = ", ".join([f"{k}: ${k}" for k in node_props.keys()])
+                                cypher = f"MERGE (n:{node_label} {{{prop_string}}}) RETURN n"
+                                
+                                # Prepare parameters
+                                params = {}
+                                for k, v in node_props.items():
+                                    params[k] = v
+                            
                             session.run(cypher, params)
                             result["nodes_created"] += 1
                         except Exception as e:
@@ -337,7 +387,8 @@ class Neo4jLoader:
     async def load_relationships(
         self, 
         records: List[Dict[str, Any]], 
-        schema: Dict[str, Any]
+        schema: Dict[str, Any],
+        column_mapping: Optional[Dict[str, Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """
         Load relationships into Neo4j from CSV records.
@@ -345,6 +396,7 @@ class Neo4jLoader:
         Args:
             records: List of records from CSV
             schema: The schema definition
+            column_mapping: Optional mapping of CSV columns to node properties
             
         Returns:
             Dict with results of relationship loading
@@ -362,63 +414,170 @@ class Neo4jLoader:
         if not relationships:
             return result
             
+        # Analyze the records to find potential relationship columns
+        relationship_columns = self._analyze_relationship_columns(records, relationships)
+        self.logger.info(f"Relationship columns: {relationship_columns}")
+        
         try:
             with self.driver.session() as session:
-                # Process each record
-                for record in records:
-                    # Create relationships for each relationship definition
-                    for rel in relationships:
-                        rel_type = rel.get("type")
-                        source_label = rel.get("source")
-                        target_label = rel.get("target")
-                        
-                        if not all([rel_type, source_label, target_label]):
+                # Process each relationship type
+                for rel in relationships:
+                    rel_type = rel.get("type")
+                    source_label = rel.get("startNode") or rel.get("source")  # Support both naming conventions
+                    target_label = rel.get("endNode") or rel.get("target")    # Support both naming conventions
+                    
+                    if not all([rel_type, source_label, target_label]):
+                        self.logger.warning(f"Incomplete relationship definition: {rel}")
+                        continue
+                    
+                    self.logger.info(f"Processing relationship: {source_label}-[{rel_type}]->{target_label}")
+                    
+                    # Find columns that might represent this relationship
+                    rel_key = f"{source_label}_{rel_type}_{target_label}"
+                    source_col = None
+                    target_col = None
+                    
+                    # Check if we have identified columns for this relationship
+                    if rel_key in relationship_columns:
+                        source_col = relationship_columns[rel_key].get("source_column")
+                        target_col = relationship_columns[rel_key].get("target_column")
+                    
+                    # If not found, try to find columns by name patterns
+                    if not source_col or not target_col:
+                        # Try common naming patterns
+                        for column in records[0].keys() if records else []:
+                            col_lower = column.lower()
+                            if source_label.lower() in col_lower and "id" in col_lower:
+                                source_col = column
+                            elif target_label.lower() in col_lower and "id" in col_lower:
+                                target_col = column
+                    
+                    # If still not found, use any column that has the label name
+                    if not source_col:
+                        for column in records[0].keys() if records else []:
+                            if source_label.lower() in column.lower():
+                                source_col = column
+                                break
+                    
+                    if not target_col:
+                        for column in records[0].keys() if records else []:
+                            if target_label.lower() in column.lower():
+                                target_col = column
+                                break
+                    
+                    self.logger.info(f"Using columns: {source_col} -> {target_col} for relationship {rel_type}")
+                    
+                    # Skip if we can't find suitable columns
+                    if not source_col or not target_col:
+                        self.logger.warning(f"Could not find suitable columns for relationship {rel_type}")
+                        continue
+                    
+                    # Process each record to create relationships
+                    created_relationships = set()  # Track to avoid duplicates
+                    for record in records:
+                        if source_col not in record or target_col not in record:
                             continue
                             
-                        # Find ID properties for source and target nodes
-                        source_id_prop = "id"
-                        target_id_prop = "id"
+                        source_id_value = record[source_col]
+                        target_id_value = record[target_col]
                         
-                        # Find source and target ID values in the record
-                        source_id_value = None
-                        target_id_value = None
-                        
-                        # Look for columns that might contain the IDs
-                        for column, value in record.items():
-                            if column.lower() == f"{source_label.lower()}_id":
-                                source_id_value = value
-                            elif column.lower() == f"{target_label.lower()}_id":
-                                target_id_value = value
-                                
-                        # Skip if we can't find both IDs
+                        # Skip if missing values
                         if not source_id_value or not target_id_value:
                             continue
                             
-                        # Create relationship
+                        # Skip if already created this relationship
+                        rel_signature = f"{source_id_value}_{rel_type}_{target_id_value}"
+                        if rel_signature in created_relationships:
+                            continue
+                            
+                        # Create relationship using MERGE to avoid duplicates
                         try:
-                            cypher, params = self._create_relationship_cypher(
-                                source_label=source_label,
-                                source_id_prop=source_id_prop,
-                                source_id_value=source_id_value,
-                                target_label=target_label,
-                                target_id_prop=target_id_prop,
-                                target_id_value=target_id_value,
-                                rel_type=rel_type
+                            cypher = (
+                                f"MATCH (source:{source_label} {{id: $source_id}}), "
+                                f"(target:{target_label} {{id: $target_id}}) "
+                                f"MERGE (source)-[r:{rel_type}]->(target) "
+                                f"RETURN r"
                             )
+                            
+                            params = {
+                                "source_id": source_id_value,
+                                "target_id": target_id_value
+                            }
+                            
                             session.run(cypher, params)
                             result["relationships_created"] += 1
+                            created_relationships.add(rel_signature)
+                            
                         except Exception as e:
-                            error_msg = (f"Error creating relationship {source_label}-[{rel_type}]->{target_label}: "
-                                        f"{str(e)}")
+                            error_msg = f"Error creating relationship {rel_type}: {str(e)}"
                             self.logger.error(error_msg)
                             result["errors"].append(error_msg)
-                            
+        
         except Exception as e:
-            error_msg = f"Error loading relationships: {str(e)}"
+            error_msg = f"Error in relationship loading: {str(e)}"
             self.logger.error(error_msg)
-            self.logger.error(traceback.format_exc())
+            self.logger.exception(e)
             result["errors"].append(error_msg)
             
+        return result
+        
+    def _analyze_relationship_columns(self, records: List[Dict[str, Any]], relationships: List[Dict[str, Any]]) -> Dict[str, Dict[str, str]]:
+        """
+        Analyze records to find columns that might represent relationships.
+        
+        Args:
+            records: List of records from CSV
+            relationships: List of relationship definitions from schema
+            
+        Returns:
+            Dict mapping relationship keys to source and target columns
+        """
+        if not records:
+            return {}
+            
+        result = {}
+        
+        # Get all column names
+        columns = list(records[0].keys())
+        
+        # For each relationship, try to find matching columns
+        for rel in relationships:
+            rel_type = rel.get("type")
+            source_label = rel.get("startNode") or rel.get("source")
+            target_label = rel.get("endNode") or rel.get("target")
+            
+            if not all([rel_type, source_label, target_label]):
+                continue
+                
+            rel_key = f"{source_label}_{rel_type}_{target_label}"
+            result[rel_key] = {
+                "source_column": None,
+                "target_column": None
+            }
+            
+            # Look for columns that might contain IDs for these node types
+            for column in columns:
+                col_lower = column.lower()
+                
+                # Check for exact matches first
+                if col_lower == f"{source_label.lower()}_id":
+                    result[rel_key]["source_column"] = column
+                elif col_lower == f"{target_label.lower()}_id":
+                    result[rel_key]["target_column"] = column
+                    
+            # If not found, look for partial matches
+            if not result[rel_key]["source_column"]:
+                for column in columns:
+                    if source_label.lower() in column.lower() and ("id" in column.lower() or "key" in column.lower()):
+                        result[rel_key]["source_column"] = column
+                        break
+                        
+            if not result[rel_key]["target_column"]:
+                for column in columns:
+                    if target_label.lower() in column.lower() and ("id" in column.lower() or "key" in column.lower()):
+                        result[rel_key]["target_column"] = column
+                        break
+                        
         return result
         
     async def clean_database(self) -> Dict[str, Any]:

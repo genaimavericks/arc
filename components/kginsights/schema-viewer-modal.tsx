@@ -2,8 +2,8 @@
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { RefreshCw, Database } from "lucide-react"
-import { useState, useEffect } from "react"
+import { RefreshCw, Database, Upload } from "lucide-react"
+import { useState, useEffect, useRef } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -73,6 +73,8 @@ export function SchemaViewerModal({ isOpen, onClose, datasetId, datasetName }: S
   const [availableGraphs, setAvailableGraphs] = useState<string[]>(["default"])
   const [isLoadingGraphs, setIsLoadingGraphs] = useState(false)
   const [dataPath, setDataPath] = useState('')
+  const [isUploading, setIsUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
 
   useEffect(() => {
@@ -87,8 +89,13 @@ export function SchemaViewerModal({ isOpen, onClose, datasetId, datasetName }: S
       setAvailableGraphs([])
       setSelectedGraph('')
       setIsLoadingGraphs(false)
+      
+      // Check if we have a CSV file path from the schema
+      if (graphSchema && graphSchema.csv_file_path) {
+        setDataPath(graphSchema.csv_file_path)
+      }
     }
-  }, [isLoadDataDialogOpen])
+  }, [isLoadDataDialogOpen, graphSchema])
 
   const fetchSchemaData = async () => {
     try {
@@ -106,20 +113,37 @@ export function SchemaViewerModal({ isOpen, onClose, datasetId, datasetName }: S
         if (schemaResponse.ok) {
           const schemaData = await schemaResponse.json()
           
-          if (schemaData && schemaData.schema) {
-            // Parse the schema JSON if it's a string
-            const parsedSchema = typeof schemaData.schema === 'string' 
+          // Parse the schema JSON if it's a string
+          let parsedSchema
+          try {
+            parsedSchema = typeof schemaData.schema === 'string' 
               ? JSON.parse(schemaData.schema) 
               : schemaData.schema
-            
+              
+            // Add the CSV file path to the graph schema if available
+            if (schemaData.csv_file_path) {
+              parsedSchema.csv_file_path = schemaData.csv_file_path
+            }
+          } catch (e) {
+            console.error("Error parsing schema JSON:", e)
+            parsedSchema = {}
+          }
+          
+          // Check if it has a graph schema structure
+          if (parsedSchema.nodes || parsedSchema.relationships) {
             setGraphSchema(parsedSchema)
             setActiveTab("graph")
-            setIsLoading(false)
-            return
+          } else {
+            // Otherwise treat it as a regular schema
+            setSchema(parsedSchema.fields || [])
           }
+          
+          setIsLoading(false)
+          return
         }
-      } catch (error) {
-        console.log("Not a graph schema, trying dataset schema endpoint")
+      } catch (e) {
+        console.error("Error fetching schema from database:", e)
+        // Continue to try other methods
       }
 
       // If not a graph schema, try the dataset schema endpoint
@@ -228,10 +252,71 @@ export function SchemaViewerModal({ isOpen, onClose, datasetId, datasetName }: S
     return windowsPathRegex.test(path) || unixPathRegex.test(path)
   }
   
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    
+    try {
+      setIsUploading(true)
+      
+      // Create a FormData object to send the file
+      const formData = new FormData()
+      formData.append('file', file)
+      
+      // Upload the file
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: formData
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.detail || 'Failed to upload file')
+      }
+      
+      const result = await response.json()
+      
+      // Set the data path to the uploaded file path
+      setDataPath(result.path)
+      
+      toast({
+        title: "Success",
+        description: "File uploaded successfully",
+        variant: "default"
+      })
+    } catch (error) {
+      console.error('Error uploading file:', error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : 'Failed to upload file',
+        variant: "destructive"
+      })
+    } finally {
+      setIsUploading(false)
+      
+      // Reset the file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
+  
   const handleLoadData = async () => {
     try {
-      // No graph selection validation - backend will handle graph selection
+      // Check if we need a data path and don't have one
+      if (!graphSchema?.csv_file_path && (!dataPath || dataPath.trim() === '')) {
+        toast({
+          title: "Error",
+          description: "Please enter a valid data path. No default path is available for this schema.",
+          variant: "destructive"
+        })
+        return
+      }
       
+      // Validate data path if provided
       if (dataPath && !validateDataPath(dataPath)) {
         toast({
           title: "Error",
@@ -258,7 +343,7 @@ export function SchemaViewerModal({ isOpen, onClose, datasetId, datasetName }: S
         },
         body: JSON.stringify({
           use_source_data: true,
-          data_path: dataPath
+          data_path: dataPath || graphSchema?.csv_file_path || ''
         })
       })
       
@@ -460,31 +545,58 @@ export function SchemaViewerModal({ isOpen, onClose, datasetId, datasetName }: S
           </NestedDialogHeader>
           
           <div className="space-y-4">
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="dataPath" className="text-right">
-                  Data Path
-                </Label>
-                <Input 
-                  id="dataPath" 
-                  value={dataPath}
-                  onChange={(e) => setDataPath(e.target.value)}
-                  placeholder={graphSchema?.csv_file_path || "Leave empty to use schema's default path"}
-                  className="col-span-3"
-                />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="dataPath">Data Path {!graphSchema?.csv_file_path && <span className="text-red-500">*Required</span>}</Label>
+                <div className="flex space-x-2">
+                  <Input 
+                    id="dataPath" 
+                    placeholder="Path to CSV file" 
+                    value={dataPath}
+                    onChange={(e) => setDataPath(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Button 
+                    variant="outline" 
+                    size="icon" 
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading}
+                  >
+                    <Upload className="h-4 w-4" />
+                  </Button>
+                  <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    className="hidden" 
+                    accept=".csv"
+                    onChange={handleFileUpload}
+                  />
+                </div>
+                {isUploading ? (
+                  <p className="text-xs text-blue-500">
+                    Uploading file...
+                  </p>
+                ) : graphSchema?.csv_file_path ? (
+                  <p className="text-xs text-muted-foreground">
+                    Using CSV file path from schema. You can override it if needed.
+                  </p>
+                ) : (
+                  <p className="text-xs text-red-500">
+                    No CSV file path found in schema. Please provide a path to a CSV file or upload one.
+                  </p>
+                )}
               </div>
-              {/* Graph selection removed - graphs are managed elsewhere */}
-              
-              <div className="flex items-center space-x-2">
-                <Switch 
-                  id="drop-existing" 
-                  checked={dropExisting} 
-                  onCheckedChange={setDropExisting} 
-                />
-                <Label htmlFor="drop-existing">Drop existing data before loading</Label>
+              <div className="space-y-2 flex items-end">
+                <div className="flex items-center space-x-2">
+                  <Switch 
+                    id="dropExisting" 
+                    checked={dropExisting}
+                    onCheckedChange={setDropExisting}
+                  />
+                  <Label htmlFor="dropExisting">Drop existing data</Label>
+                </div>
               </div>
-            </div>
-            
+            </div>    
             <NestedDialogFooter>
               <Button variant="outline" onClick={() => setIsLoadDataDialogOpen(false)}>
                 Cancel
