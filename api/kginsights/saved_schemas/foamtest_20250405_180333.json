@@ -1,0 +1,164 @@
+{
+  "nodes": [
+    {
+      "label": "Factory",
+      "properties": {
+        "Factory": "string",
+        "Location": "string"
+      }
+    },
+    {
+      "label": "Machine",
+      "properties": {
+        "Machine Type": "string",
+        "Machine Utilization (%)": "integer",
+        "Machine Downtime (hours)": "float",
+        "Maintenance History": "string",
+        "Machine Age (years)": "float"
+      }
+    },
+    {
+      "label": "Batch",
+      "properties": {
+        "Batch": "string",
+        "Batch Quality (Pass %)": "float",
+        "Cycle Time (minutes)": "integer",
+        "Product Category": "string"
+      }
+    },
+    {
+      "label": "Shift",
+      "properties": {
+        "Shift": "string",
+        "Operator Experience (years)": "float",
+        "Team Size": "integer",
+        "Operator Training Level": "float",
+        "Absenteeism Rate (%)": "float"
+      }
+    },
+    {
+      "label": "Supplier",
+      "properties": {
+        "Supplier": "string",
+        "Supplier Delays (days)": "integer",
+        "Raw Material Quality": "integer"
+      }
+    },
+    {
+      "label": "Financial",
+      "properties": {
+        "Cost of Downtime ($)": "float",
+        "Revenue ($)": "float",
+        "Profit Margin (%)": "float"
+      }
+    },
+    {
+      "label": "Production",
+      "properties": {
+        "Production Volume (units)": "float",
+        "Defect Rate (%)": "float"
+      }
+    },
+    {
+      "label": "Environment",
+      "properties": {
+        "Energy Consumption (kWh)": "integer",
+        "Energy Efficiency Rating": "integer",
+        "CO2 Emissions (kg)": "integer",
+        "Emission Limit Compliance": "string",
+        "Waste Generated (kg)": "integer",
+        "Water Usage (liters)": "integer"
+      }
+    },
+    {
+      "label": "Process",
+      "properties": {
+        "Temperature (C)": "float",
+        "Pressure (psi)": "float",
+        "Chemical Ratio": "float",
+        "Mixing Speed (RPM)": "float"
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "type": "OPERATES",
+      "source": "Shift",
+      "target": "Machine",
+      "properties": {
+        "Date": "datetime"
+      },
+      "startNode": "Shift",
+      "endNode": "Machine"
+    },
+    {
+      "type": "PRODUCES",
+      "source": "Machine",
+      "target": "Batch",
+      "properties": {},
+      "startNode": "Machine",
+      "endNode": "Batch"
+    },
+    {
+      "type": "LOCATED_IN",
+      "source": "Machine",
+      "target": "Factory",
+      "properties": {},
+      "startNode": "Machine",
+      "endNode": "Factory"
+    },
+    {
+      "type": "SUPPLIES",
+      "source": "Supplier",
+      "target": "Factory",
+      "properties": {},
+      "startNode": "Supplier",
+      "endNode": "Factory"
+    },
+    {
+      "type": "GENERATES",
+      "source": "Machine",
+      "target": "Environment",
+      "properties": {},
+      "startNode": "Machine",
+      "endNode": "Environment"
+    },
+    {
+      "type": "USES",
+      "source": "Machine",
+      "target": "Process",
+      "properties": {},
+      "startNode": "Machine",
+      "endNode": "Process"
+    },
+    {
+      "type": "RESULTS_IN",
+      "source": "Batch",
+      "target": "Financial",
+      "properties": {},
+      "startNode": "Batch",
+      "endNode": "Financial"
+    },
+    {
+      "type": "PRODUCES",
+      "source": "Batch",
+      "target": "Production",
+      "properties": {},
+      "startNode": "Batch",
+      "endNode": "Production"
+    }
+  ],
+  "indexes": [
+    "Factory(Factory)",
+    "Machine(Machine Type)",
+    "Batch(Batch)",
+    "Shift(Shift)",
+    "Supplier(Supplier)"
+  ],
+  "csv_file_path": "C:\\development\\workspace\\rsw\\api\\uploads\\81a1207d-9ff9-4078-8b10-f19047448969.csv",
+  "name": "FoamTest",
+  "description": "",
+  "source_id": "2c5cd012-fe8a-4533-a1e8-d63e50f1365d",
+  "created_at": "2025-04-05T12:33:33.037Z",
+  "cypher": "CREATE (factory:Factory {id: 'example-factory-id', Factory: 'example-factory', Location: 'example-location'});\nCREATE (machine:Machine {id: 'example-machine-id', Machine Type: 'example-machine type', Machine Utilization (%): 'example-machine utilization (%)', Machine Downtime (hours): 'example-machine downtime (hours)'});\nCREATE (batch:Batch {id: 'example-batch-id', Batch: 'example-batch', Batch Quality (Pass %): 'example-batch quality (pass %)', Cycle Time (minutes): 'example-cycle time (minutes)'});\nCREATE (shift:Shift {id: 'example-shift-id', Shift: 'example-shift', Operator Experience (years): 'example-operator experience (years)', Team Size: 'example-team size'});\nCREATE (supplier:Supplier {id: 'example-supplier-id', Supplier: 'example-supplier', Supplier Delays (days): 'example-supplier delays (days)', Raw Material Quality: 'example-raw material quality'});\nCREATE (financial:Financial {id: 'example-financial-id', Cost of Downtime ($): 'example-cost of downtime ($)', Revenue ($): 'example-revenue ($)', Profit Margin (%): 'example-profit margin (%)'});\nCREATE (production:Production {id: 'example-production-id', Production Volume (units): 'example-production volume (units)', Defect Rate (%): 'example-defect rate (%)'});\nCREATE (environment:Environment {id: 'example-environment-id', Energy Consumption (kWh): 'example-energy consumption (kwh)', Energy Efficiency Rating: 'example-energy efficiency rating', CO2 Emissions (kg): 'example-co2 emissions (kg)'});\nCREATE (process:Process {id: 'example-process-id', Temperature (C): 'example-temperature (c)', Pressure (psi): 'example-pressure (psi)', Chemical Ratio: 'example-chemical ratio'});\nMATCH (shift:Shift {id: 'example-shift-id'}), (machine:Machine {id: 'example-machine-id'}) CREATE (shift)-[r:OPERATES]->(machine);\nMATCH (machine:Machine {id: 'example-machine-id'}), (batch:Batch {id: 'example-batch-id'}) CREATE (machine)-[r:PRODUCES]->(batch);\nMATCH (machine:Machine {id: 'example-machine-id'}), (factory:Factory {id: 'example-factory-id'}) CREATE (machine)-[r:LOCATED_IN]->(factory);\nMATCH (supplier:Supplier {id: 'example-supplier-id'}), (factory:Factory {id: 'example-factory-id'}) CREATE (supplier)-[r:SUPPLIES]->(factory);\nMATCH (machine:Machine {id: 'example-machine-id'}), (environment:Environment {id: 'example-environment-id'}) CREATE (machine)-[r:GENERATES]->(environment);\nMATCH (machine:Machine {id: 'example-machine-id'}), (process:Process {id: 'example-process-id'}) CREATE (machine)-[r:USES]->(process);\nMATCH (batch:Batch {id: 'example-batch-id'}), (financial:Financial {id: 'example-financial-id'}) CREATE (batch)-[r:RESULTS_IN]->(financial);\nMATCH (batch:Batch {id: 'example-batch-id'}), (production:Production {id: 'example-production-id'}) CREATE (batch)-[r:PRODUCES]->(production);"
+}

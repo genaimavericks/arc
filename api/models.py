@@ -132,6 +132,7 @@ class Schema(Base):
     source_id = Column(String, nullable=False, index=True)
     description = Column(Text, nullable=True)
     schema = Column(Text, nullable=False)  # Store schema as JSON string
+    csv_file_path = Column(Text, nullable=True)  # Path to the original CSV file
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

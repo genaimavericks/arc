@@ -41,22 +41,35 @@ def get_database_config():
         )
 
 # Utility function to parse connection params from the YAML format
-def parse_connection_params(params_str):
-    if not params_str:
+def parse_connection_params(params):
+    if not params:
         return None
     
-    params = {}
-    for line in params_str.split('\n'):
-        if '=' in line:
-            key, value = line.strip().split('=', 1)
-            params[key] = value
+    # If params is already a dictionary (from the new YAML format)
+    if isinstance(params, dict):
+        return {
+            "username": params.get("NEO4J_USERNAME", ""),
+            "database": params.get("NEO4J_DB", ""),
+            "uri": params.get("NEO4J_URI", ""),
+            "password": params.get("NEO4J_PASSWORD", "")
+        }
     
-    return {
-        "username": params.get("NEO4J_USERNAME", ""),
-        "database": params.get("NEO4J_DB", ""),
-        "uri": params.get("NEO4J_URI", ""),
-        "password": params.get("NEO4J_PASSWORD", "")
-    }
+    # For backward compatibility with the old format
+    if isinstance(params, str):
+        params_dict = {}
+        for line in params.split('\n'):
+            if '=' in line:
+                key, value = line.strip().split('=', 1)
+                params_dict[key] = value
+        
+        return {
+            "username": params_dict.get("NEO4J_USERNAME", ""),
+            "database": params_dict.get("NEO4J_DB", ""),
+            "uri": params_dict.get("NEO4J_URI", ""),
+            "password": params_dict.get("NEO4J_PASSWORD", "")
+        }
+    
+    return None
 
 # API Routes
 
@@ -105,23 +118,16 @@ async def get_graph_connection(
         # Parse connection parameters from YAML format
         connection_params = config[graph_name]
         
-        # Extract the parameter values from multiline text
-        params = {}
-        for line in connection_params.split('\n'):
-            if '=' in line:
-                key, value = line.strip().split('=', 1)
-                params[key] = value
-        
-        parsed_params = DatabaseConnectionParams(
-            username=params.get("NEO4J_USERNAME", ""),
-            database=params.get("NEO4J_DB", ""),
-            uri=params.get("NEO4J_URI", ""),
-            password=params.get("NEO4J_PASSWORD", "")
-        )
+        parsed_params = parse_connection_params(connection_params)
         
         return DatabaseInfo(
             name=graph_name,
-            connection_params=parsed_params
+            connection_params=DatabaseConnectionParams(
+                username=parsed_params["username"],
+                database=parsed_params["database"],
+                uri=parsed_params["uri"],
+                password=parsed_params["password"]
+            ) if parsed_params else None
         )
     except HTTPException:
         raise

@@ -53,6 +53,10 @@ interface Schema {
   nodes: SchemaNode[]
   relationships: SchemaRelationship[]
   indexes?: string[]
+  csv_file_path?: string
+  name?: string
+  description?: string
+  source_id?: string
 }
 
 export default function GenerateGraphPage() {
@@ -155,6 +159,11 @@ function GenerateGraphContent() {
   const handleSchemaGenerated = (generatedSchema: Schema, generatedCypher: string) => {
     setSchema(generatedSchema)
     setCypher(generatedCypher)
+    
+    // If the schema has a csv_file_path, make sure it's preserved
+    if (generatedSchema.csv_file_path) {
+      console.log("Schema has CSV file path:", generatedSchema.csv_file_path)
+    }
   }
 
   const handleSaveSchema = async () => {
@@ -212,7 +221,8 @@ function GenerateGraphContent() {
             description: kgDescription,
             source_id: selectedSource,
             created_at: new Date().toISOString(),
-          }
+          },
+          csv_file_path: schema.csv_file_path || ""
         }),
       })
 
