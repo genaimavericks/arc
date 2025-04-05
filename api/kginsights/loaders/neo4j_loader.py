@@ -289,11 +289,25 @@ class Neo4jLoader:
                                 
                                 # Create node with MERGE to avoid duplicates
                                 try:
-                                    cypher = f"MERGE (n:{node_label} {{{id_property}: $id_value}}) "
+                                    # Escape ID property name if it contains spaces or special characters
+                                    escaped_id_prop = f"`{id_property}`" if " " in id_property or "(" in id_property or ")" in id_property or "$" in id_property or "%" in id_property else id_property
+                                    
+                                    cypher = f"MERGE (n:{node_label} {{{escaped_id_prop}: $id_value}}) "
                                     
                                     # Add SET clause for other properties
                                     if len(node_props) > 1:  # More than just the ID
-                                        cypher += "SET " + ", ".join([f"n.{k} = ${k}" for k in node_props.keys() if k != id_property])
+                                        # Escape property names with backticks if they contain spaces or special characters
+                                        set_clauses = []
+                                        for k in node_props.keys():
+                                            if k != id_property:
+                                                # Escape property name if needed
+                                                escaped_prop = f"`{k}`" if " " in k or "(" in k or ")" in k or "$" in k or "%" in k else k
+                                                
+                                                # Create a safe parameter name by replacing spaces and special characters
+                                                safe_param_name = k.replace(" ", "_").replace("(", "").replace(")", "").replace("$", "").replace("%", "")
+                                                set_clauses.append(f"n.{escaped_prop} = ${safe_param_name}")
+                                        
+                                        cypher += "SET " + ", ".join(set_clauses)
                                     
                                     # Prepare parameters
                                     # Convert ID to string to ensure consistent type handling
@@ -304,7 +318,9 @@ class Neo4jLoader:
                                     
                                     for k, v in node_props.items():
                                         if k != id_property:  # ID is already in params
-                                            params[k] = v
+                                            # Use the same safe parameter name as in the SET clause
+                                            safe_param_name = k.replace(" ", "_").replace("(", "").replace(")", "").replace("$", "").replace("%", "")
+                                            params[safe_param_name] = v
                                     
                                     # Print detailed Cypher information for debugging
                                     print(f"===== NODE CREATION =====")
@@ -395,10 +411,14 @@ class Neo4jLoader:
                         
                         # Create the node
                         try:
-                            cypher = f"MERGE (n:{node_label} {{{prop_name}: $value}}) RETURN n"
+                            # Escape property names with backticks if they contain spaces or special characters
+                            escaped_prop_name = f"`{prop_name}`" if " " in prop_name or "(" in prop_name or ")" in prop_name or "$" in prop_name or "%" in prop_name else prop_name
+                            
+                            cypher = f"MERGE (n:{node_label} {{{escaped_prop_name}: $value}}) RETURN n"
                             params = {"value": value}
                             
                             print(f"Creating {node_label} node with {prop_name}={value}")
+                            print(f"Cypher: {cypher}")
                             session.run(cypher, params)
                             result["nodes_created"] += 1
                             
@@ -658,9 +678,13 @@ class Neo4jLoader:
                             print(f"Source ID type: {type(source_id_str).__name__}, value: {source_id_str}")
                             print(f"Target ID type: {type(target_id_str).__name__}, value: {target_id_str}")
                             
-                            # First verify that both nodes exist using the determined property names
-                            verify_source = f"MATCH (n:{source_label} {{{source_prop_name}: $id}}) RETURN count(n) as count"
-                            verify_target = f"MATCH (n:{target_label} {{{target_prop_name}: $id}}) RETURN count(n) as count"
+                            # Escape property names with backticks if they contain spaces or special characters
+                            escaped_source_prop = f"`{source_prop_name}`" if " " in source_prop_name or "(" in source_prop_name or ")" in source_prop_name or "$" in source_prop_name or "%" in source_prop_name else source_prop_name
+                            escaped_target_prop = f"`{target_prop_name}`" if " " in target_prop_name or "(" in target_prop_name or ")" in target_prop_name or "$" in target_prop_name or "%" in target_prop_name else target_prop_name
+                            
+                            # Verify that both nodes exist
+                            verify_source = f"MATCH (n:{source_label} {{{escaped_source_prop}: $id}}) RETURN count(n) as count"
+                            verify_target = f"MATCH (n:{target_label} {{{escaped_target_prop}: $id}}) RETURN count(n) as count"
                             
                             # Print verification queries for debugging
                             print("===== NODE VERIFICATION =====")
@@ -671,8 +695,8 @@ class Neo4jLoader:
                             print(f"Target verification: {target_query}") 
                             
                             # Try to find all nodes of these types to help with debugging
-                            all_source_nodes_query = f"MATCH (n:{source_label}) RETURN n.{source_prop_name} as id LIMIT 10"
-                            all_target_nodes_query = f"MATCH (n:{target_label}) RETURN n.{target_prop_name} as id LIMIT 10"
+                            all_source_nodes_query = f"MATCH (n:{source_label}) RETURN n.{escaped_source_prop} as id LIMIT 10"
+                            all_target_nodes_query = f"MATCH (n:{target_label}) RETURN n.{escaped_target_prop} as id LIMIT 10"
                             
                             all_source_nodes = session.run(all_source_nodes_query).values()
                             all_target_nodes = session.run(all_target_nodes_query).values()
@@ -692,9 +716,13 @@ class Neo4jLoader:
                             
                             # Only proceed if both nodes exist
                             if source_count > 0 and target_count > 0:
+                                # Escape property names with backticks if they contain spaces or special characters
+                                escaped_source_prop = f"`{source_prop_name}`" if " " in source_prop_name or "(" in source_prop_name or ")" in source_prop_name or "$" in source_prop_name or "%" in source_prop_name else source_prop_name
+                                escaped_target_prop = f"`{target_prop_name}`" if " " in target_prop_name or "(" in target_prop_name or ")" in target_prop_name or "$" in target_prop_name or "%" in target_prop_name else target_prop_name
+                                
                                 cypher = (
-                                    f"MATCH (source:{source_label} {{{source_prop_name}: $source_id}}), "
-                                    f"(target:{target_label} {{{target_prop_name}: $target_id}}) "
+                                    f"MATCH (source:{source_label} {{{escaped_source_prop}: $source_id}}), "
+                                    f"(target:{target_label} {{{escaped_target_prop}: $target_id}}) "
                                     f"MERGE (source)-[r:{rel_type}]->(target) "
                                     f"RETURN r"
                                 )
@@ -741,9 +769,17 @@ class Neo4jLoader:
                                         print(f"Initial relationship creation failed. Trying alternative approach...")
                                         
                                         # Create a simpler Cypher query that first ensures both nodes exist
+                                        # Escape property names with backticks if they contain spaces or special characters
+                                        escaped_source_prop = f"`{source_prop_name}`" if " " in source_prop_name or "(" in source_prop_name or ")" in source_prop_name or "$" in source_prop_name or "%" in source_prop_name else source_prop_name
+                                        escaped_target_prop = f"`{target_prop_name}`" if " " in target_prop_name or "(" in target_prop_name or ")" in target_prop_name or "$" in target_prop_name or "%" in target_prop_name else target_prop_name
+                                        
+                                        # Properly escape the string values in the Cypher query
+                                        source_id_str_escaped = source_id_str.replace("'", "\\'") if isinstance(source_id_str, str) else source_id_str
+                                        target_id_str_escaped = target_id_str.replace("'", "\\'") if isinstance(target_id_str, str) else target_id_str
+                                        
                                         alt_cypher = (
-                                            f"MERGE (source:{source_label} {{{source_prop_name}: '{source_id_str}'}}) "
-                                            f"MERGE (target:{target_label} {{{target_prop_name}: '{target_id_str}'}}) "
+                                            f"MERGE (source:{source_label} {{{escaped_source_prop}: '{source_id_str_escaped}'}}) "
+                                            f"MERGE (target:{target_label} {{{escaped_target_prop}: '{target_id_str_escaped}'}}) "
                                             f"MERGE (source)-[r:{rel_type}]->(target) "
                                             f"RETURN r"
                                         )
