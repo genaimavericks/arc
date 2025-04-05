@@ -18,6 +18,7 @@ from ..db_config import SessionLocal
 from neo4j import GraphDatabase
 from .database_api import get_database_config, parse_connection_params
 from .loaders.data_loader import DataLoader
+from .loaders.neo4j_loader import Neo4jLoader
 import traceback
 import re
 
@@ -1237,6 +1238,54 @@ async def cleanup_schemas(
         print(f"Error in cleanup_schemas: {str(e)}")
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Error cleaning up schemas: {str(e)}")
+
+
+@router.post("/clean-neo4j-database")
+async def clean_neo4j_database(
+    current_user: User = Depends(has_any_permission(["kginsights:manage"])),
+    graph_name: str = "default"
+):
+    """
+    Clean the Neo4j database by removing all nodes, relationships, constraints, and indexes.
+    
+    Args:
+        current_user: Current authenticated user with manage permissions
+        graph_name: Name of the Neo4j graph to clean (default: "default")
+        
+    Returns:
+        Dict with cleanup results
+    """
+    try:
+        # Initialize Neo4j loader
+        neo4j_loader = Neo4jLoader(graph_name=graph_name)
+        
+        # Connect to Neo4j
+        connected = await neo4j_loader.connect()
+        if not connected:
+            raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+            
+        # Clean the database
+        result = await neo4j_loader.clean_database()
+        
+        # Close the connection
+        neo4j_loader.close()
+        
+        if not result.get("success", False):
+            errors = result.get("errors", [])
+            error_message = "\n".join(errors) if errors else "Unknown error"
+            raise HTTPException(status_code=500, detail=f"Failed to clean Neo4j database: {error_message}")
+        
+        return {
+            "message": "Neo4j database cleaned successfully",
+            "details": result
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error cleaning Neo4j database: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Error cleaning Neo4j database: {str(e)}")
 
 @router.post("/load-data")
 @router.post("/schemas/{schema_id}/load-data")

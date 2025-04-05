@@ -92,6 +92,7 @@ function KGraphDashboardContent() {
   const [graphToDelete, setGraphToDelete] = useState<KnowledgeGraph | null>(null)
   const [applyToNeo4jModalOpen, setApplyToNeo4jModalOpen] = useState(false)
   const [graphToApply, setGraphToApply] = useState<KnowledgeGraph | null>(null)
+  const [cleanDatabaseModalOpen, setCleanDatabaseModalOpen] = useState(false)
 
   // Function to fetch available datasets from sources
   const fetchDataSources = async () => {
@@ -139,6 +140,67 @@ function KGraphDashboardContent() {
       })
     } finally {
       setLoadingDatasets(false)
+    }
+  }
+
+  // Function to handle cleaning Neo4j database
+  const handleCleanNeo4jDatabase = () => {
+    setCleanDatabaseModalOpen(true)
+  }
+
+  // Function to execute Neo4j database cleanup
+  const executeCleanNeo4jDatabase = async () => {
+    try {
+      setCleanDatabaseModalOpen(false)
+      
+      // First, clean up schemas with missing files
+      const schemaResponse = await fetch("/api/graphschema/cleanup-schemas", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+      })
+
+      if (!schemaResponse.ok) {
+        throw new Error(`Failed to clean up schemas: ${schemaResponse.status}`)
+      }
+
+      const schemaData = await schemaResponse.json()
+      
+      // Then, clean the Neo4j database
+      const neo4jResponse = await fetch("/api/graphschema/clean-neo4j-database", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+      })
+
+      if (!neo4jResponse.ok) {
+        throw new Error(`Failed to clean Neo4j database: ${neo4jResponse.status}`)
+      }
+
+      const neo4jData = await neo4jResponse.json()
+
+      // Show success message with details
+      toast({
+        title: "Success",
+        description: `Database cleaned successfully. Removed ${schemaData.removed} schemas and ${neo4jData.details.nodes_deleted} nodes.`,
+        variant: "default",
+      })
+
+      // Refresh knowledge graphs after cleanup
+      await fetchKnowledgeGraphs()
+    } catch (err) {
+      console.error("Error cleaning Neo4j database:", err)
+      toast({
+        title: "Error",
+        description: "Failed to clean Neo4j database.",
+        variant: "destructive",
+      })
+    } finally {
+      setCleanDatabaseModalOpen(false)
     }
   }
 
@@ -473,6 +535,15 @@ function KGraphDashboardContent() {
           </Button>
 
           <Button
+            className="bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-2"
+            size="lg"
+            onClick={handleCleanNeo4jDatabase}
+          >
+            <Database className="w-5 h-5" />
+            Clean Neo4j Database
+          </Button>
+
+          <Button
             variant="outline"
             className="border-primary/30 text-foreground flex items-center gap-2"
             size="lg"
@@ -762,6 +833,33 @@ function KGraphDashboardContent() {
                 Apply
               </AlertDialogAction>
               <AlertDialogCancel onClick={() => setApplyToNeo4jModalOpen(false)}>
+                Cancel
+              </AlertDialogCancel>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
+      {cleanDatabaseModalOpen && (
+        <AlertDialog
+          open={cleanDatabaseModalOpen}
+          onOpenChange={(open) => setCleanDatabaseModalOpen(open)}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Clean Neo4j Database</AlertDialogTitle>
+            </AlertDialogHeader>
+            <AlertDialogDescription>
+              Are you sure you want to clean the Neo4j database?
+              <p className="mt-2 text-sm text-muted-foreground">
+                This will remove schemas where the associated CSV files don't exist and clean up the database.
+              </p>
+            </AlertDialogDescription>
+            <AlertDialogFooter>
+              <AlertDialogAction onClick={executeCleanNeo4jDatabase}>
+                Clean
+              </AlertDialogAction>
+              <AlertDialogCancel onClick={() => setCleanDatabaseModalOpen(false)}>
                 Cancel
               </AlertDialogCancel>
             </AlertDialogFooter>

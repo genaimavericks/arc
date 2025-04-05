@@ -13,6 +13,7 @@ class Neo4jLoader:
     """
     Handles loading data into Neo4j from processed CSV records.
     Manages Neo4j connections, transactions, and Cypher execution.
+    Provides methods for database management including cleaning and data loading.
     """
     
     def __init__(self, graph_name: str = "default"):
@@ -544,13 +545,13 @@ class Neo4jLoader:
         try:
             with self.driver.session() as session:
                 # Process each relationship type
-                for rel in relationships:
-                    rel_type = rel.get("type")
-                    source_label = rel.get("startNode") or rel.get("source")  # Support both naming conventions
-                    target_label = rel.get("endNode") or rel.get("target")    # Support both naming conventions
+                for rel_def in relationships:
+                    rel_type = rel_def.get("type")
+                    source_label = rel_def.get("startNode") or rel_def.get("source")  # Support both naming conventions
+                    target_label = rel_def.get("endNode") or rel_def.get("target")    # Support both naming conventions
                     
                     if not all([rel_type, source_label, target_label]):
-                        print(f"Incomplete relationship definition: {rel}")
+                        print(f"Incomplete relationship definition: {rel_def}")
                         continue
                     
                     print(f"Processing relationship: {source_label}-[{rel_type}]->{target_label}")
@@ -720,17 +721,51 @@ class Neo4jLoader:
                                 escaped_source_prop = f"`{source_prop_name}`" if " " in source_prop_name or "(" in source_prop_name or ")" in source_prop_name or "$" in source_prop_name or "%" in source_prop_name else source_prop_name
                                 escaped_target_prop = f"`{target_prop_name}`" if " " in target_prop_name or "(" in target_prop_name or ")" in target_prop_name or "$" in target_prop_name or "%" in target_prop_name else target_prop_name
                                 
+                                # Extract relationship properties from the record if defined in schema
+                                rel_props = {}
+                                if 'properties' in rel_def and rel_def['properties']:
+                                    for prop in rel_def['properties']:
+                                        # Check if property is defined as a dict with csv_column mapping
+                                        if isinstance(prop, dict) and 'csv_column' in prop and 'property' in prop:
+                                            csv_col = prop['csv_column']
+                                            prop_name = prop['property']
+                                            if csv_col in record and record[csv_col] is not None:
+                                                rel_props[prop_name] = record[csv_col]
+                                        # Or if it's a direct string property name that matches a column
+                                        elif isinstance(prop, str) and prop in record and record[prop] is not None:
+                                            rel_props[prop] = record[prop]
+                                
+                                # Build the Cypher query
                                 cypher = (
                                     f"MATCH (source:{source_label} {{{escaped_source_prop}: $source_id}}), "
                                     f"(target:{target_label} {{{escaped_target_prop}: $target_id}}) "
                                     f"MERGE (source)-[r:{rel_type}]->(target) "
-                                    f"RETURN r"
                                 )
                                 
+                                # Add SET clause for relationship properties if any
+                                if rel_props:
+                                    set_clauses = []
+                                    for k in rel_props.keys():
+                                        # Escape property name if needed
+                                        escaped_prop = f"`{k}`" if " " in k or "(" in k or ")" in k or "$" in k or "%" in k else k
+                                        # Create a safe parameter name
+                                        safe_param_name = f"rel_{k.replace(' ', '_').replace('(', '').replace(')', '').replace('$', '').replace('%', '')}"
+                                        set_clauses.append(f"r.{escaped_prop} = ${safe_param_name}")
+                                    
+                                    cypher += "SET " + ", ".join(set_clauses) + " "
+                                
+                                cypher += "RETURN r"
+                                
+                                # Prepare parameters
                                 params = {
                                     "source_id": source_id_str,
                                     "target_id": target_id_str
                                 }
+                                
+                                # Add relationship property parameters with safe names
+                                for k, v in rel_props.items():
+                                    safe_param_name = f"rel_{k.replace(' ', '_').replace('(', '').replace(')', '').replace('$', '').replace('%', '')}"
+                                    params[safe_param_name] = v
                                 
                                 # Print detailed Cypher information for debugging
                                 print(f"===== RELATIONSHIP CREATION =====")
@@ -777,12 +812,34 @@ class Neo4jLoader:
                                         source_id_str_escaped = source_id_str.replace("'", "\\'") if isinstance(source_id_str, str) else source_id_str
                                         target_id_str_escaped = target_id_str.replace("'", "\\'") if isinstance(target_id_str, str) else target_id_str
                                         
+                                        # Build the alternative Cypher query
                                         alt_cypher = (
                                             f"MERGE (source:{source_label} {{{escaped_source_prop}: '{source_id_str_escaped}'}}) "
                                             f"MERGE (target:{target_label} {{{escaped_target_prop}: '{target_id_str_escaped}'}}) "
                                             f"MERGE (source)-[r:{rel_type}]->(target) "
-                                            f"RETURN r"
                                         )
+                                        
+                                        # Add relationship properties if any
+                                        if rel_props:
+                                            prop_sets = []
+                                            for k, v in rel_props.items():
+                                                # Escape property name if needed
+                                                escaped_prop = f"`{k}`" if " " in k or "(" in k or ")" in k or "$" in k or "%" in k else k
+                                                
+                                                # Format the value based on its type
+                                                if isinstance(v, str):
+                                                    # Escape any single quotes in string values
+                                                    v_escaped = v.replace("'", "\\'") 
+                                                    prop_sets.append(f"r.{escaped_prop} = '{v_escaped}'")
+                                                elif v is None:
+                                                    prop_sets.append(f"r.{escaped_prop} = NULL")
+                                                else:
+                                                    prop_sets.append(f"r.{escaped_prop} = {v}")
+                                            
+                                            if prop_sets:
+                                                alt_cypher += "SET " + ", ".join(prop_sets) + " "
+                                        
+                                        alt_cypher += "RETURN r"
                                         
                                         print(f"Alternative Cypher: {alt_cypher}")
                                         alt_result = session.run(alt_cypher)
