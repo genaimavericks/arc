@@ -65,42 +65,85 @@ export function DatasetPreviewModal({
 
     // Handle different data structures that might come from the API
     if (data.headers && data.data) {
-      // Ensure data.data is an array
-      const dataArray = Array.isArray(data.data) ? data.data : [data.data];
-      
-      // Format: { headers: string[], data: any[][] }
-      return (
-        <ScrollArea className="h-[400px]">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                {data.headers.map((header: string, index: number) => (
-                  <TableHead key={index}>{header}</TableHead>
-                ))}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {dataArray.map((row: any[], rowIndex: number) => (
-                <TableRow key={rowIndex}>
-                  {Array.isArray(row) ? row.map((cell, cellIndex) => (
-                    <TableCell key={cellIndex}>{cell !== null && cell !== undefined ? cell.toString() : ""}</TableCell>
-                  )) : (
-                    <TableCell>{row !== null && row !== undefined ? String(row) : ""}</TableCell>
-                  )}
+      // For CSV and tabular data format
+      if (data.type === "csv" || data.type === "table") {
+        // Ensure data.data is an array
+        const dataArray = Array.isArray(data.data) ? data.data : [data.data];
+        
+        return (
+          <ScrollArea className="h-[400px]">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  {data.headers.map((header: string, index: number) => (
+                    <TableHead key={index}>{header}</TableHead>
+                  ))}
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </ScrollArea>
-      )
-    } else if (data.data) {
+              </TableHeader>
+              <TableBody>
+                {dataArray.map((row: any, rowIndex: number) => (
+                  <TableRow key={rowIndex}>
+                    {Array.isArray(row) ? row.map((cell, cellIndex) => (
+                      <TableCell key={cellIndex}>
+                        {formatCellValue(cell)}
+                      </TableCell>
+                    )) : (
+                      <TableCell>
+                        {formatCellValue(row)}
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </ScrollArea>
+        )
+      }
+      
+      // For JSON data format
+      if (data.type === "json") {
+        // Ensure data.data is an array
+        const dataArray = Array.isArray(data.data) ? data.data : [data.data];
+        
+        return (
+          <ScrollArea className="h-[400px]">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  {data.headers.map((header: string, index: number) => (
+                    <TableHead key={index}>{header}</TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {dataArray.map((row: { [key: string]: any }, rowIndex: number) => (
+                  <TableRow key={rowIndex}>
+                    {typeof row === 'object' && row !== null ? data.headers.map((header: string, cellIndex: number) => (
+                      <TableCell key={cellIndex}>
+                        {formatCellValue(row[header])}
+                      </TableCell>
+                    )) : (
+                      <TableCell colSpan={data.headers.length}>
+                        {formatCellValue(row)}
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </ScrollArea>
+        )
+      }
+    }
+    
+    // Generic object array format (fallback)
+    if (data.data) {
       // Ensure data.data is an array
       const dataArray = Array.isArray(data.data) ? data.data : [data.data];
       
-      // Format: { data: object[] }
-      // Only try to get headers if we have array data with objects
-      const headers = (Array.isArray(data.data) && data.data.length > 0 && typeof data.data[0] === 'object') 
-        ? Object.keys(data.data[0]) 
+      // Extract headers from the first object if available
+      const headers = (dataArray.length > 0 && typeof dataArray[0] === 'object' && dataArray[0] !== null) 
+        ? Object.keys(dataArray[0]) 
         : ['Value'];
 
       return (
@@ -114,15 +157,15 @@ export function DatasetPreviewModal({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {dataArray.map((row: any, rowIndex: number) => (
+              {dataArray.map((row: { [key: string]: any }, rowIndex: number) => (
                 <TableRow key={rowIndex}>
-                  {typeof row === 'object' && row !== null ? headers.map((header, cellIndex) => (
+                  {typeof row === 'object' && row !== null ? headers.map((header: string, cellIndex: number) => (
                     <TableCell key={cellIndex}>
-                      {row[header] !== null && row[header] !== undefined ? row[header].toString() : ""}
+                      {formatCellValue(row[header])}
                     </TableCell>
                   )) : (
-                    <TableCell>
-                      {row !== null && row !== undefined ? String(row) : ""}
+                    <TableCell colSpan={headers.length}>
+                      {formatCellValue(row)}
                     </TableCell>
                   )}
                 </TableRow>
@@ -131,10 +174,32 @@ export function DatasetPreviewModal({
           </Table>
         </ScrollArea>
       )
-    } else {
-      // Unknown format
-      return <div className="text-center py-4">Preview data is in an unsupported format</div>
     }
+
+    // Unknown format
+    return <div className="text-center py-4">Preview data is in an unsupported format</div>
+  }
+
+  // Helper function to format cell values properly
+  const formatCellValue = (value: any): React.ReactNode => {
+    if (value === null || value === undefined) {
+      return "";
+    }
+    
+    if (typeof value === 'object') {
+      try {
+        // For better readability in the UI, use a pre-formatted display
+        return (
+          <pre className="whitespace-pre-wrap text-xs max-w-[300px] overflow-auto">
+            {JSON.stringify(value, null, 2)}
+          </pre>
+        );
+      } catch (e) {
+        return "[Complex Object]";
+      }
+    }
+    
+    return String(value);
   }
 
   return (

@@ -1,10 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Search, BarChart2, Calendar, Database } from "lucide-react"
+import { Search, BarChart2, Calendar, Database, Trash2 } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import {
   Table,
@@ -49,81 +49,247 @@ export function ProfileList({ onProfileSelect, selectedProfileId, fileIdFilter }
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [totalProfiles, setTotalProfiles] = useState(0)
+  const [deleting, setDeleting] = useState<string | null>(null)
   const { toast } = useToast()
   const limit = 10
-
-  const fetchProfiles = async () => {
+  
+  // Refs to track component state
+  const isMountedRef = useRef(true);
+  const hasAttemptedDirectFetchRef = useRef(false);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Reset direct fetch flag when fileIdFilter changes
+  useEffect(() => {
+    hasAttemptedDirectFetchRef.current = false;
+  }, [fileIdFilter]);
+  
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, []);
+  
+  const fetchProfiles = async (resetPage = false) => {
+    if (resetPage && page !== 1) {
+      setPage(1);
+      return; // The page change will trigger a new fetch
+    }
+    
     try {
-      setLoading(true)
-      const token = localStorage.getItem("token")
+      setLoading(true);
+      const token = localStorage.getItem("token");
       
       if (!token) {
         toast({
           title: "Authentication Error",
           description: "You must be logged in to view profiles",
           variant: "destructive",
-        })
-        return
+        });
+        return;
       }
-
-      let url = `/api/profiler/profiles?page=${page}&limit=${limit}`
+      
+      let url = `/api/profiler/profiles?page=${page}&limit=${limit}`;
       
       if (searchQuery) {
-        url += `&search=${encodeURIComponent(searchQuery)}`
+        url += `&search=${encodeURIComponent(searchQuery)}`;
       }
       
       if (fileIdFilter) {
-        url += `&file_id=${encodeURIComponent(fileIdFilter)}`
+        url += `&file_id=${encodeURIComponent(fileIdFilter)}`;
       }
-
+      
+      console.log("Fetching profiles with URL:", url);
       const response = await fetch(url, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
-      })
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
-      setProfiles(data.items)
-      setTotalPages(data.pages)
-      setTotalProfiles(data.total)
+      });
       
-      // If we have results and no profile is selected yet, select the first one
-      if (data.items.length > 0 && !selectedProfileId) {
-        onProfileSelect(data.items[0].id)
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (isMountedRef.current) {
+        setProfiles(data.items);
+        setTotalPages(data.pages);
+        setTotalProfiles(data.total);
+        
+        // If we have results and no profile is selected yet, select the first one
+        if (data.items.length > 0 && !selectedProfileId) {
+          onProfileSelect(data.items[0].id);
+        }
+        
+        // If we have a fileIdFilter but no profiles were found, try to fetch the latest profile directly
+        // Only do this once to prevent infinite loops
+        if (fileIdFilter && data.items.length === 0 && !hasAttemptedDirectFetchRef.current) {
+          hasAttemptedDirectFetchRef.current = true;
+          fetchLatestProfileForFile();
+        }
       }
     } catch (error) {
-      console.error("Error fetching profiles:", error)
-      toast({
-        title: "Error",
-        description: "Failed to fetch profiles. Please try again.",
-        variant: "destructive",
-      })
+      console.error("Error fetching profiles:", error);
+      if (isMountedRef.current) {
+        toast({
+          title: "Error",
+          description: "Failed to fetch profiles. Please try again.",
+          variant: "destructive",
+        });
+      }
     } finally {
-      setLoading(false)
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
-  }
-
+  };
+  
+  const fetchLatestProfileForFile = async () => {
+    if (!fileIdFilter) return;
+    
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) return;
+      
+      console.log("Attempting to fetch latest profile for file:", fileIdFilter);
+      const response = await fetch(`/api/profiler/profiles/file/${fileIdFilter}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      if (response.status === 404) {
+        console.log(`No profile found for file ID ${fileIdFilter}. This is expected for new files.`);
+        return; // Exit gracefully for 404 errors
+      }
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log("Received profile data:", data);
+      
+      // If we got a valid profile, add it to our profiles list
+      if (isMountedRef.current && data && data.id) {
+        setProfiles([{
+          id: data.id,
+          file_id: data.file_id,
+          file_name: data.file_name,
+          total_rows: data.total_rows,
+          total_columns: data.total_columns,
+          data_quality_score: data.data_quality_score,
+          created_at: data.created_at
+        }]);
+        setTotalProfiles(1);
+        setTotalPages(1);
+        
+        // Select this profile
+        onProfileSelect(data.id);
+      }
+    } catch (error) {
+      console.error("Error fetching latest profile for file:", error);
+    }
+  };
+  
+  // Fetch profiles when dependencies change
   useEffect(() => {
-    fetchProfiles()
-  }, [page, fileIdFilter])
+    fetchProfiles();
+  }, [page, fileIdFilter]);
+  
+  // Handle search query changes with debounce
+  useEffect(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
+    searchTimeoutRef.current = setTimeout(() => {
+      fetchProfiles(true);
+    }, 500); // 500ms debounce
+    
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [searchQuery]);
 
   const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault()
-    setPage(1) // Reset to first page when searching
-    fetchProfiles()
-  }
+    e.preventDefault();
+    // Clear any pending debounce and fetch immediately
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    fetchProfiles(true);
+  };
 
   const getQualityBadgeVariant = (score: number) => {
     // Score is already multiplied by 100 from the backend
-    if (score >= 90) return "success"
-    if (score >= 70) return "default"
-    if (score >= 50) return "warning"
-    return "destructive"
-  }
+    if (score >= 90) return "success";
+    if (score >= 70) return "default";
+    if (score >= 50) return "warning";
+    return "destructive";
+  };
+
+  const handleDelete = async (profileId: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent triggering row selection
+    
+    if (!confirm("Are you sure you want to delete this profile? This action cannot be undone.")) {
+      return;
+    }
+    
+    try {
+      setDeleting(profileId);
+      const token = localStorage.getItem("token");
+      
+      if (!token) {
+        toast({
+          title: "Authentication Error",
+          description: "You must be logged in to delete profiles",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      const response = await fetch(`/api/profiler/profiles/${profileId}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      toast({
+        title: "Success",
+        description: "Profile deleted successfully",
+      });
+      
+      // If the deleted profile was selected, reset selection
+      if (selectedProfileId === profileId) {
+        onProfileSelect("");
+      }
+      
+      // Refresh the profiles list
+      fetchProfiles();
+      
+    } catch (error) {
+      console.error("Error deleting profile:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete profile. You may not have sufficient permissions.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleting(null);
+    }
+  };
 
   return (
     <Card>
@@ -204,13 +370,29 @@ export function ProfileList({ onProfileSelect, selectedProfileId, fileIdFilter }
                           </span>
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            variant={selectedProfileId === profile.id ? "default" : "ghost"}
-                            size="sm"
-                            onClick={() => onProfileSelect(profile.id)}
-                          >
-                            {selectedProfileId === profile.id ? "Selected" : "View"}
-                          </Button>
+                          <div className="flex justify-end space-x-2">
+                            <Button
+                              variant={selectedProfileId === profile.id ? "default" : "ghost"}
+                              size="sm"
+                              onClick={() => onProfileSelect(profile.id)}
+                            >
+                              {selectedProfileId === profile.id ? "Selected" : "View"}
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={(e) => handleDelete(profile.id, e)}
+                              disabled={deleting === profile.id}
+                            >
+                              {deleting === profile.id ? (
+                                <div className="h-4 w-4 flex items-center justify-center">
+                                  <LoadingSpinner size="sm" />
+                                </div>
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -268,7 +450,7 @@ export function ProfileList({ onProfileSelect, selectedProfileId, fileIdFilter }
         </div>
       </CardContent>
     </Card>
-  )
+  );
 }
 
 export default ProfileList;
