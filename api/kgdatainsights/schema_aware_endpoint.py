@@ -3,12 +3,14 @@ Schema-Aware Query Endpoint
 Provides a dedicated API endpoint for the schema-aware agent.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
-from typing import Optional, Dict, Any
-from datetime import datetime
+from fastapi import APIRouter, Depends, HTTPException, Response
+from typing import Optional, Dict, Any, List, Union
+from datetime import datetime, date
 import json
 import os
 import traceback
+from neo4j.time import Date, Time, DateTime
+from pydantic.json import pydantic_encoder
 
 from .data_insights_api import (
     QueryRequest, 
@@ -20,6 +22,43 @@ from .data_insights_api import (
 from .agent.schema_aware_agent import get_schema_aware_assistant
 from ..models import User
 from ..auth import has_any_permission
+
+# Custom JSON encoder for Neo4j types
+class Neo4jJsonEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles Neo4j temporal types"""
+    
+    def default(self, obj):
+        # Handle Neo4j date types
+        if isinstance(obj, Date):
+            return obj.iso_format()  # Convert to ISO format string
+        elif isinstance(obj, Time):
+            return obj.iso_format()  # Convert to ISO format string
+        elif isinstance(obj, DateTime):
+            return obj.iso_format()  # Convert to ISO format string
+        # Handle other special types
+        try:
+            return pydantic_encoder(obj)
+        except TypeError:
+            pass
+        # Default handling
+        try:
+            return super().default(obj)
+        except TypeError:
+            return str(obj)  # Last resort: convert to string
+
+
+# Helper function to convert Neo4j objects in dictionaries
+def sanitize_neo4j_objects(data: Any) -> Any:
+    """Recursively sanitize Neo4j objects in data structures"""
+    if isinstance(data, dict):
+        return {k: sanitize_neo4j_objects(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [sanitize_neo4j_objects(item) for item in data]
+    elif isinstance(data, (Date, Time, DateTime)):
+        return data.iso_format()
+    else:
+        return data
+
 
 # Create a router for schema-aware endpoints
 router = APIRouter(prefix="/schema-insights", tags=["Schema-Aware Insights"])
@@ -73,8 +112,10 @@ async def process_schema_aware_query(
         visualization = None
         if intermediate_steps:
             try:
-                print(f"Analyzing intermediate steps for visualization: {json.dumps(intermediate_steps, default=str)[:300]}...")
-                visualization = analyze_data_for_visualization(intermediate_steps)
+                # Use the custom Neo4j encoder for intermediate steps
+                sanitized_steps = sanitize_neo4j_objects(intermediate_steps)
+                print(f"Analyzing intermediate steps for visualization: {json.dumps(sanitized_steps, cls=Neo4jJsonEncoder)[:300]}...")
+                visualization = analyze_data_for_visualization(sanitized_steps)
                 
                 # Log visualization result
                 if visualization:
@@ -105,18 +146,30 @@ async def process_schema_aware_query(
         try:
             history_file = os.path.join(HISTORY_DIR, f"{source_id}_history.json")
             with open(history_file, 'w') as f:
-                json.dump(query_history[source_id], f, indent=2)
+                # Use the custom encoder to handle Neo4j types
+                json.dump(query_history[source_id], f, cls=Neo4jJsonEncoder, indent=2)
         except Exception as e:
             print(f"Error saving query history: {str(e)}")
         
-        # Return the response
-        return QueryResponse(
+        # Sanitize Neo4j objects in intermediate_steps for serialization
+        if intermediate_steps:
+            sanitized_intermediate_steps = sanitize_neo4j_objects(intermediate_steps)
+        else:
+            sanitized_intermediate_steps = None
+        
+        # Create response with sanitized data
+        response = QueryResponse(
             source_id=source_id,
             query=request.query,
             result=answer,
-            intermediate_steps=intermediate_steps,
+            intermediate_steps=sanitized_intermediate_steps,
             visualization=visualization
         )
+        
+        # Log response for debugging
+        print(f"Returned query result with sanitized Neo4j objects")
+        
+        return response
     except Exception as e:
         tb_str = traceback.format_exc()
         print(f"Error processing schema-aware query: {str(e)}\nTraceback: {tb_str}")

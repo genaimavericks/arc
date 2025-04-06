@@ -11,6 +11,8 @@ from .agent.schema_aware_agent import get_schema_aware_assistant
 from .visualization_analyzer import analyze_data_for_visualization, GraphData
 from ..models import User
 from ..auth import has_any_permission
+from neo4j.time import Date, Time, DateTime
+from pydantic.json import pydantic_encoder
 
 router = APIRouter(prefix="/datainsights", tags=["Data Insights"])
 
@@ -38,6 +40,42 @@ DEFAULT_PREDEFINED_QUERIES = {
         {"id": "domain_2", "query": "What are the key patterns or trends in this data?", "description": "Pattern identification"}
     ]
 }
+
+# Custom JSON encoder for Neo4j types
+class Neo4jJsonEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles Neo4j temporal types"""
+    
+    def default(self, obj):
+        # Handle Neo4j date types
+        if isinstance(obj, Date):
+            return obj.iso_format()  # Convert to ISO format string
+        elif isinstance(obj, Time):
+            return obj.iso_format()  # Convert to ISO format string
+        elif isinstance(obj, DateTime):
+            return obj.iso_format()  # Convert to ISO format string
+        # Handle other special types
+        try:
+            return pydantic_encoder(obj)
+        except TypeError:
+            pass
+        # Default handling
+        try:
+            return super().default(obj)
+        except TypeError:
+            return str(obj)  # Last resort: convert to string
+
+
+# Helper function to convert Neo4j objects in dictionaries
+def sanitize_neo4j_objects(data: Any) -> Any:
+    """Recursively sanitize Neo4j objects in data structures"""
+    if isinstance(data, dict):
+        return {k: sanitize_neo4j_objects(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [sanitize_neo4j_objects(item) for item in data]
+    elif isinstance(data, (Date, Time, DateTime)):
+        return data.iso_format()
+    else:
+        return data
 
 class QueryRequest(BaseModel):
     """Request model for the query endpoint."""
@@ -179,10 +217,12 @@ async def process_query(
         
         # Analyze data for visualization if intermediate_steps exists
         visualization = None
+        sanitized_steps = None
         if intermediate_steps:
             try:
-                print(f"Analyzing intermediate steps for visualization: {json.dumps(intermediate_steps, default=str)[:300]}...")
-                visualization = analyze_data_for_visualization(intermediate_steps)
+                sanitized_steps = sanitize_neo4j_objects(intermediate_steps)
+                print(f"Analyzing intermediate steps for visualization: {json.dumps(sanitized_steps, cls=Neo4jJsonEncoder)[:300]}...")
+                visualization = analyze_data_for_visualization(sanitized_steps)
                 
                 # Log visualization result
                 if visualization and visualization.type != "none":
@@ -202,7 +242,7 @@ async def process_query(
                 source_id=source_id,
                 query=request.query,
                 result=answer,
-                intermediate_steps=intermediate_steps,
+                intermediate_steps=sanitized_steps,
                 visualization=visualization,
                 timestamp=timestamp
             )

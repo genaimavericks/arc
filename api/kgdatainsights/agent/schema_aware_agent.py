@@ -4,6 +4,7 @@ import time
 import hashlib
 import threading
 import traceback
+import re
 from pathlib import Path
 from uuid import uuid4
 from typing import Dict, List, Optional, Any
@@ -126,7 +127,7 @@ class SchemaAwareGraphAssistant:
                         template=qa_template_str,
                         # Both 'query' and 'question' can refer to the same user input
                         # but the chain uses 'query' internally for the user question and for the Cypher query
-                        input_variables=["query", "response"]
+                        input_variables=["query", "context"]
                     )
                     #chain_config["qa_prompt"] = qa_prompt_template
                 else:
@@ -139,21 +140,7 @@ class SchemaAwareGraphAssistant:
             
         except Exception as e:
             print(f"ERROR: GraphCypherQAChain initialization failed: {str(e)}")
-            print(f"DEBUG: Error details: {traceback.format_exc()}")
-            
-            # Attempt a simpler fallback initialization with minimal options
-            try:
-                print(f"DEBUG: Attempting fallback initialization with minimal options")
-                self.chain = GraphCypherQAChain.from_llm(
-                    llm=self.llm,
-                    graph=self.graph,
-                    verbose=True
-                )
-                print(f"DEBUG: Fallback initialization successful")
-            except Exception as e2:
-                print(f"ERROR: All GraphCypherQAChain initialization attempts failed")
-                print(f"DEBUG: Second error: {str(e2)}")
-                raise RuntimeError(f"Cannot initialize Neo4j query chain: {str(e)} and then {str(e2)}")
+            print(f"DEBUG: Error details: {traceback.format_exc()}")        
         
         # Initialize cache
         self.cache = Cache()
@@ -408,8 +395,10 @@ class SchemaAwareGraphAssistant:
         2. Include specific node labels, relationship types, and important properties from the schema
         3. Provide guidance on Neo4j Cypher best practices
         4. Include examples of good query patterns based on this schema
-        5. Use double curly braces({{{{) to escape single curly braces({{) except for {query}
+        5. CRITICALLY IMPORTANT: Prompts with Cypher queries containing curly brackets must be properly escaped with double curly brackets.
         6. Include placeholders for {query} where the user question will be inserted
+        7. CRITICALLY IMPORTANT: The prompt MUST explicitly instruct to return ONLY the raw Cypher query with NO explanations, NO question repetition, and NO additional text
+        8. The output must ONLY contain the executable Cypher query string without quotes or backticks around it
         
         Do not use generic examples - use the actual node labels, relationship types and properties from the provided schema.
         Keep the prompt concise but comprehensive enough to guide accurate Cypher query generation.
@@ -427,14 +416,14 @@ class SchemaAwareGraphAssistant:
         1. Guide the response generation for questions about this specific knowledge graph
         2. Include domain-specific guidance based on the node types and relationships in the schema
         3. Provide instructions on how to interpret and present the query results
-        4. Include placeholders for {query} and {response} 
-        5. Use double curly braces({{{{) to escape single curly braces({{) except for {query} and {response} 
+        4. Include placeholders for {query} and {context} 
+        5. Use double curly braces({{{{) to escape single curly braces({{) except for {query} and {context} 
         6. Suggest how to handle common scenarios like empty results or large result sets
         
         Make the prompt specific to this graph's domain and structure, not generic.
         Include specifics about the most important node types and relationships in this particular graph.
         
-        IMPORTANT: Use {query} (not {{query}}) for the user's question and generated Cypher query, and {response} (not {{response}}) for the query results, as these exact variable names are required for compatibility with the GraphCypherQAChain.
+        IMPORTANT: Use {query} (not {{query}}) for the user's question and generated Cypher query, and {context} (not {{context}}) for the query results, as these exact variable names are required for compatibility with the GraphCypherQAChain.
         """
         
         # Define the prompt for generating sample queries
@@ -461,6 +450,10 @@ class SchemaAwareGraphAssistant:
             cypher_response = prompt_generator_llm.invoke(cypher_messages)
             cypher_prompt_template = cypher_response.content.strip()
             
+            # Apply Neo4j property syntax escaping to prevent template variable confusion
+            cypher_prompt_template = self._escape_neo4j_properties(cypher_prompt_template)
+            print(f"DEBUG: Applied Neo4j property escaping to Cypher prompt template")
+            
             # Generate QA prompt template
             print(f"Generating QA prompt template for {self.source_id}...")
             qa_messages = [
@@ -469,6 +462,10 @@ class SchemaAwareGraphAssistant:
             ]
             qa_response = prompt_generator_llm.invoke(qa_messages)
             qa_prompt_template = qa_response.content.strip()
+            
+            # Apply Neo4j property syntax escaping to prevent template variable confusion
+            qa_prompt_template = self._escape_neo4j_properties(qa_prompt_template)
+            print(f"DEBUG: Applied Neo4j property escaping to QA prompt template")
             
             # Generate sample queries
             print(f"Generating sample queries for {self.source_id}...")
@@ -522,6 +519,8 @@ class SchemaAwareGraphAssistant:
                 "sample_queries": sample_queries
             }
             
+            print(f"DEBUG: Created prompts with properly escaped Neo4j property syntax")
+            
             return prompts
             
         except Exception as e:
@@ -529,8 +528,9 @@ class SchemaAwareGraphAssistant:
             import traceback
             print(f"Traceback: {traceback.format_exc()}")
             
-            # Fallback to basic prompts if LLM generation fails
-            return self._generate_fallback_prompts(schema_summary)
+            # Instead of using fallback prompts, raise the exception to fail explicitly
+            # This makes debugging easier by exposing the actual error
+            raise RuntimeError(f"Failed to generate prompts for schema: {str(e)}")
     
     def _extract_schema_summary(self, schema: Dict[str, Any]) -> Dict[str, Any]:
         """Extract a summary of the schema for prompt generation"""
@@ -577,75 +577,7 @@ class SchemaAwareGraphAssistant:
             "property_list": property_list[:50]  # Limit properties sample
         }
     
-    def _generate_fallback_prompts(self, schema_summary: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate basic fallback prompts if LLM generation fails"""
-        node_labels = schema_summary["node_labels"]
-        relationship_types = schema_summary["relationship_types"]
-        properties_by_node = schema_summary["properties_by_node"]
-        relationships_by_node = schema_summary["relationships_by_node"]
-        
-        # Create basic sample queries
-        sample_queries = [
-            "What are the most important nodes in the knowledge graph?",
-            "How many nodes and relationships are in the graph?",
-            "What is the overall structure of this knowledge graph?",
-        ]
-        
-        # Add some specific queries if schema elements are available
-        for label in node_labels[:3]:
-            sample_queries.append(f"List all {label} nodes")
-            if label in properties_by_node and properties_by_node[label]:
-                prop = properties_by_node[label][0] if properties_by_node[label] else None
-                if prop:
-                    sample_queries.append(f"Find {label} nodes with specific {prop} values")
-        
-        # Create basic Cypher generation prompt
-        node_labels_str = ", ".join(node_labels[:10]) if node_labels else "nodes"
-        rel_types_str = ", ".join(relationship_types[:10]) if relationship_types else "relationships"
-        
-        cypher_prompt_template = f"""
-        You are a Neo4j Cypher query generator. Translate natural language questions into Cypher queries for a knowledge graph with:
-        - Node labels: {node_labels_str}
-        - Relationship types: {rel_types_str}
-        
-        Follow these best practices:
-        1. Use parameterized queries to prevent injection attacks
-        2. Use MATCH patterns that respect the graph schema
-        3. Filter results with WHERE clauses as needed
-        4. Return only the data explicitly requested
-        5. Use ORDER BY and LIMIT for large result sets
-        
-        Please translate the following question into a Cypher query:
-        {{question}}
-        
-        Cypher query:
-        """
-        
-        # Create basic QA prompt
-        qa_prompt_template = f"""
-        You are a knowledge graph expert assistant. Help users understand data from a Neo4j graph database with:
-        - Node types: {node_labels_str}
-        - Relationship types: {rel_types_str}
-        
-        Provide clear explanations that relate to the user's question. Format any structured information appropriately.
-        
-        User question: {{question}}
-        Cypher query used: {{query}}
-        Query results: {{response}}
-        
-        Please provide a helpful response:
-        """
-        
-        # Create prompts dictionary
-        return {
-            "source_id": self.source_id,
-            "schema_summary": schema_summary,
-            "cypher_prompt": cypher_prompt_template,
-            "qa_prompt": qa_prompt_template,
-            "sample_queries": sample_queries
-        }
-        
-        return prompts
+
     
     def _load_prompts(self) -> None:
         """Load custom prompts for this source"""
@@ -712,9 +644,10 @@ class SchemaAwareGraphAssistant:
                             template_text = qa_prompt_text
                             
                         # Fix all placeholder formats for compatibility with GraphCypherQAChain
-                        # QA prompt should use 'query' and 'response' parameters
+                        # QA prompt should use 'query' and 'context' parameters
+                        # LangChain specifically expects 'query' not 'question'
                         if "{{question}}" in template_text:
-                            # Replace 'question' with 'query' for compatibility
+                            # Always replace 'question' with 'query' - this is critical
                             template_text = template_text.replace("{{question}}", "{query}")
                             print(f"DEBUG: Replaced {{question}} with {{query}} in QA prompt")
                             
@@ -722,9 +655,14 @@ class SchemaAwareGraphAssistant:
                             template_text = template_text.replace("{{query}}", "{query}")
                             print(f"DEBUG: Fixed {{query}} format in QA prompt")
                             
+                        if "{{context}}" in template_text:
+                            template_text = template_text.replace("{{context}}", "{context}")
+                            print(f"DEBUG: Fixed {{context}} format in QA prompt")
+                            
                         if "{{response}}" in template_text:
-                            template_text = template_text.replace("{{response}}", "{response}")
-                            print(f"DEBUG: Fixed {{response}} format in QA prompt")
+                            # Also replace 'response' with 'context' as needed
+                            template_text = template_text.replace("{{response}}", "{context}")
+                            print(f"DEBUG: Replaced {{response}} with {{context}} in QA prompt")
                             
                         print(f"DEBUG: Fixed placeholders in QA prompt")
                         self.qa_prompt = ChatPromptTemplate.from_template(template_text)
@@ -747,12 +685,36 @@ class SchemaAwareGraphAssistant:
             print(f"ERROR: Failed to load prompts: {str(e)}")
             print(f"DEBUG: {traceback.format_exc()}")
             
-            # Fall back to minimal prompts that work with the newer LangChain
-            print(f"DEBUG: Falling back to minimal default prompts")
-            self.cypher_prompt = ChatPromptTemplate.from_template(CYPHER_GENERATION_PROMPT)
-            self.qa_prompt = ChatPromptTemplate.from_template(QA_PROMPT)
-            self.sample_queries = []
             
+    def _escape_neo4j_properties(self, prompt_text):
+        """Escape Neo4j property syntax in prompts to prevent template variable confusion
+        
+        This ensures that expressions like {name: 'John'} are properly escaped as {{name: 'John'}}
+        while preserving actual template variables like {query}
+        """
+        if not prompt_text:
+            return prompt_text
+            
+        # Define patterns that need escaping - Neo4j property patterns but not template variables
+        # This regex looks for {prop: value} patterns but ignores {query} or {context}
+        neo4j_prop_pattern = re.compile(r'\{([a-zA-Z0-9_]+\s*:(?![}]).*?)\}')
+        
+        # Find all Neo4j property patterns
+        matches = list(neo4j_prop_pattern.finditer(prompt_text))
+        
+        # Process matches from end to beginning to avoid offset issues
+        for match in reversed(matches):
+            # Skip if it looks like a template variable
+            content = match.group(1)
+            if content.strip() in ["query", "context", "response", "question"]:
+                continue
+                
+            # Replace with double braces
+            start, end = match.span()
+            prompt_text = prompt_text[:start] + "{" + prompt_text[start:end] + "}" + prompt_text[end:]
+            
+        return prompt_text
+        
     def _debug_print_prompts(self):
         """Print debug information about the loaded prompts"""
         print("\n=== DEBUG: PROMPT INFORMATION ===")
@@ -800,22 +762,15 @@ class SchemaAwareGraphAssistant:
             # Important: Need to understand the actual expected parameter names
             # based on the error message, this chain expects 'query' not 'question'
             print(f"DEBUG: Attempting to invoke chain with the correct parameter mapping")
-            
-            # Create all possible parameter mappings to handle different chain configurations
-            input_params = {
-                "query": question,    # The chain expects 'query' based on the error
-                "question": question  # Also include 'question' for completeness
-            }
-            
-            # Add context/history if available
-            if hist:
-                input_params["context"] = hist
-                
-            print(f"DEBUG: Invoking chain with parameters: {list(input_params.keys())}")
-            
+                      
             try:
-                # Pass all possible parameters and let the chain use what it needs
-                result = self.chain.invoke(input_params)
+                # Pass normalized parameters to ensure correct variable mapping
+                # Create all possible parameter mappings to handle different chain configurations
+                input_params = {
+                    "query": question
+                }
+                raw_result = self.chain.invoke(input_params)
+                result = raw_result
             except Exception as e:
                 print(f"ERROR: First invocation failed: {str(e)}")
                 print(f"DEBUG: {traceback.format_exc()}")
