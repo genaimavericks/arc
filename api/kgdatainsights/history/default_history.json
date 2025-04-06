@@ -117,5 +117,26 @@
     "query": "production volume trend for factory 1 in 2023",
     "result": "The production volume trend for Factory 1 in 2023 is as follows:\n\n- January: 634.15 units\n- February: 637.78 units\n- March: 630.69 units\n- April: 635.39 units\n- May: 636.49 units\n- June: 633.24 units\n- July: 632.49 units\n- August: 635.84 units\n- September: 635.14 units\n- October: 635.81 units\n\nPlease note that the production volumes are rounded to two decimal places.",
     "timestamp": "2025-03-31T17:44:24.934698"
+  },
+  {
+    "id": "18_1743950353",
+    "source_id": "default",
+    "query": "What are the main entities in this knowledge graph?",
+    "result": "An error occurred while processing your query: Failed to query knowledge graph: {code: Neo.ClientError.Statement.SyntaxError} {message: Invalid input 'Simple': expected 'FOREACH', 'ALTER', 'ORDER BY', 'CALL', 'USING PERIODIC COMMIT', 'CREATE', 'LOAD CSV', 'START DATABASE', 'STOP DATABASE', 'DEALLOCATE', 'DELETE', 'DENY', 'DETACH', 'DROP', 'DRYRUN', 'FINISH', 'GRANT', 'INSERT', 'LIMIT', 'MATCH', 'MERGE', 'NODETACH', 'OFFSET', 'OPTIONAL', 'REALLOCATE', 'REMOVE', 'RENAME', 'RETURN', 'REVOKE', 'ENABLE SERVER', 'SET', 'SHOW', 'SKIP', 'TERMINATE', 'UNWIND', 'USE' or 'WITH' (line 1, column 1 (offset: 0))\n\"Simple Query:\"\n ^} then {code: Neo.ClientError.Statement.SyntaxError} {message: Invalid input 'Simple': expected 'FOREACH', 'ALTER', 'ORDER BY', 'CALL', 'USING PERIODIC COMMIT', 'CREATE', 'LOAD CSV', 'START DATABASE', 'STOP DATABASE', 'DEALLOCATE', 'DELETE', 'DENY', 'DETACH', 'DROP', 'DRYRUN', 'FINISH', 'GRANT', 'INSERT', 'LIMIT', 'MATCH', 'MERGE', 'NODETACH', 'OFFSET', 'OPTIONAL', 'REALLOCATE', 'REMOVE', 'RENAME', 'RETURN', 'REVOKE', 'ENABLE SERVER', 'SET', 'SHOW', 'SKIP', 'TERMINATE', 'UNWIND', 'USE' or 'WITH' (line 1, column 1 (offset: 0))\n\"Simple Query:\"\n ^}. Please try again or contact support.",
+    "timestamp": "2025-04-06T20:09:13.696295"
+  },
+  {
+    "id": "19_1743951685",
+    "source_id": "default",
+    "query": "What are the main entities in this knowledge graph?",
+    "result": "I encountered an error processing your query: {code: Neo.ClientError.Statement.SyntaxError} {message: Invalid input 'Simple': expected 'FOREACH', 'ALTER', 'ORDER BY', 'CALL', 'USING PERIODIC COMMIT', 'CREATE', 'LOAD CSV', 'START DATABASE', 'STOP DATABASE', 'DEALLOCATE', 'DELETE', 'DENY', 'DETACH', 'DROP', 'DRYRUN', 'FINISH', 'GRANT', 'INSERT', 'LIMIT', 'MATCH', 'MERGE', 'NODETACH', 'OFFSET', 'OPTIONAL', 'REALLOCATE', 'REMOVE', 'RENAME', 'RETURN', 'REVOKE', 'ENABLE SERVER', 'SET', 'SHOW', 'SKIP', 'TERMINATE', 'UNWIND', 'USE' or 'WITH' (line 1, column 1 (offset: 0))\n\"Simple Query:\"\n ^}. \n\nHere's some basic information about the graph: [{'labels': ['Factory'], 'count': 2}, {'labels': ['Session'], 'count': 4}, {'labels': ['Machine'], 'count': 1}, {'labels': ['Batch'], 'count': 1}, {'labels': ['Shift'], 'count': 1}, {'labels': ['Supplier'], 'count': 1}, {'labels': ['Product'], 'count': 1}]",
+    "timestamp": "2025-04-06T20:31:25.070210"
+  },
+  {
+    "id": "20_1743952368",
+    "source_id": "default",
+    "query": "What are the main entities in this knowledge graph?",
+    "result": "I encountered an error processing your query: {code: Neo.ClientError.Statement.SyntaxError} {message: Invalid input 'Simple': expected 'FOREACH', 'ALTER', 'ORDER BY', 'CALL', 'USING PERIODIC COMMIT', 'CREATE', 'LOAD CSV', 'START DATABASE', 'STOP DATABASE', 'DEALLOCATE', 'DELETE', 'DENY', 'DETACH', 'DROP', 'DRYRUN', 'FINISH', 'GRANT', 'INSERT', 'LIMIT', 'MATCH', 'MERGE', 'NODETACH', 'OFFSET', 'OPTIONAL', 'REALLOCATE', 'REMOVE', 'RENAME', 'RETURN', 'REVOKE', 'ENABLE SERVER', 'SET', 'SHOW', 'SKIP', 'TERMINATE', 'UNWIND', 'USE' or 'WITH' (line 1, column 1 (offset: 0))\n\"Simple Query:\"\n ^}. \n\nHere's some basic information about the graph: [{'labels': ['Factory'], 'count': 2}, {'labels': ['Session'], 'count': 5}, {'labels': ['Message'], 'count': 2}, {'labels': ['Machine'], 'count': 1}, {'labels': ['Batch'], 'count': 1}, {'labels': ['Shift'], 'count': 1}, {'labels': ['Supplier'], 'count': 1}, {'labels': ['Product'], 'count': 1}]",
+    "timestamp": "2025-04-06T20:42:48.139282"
   }
 ]
