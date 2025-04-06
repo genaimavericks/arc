@@ -27,6 +27,7 @@ interface DataSource {
   type: string
   last_updated: string
   status: string
+  uploaded_by: string
 }
 
 interface DataMetrics {
@@ -212,7 +213,8 @@ export function DataDashboard() {
     const filtered = datasets.filter((dataset) =>
       dataset.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       dataset.type.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      dataset.status.toLowerCase().includes(searchQuery.toLowerCase())
+      dataset.status.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      dataset.uploaded_by.toLowerCase().includes(searchQuery.toLowerCase())
     )
 
     // Sort the filtered datasets
@@ -446,6 +448,17 @@ export function DataDashboard() {
                       </span>
                     )}
                   </TableHead>
+                  <TableHead 
+                    className="cursor-pointer hover:text-primary transition-colors"
+                    onClick={() => handleSort("uploaded_by")}
+                  >
+                    Uploaded By
+                    {sortColumn === "uploaded_by" && (
+                      <span className="ml-1">
+                        {sortDirection === "asc" ? "↑" : "↓"}
+                      </span>
+                    )}
+                  </TableHead>
                   <TableHead className="w-[180px] text-center">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -457,6 +470,7 @@ export function DataDashboard() {
                       <TableCell>{dataset.type}</TableCell>
                       <TableCell>{formatDate(dataset.last_updated)}</TableCell>
                       <TableCell className={getStatusClass(dataset.status)}>{dataset.status}</TableCell>
+                      <TableCell>{dataset.uploaded_by}</TableCell>
                       <TableCell>
                         <div className="flex justify-center space-x-2">
                           <Button
@@ -511,7 +525,7 @@ export function DataDashboard() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={5} className="h-24 text-center">
+                    <TableCell colSpan={6} className="h-24 text-center">
                       {searchQuery
                         ? "No matching datasets found."
                         : "No datasets available. Create one by clicking 'New Dataset'."}

@@ -991,7 +991,7 @@ def process_db_ingestion_with_db(job_id, db_type, db_config, chunk_size, db):
                         existing_df = pd.read_parquet(output_file)
                         # Concatenate with new chunk
                         combined_df = pd.concat([existing_df, chunk], ignore_index=True)
-                        # Write back to file
+                        # Write back to the file
                         combined_df.to_parquet(output_file, index=False)
                     else:
                         chunk.to_parquet(output_file, index=False)
@@ -2139,13 +2139,31 @@ async def get_data_sources(
     for job in completed_jobs:
         if job.type == "profile":
             continue
+            
+        # Get uploaded_by information from the UploadedFile table if it's a file type
+        uploaded_by = "Unknown"
+        if job.type == "file":
+            # Try to find the file record that matches this job
+            file_info = None
+            if job.config:
+                try:
+                    config_data = json.loads(job.config)
+                    if "file_id" in config_data:
+                        file_info = db.query(UploadedFile).filter(UploadedFile.id == config_data["file_id"]).first()
+                except json.JSONDecodeError:
+                    pass
+                    
+            if file_info and file_info.uploaded_by:
+                uploaded_by = file_info.uploaded_by
+                
         sources.append(
             DataSource(
                 id=job.id,
                 name=job.name,
                 type="File" if job.type == "file" else "Database",
                 last_updated=job.end_time.strftime("%Y-%m-%d %H:%M:%S") if isinstance(job.end_time, datetime) else job.end_time,
-                status="Active"
+                status="Active",
+                uploaded_by=uploaded_by
             )
         )
     
