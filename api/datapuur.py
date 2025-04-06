@@ -1311,6 +1311,9 @@ async def get_ingestion_history(
         # Build query
         query = db.query(IngestionJob)
         
+        # Filter out records of type 'profile'
+        query = query.filter(IngestionJob.type != "profile")
+        
         # Apply filters
         if type:
             query = query.filter(IngestionJob.type == type)
