@@ -247,7 +247,7 @@ async def list_profiles(
                 "file_name": profile.file_name,
                 "total_rows": profile.total_rows,
                 "total_columns": profile.total_columns,
-                "data_quality_score": profile.data_quality_score,
+                "data_quality_score": profile.data_quality_score * 100 if profile.data_quality_score is not None else None,
                 "created_at": profile.created_at
             })
         
@@ -294,6 +294,51 @@ async def get_profile(
         # Get column profiles from JSON
         column_profiles = profile_result.column_profiles
         
+        # Extract original column headers if they exist in the column profiles
+        original_headers = []
+        
+        # Try to extract column names from the profile data
+        if column_profiles:
+            # Check if column_profiles is a dictionary or a list
+            if isinstance(column_profiles, dict):
+                # Handle dictionary format
+                for key in sorted([int(k) for k in column_profiles.keys() if k.isdigit()]):
+                    column_key = str(key)
+                    column_data = column_profiles[column_key]
+                    
+                    # Try different ways to get the column name
+                    if isinstance(column_data, dict):
+                        # First check for a 'column_name' field (most common in this dataset)
+                        if "column_name" in column_data:
+                            original_headers.append(column_data["column_name"])
+                        # Then check for a 'name' field
+                        elif "name" in column_data:
+                            original_headers.append(column_data["name"])
+                        # If no name found, use a generic name
+                        else:
+                            original_headers.append(f"Column {key}")
+                    else:
+                        original_headers.append(f"Column {key}")
+            
+            elif isinstance(column_profiles, list):
+                # Handle list format - this is the format we're seeing in the data
+                for i, column in enumerate(column_profiles):
+                    if isinstance(column, dict):
+                        # First check for a 'column_name' field (most common in this dataset)
+                        if "column_name" in column:
+                            original_headers.append(column["column_name"])
+                        # Then check for a 'name' field
+                        elif "name" in column:
+                            original_headers.append(column["name"])
+                        # If no name found, use a generic name
+                        else:
+                            original_headers.append(f"Column {i}")
+                    else:
+                        original_headers.append(f"Column {i}")
+        
+        # Log the extracted headers for debugging
+        logger.debug(f"[{request_id}] Extracted column headers: {original_headers[:5]}...")
+        
         # Prepare response
         response = {
             "id": profile_result.id,
@@ -301,8 +346,9 @@ async def get_profile(
             "file_name": profile_result.file_name,
             "total_rows": profile_result.total_rows,
             "total_columns": profile_result.total_columns,
-            "data_quality_score": profile_result.data_quality_score,
+            "data_quality_score": profile_result.data_quality_score * 100 if profile_result.data_quality_score is not None else None,
             "columns": column_profiles,
+            "original_headers": original_headers,
             "created_at": profile_result.created_at
         }
         
@@ -351,7 +397,7 @@ async def get_profile_by_file_id(
             "file_name": profile_result.file_name,
             "total_rows": profile_result.total_rows,
             "total_columns": profile_result.total_columns,
-            "data_quality_score": profile_result.data_quality_score,
+            "data_quality_score": profile_result.data_quality_score * 100 if profile_result.data_quality_score is not None else None,
             "created_at": profile_result.created_at
         }
     

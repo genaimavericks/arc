@@ -118,6 +118,7 @@ export function ProfileList({ onProfileSelect, selectedProfileId, fileIdFilter }
   }
 
   const getQualityBadgeVariant = (score: number) => {
+    // Score is already multiplied by 100 from the backend
     if (score >= 90) return "success"
     if (score >= 70) return "default"
     if (score >= 50) return "warning"
@@ -190,7 +191,7 @@ export function ProfileList({ onProfileSelect, selectedProfileId, fileIdFilter }
                         </TableCell>
                         <TableCell>
                           <Badge variant={getQualityBadgeVariant(profile.data_quality_score) as any}>
-                            {Math.round(profile.data_quality_score)}%
+                            {profile.data_quality_score !== undefined ? `${Math.round(profile.data_quality_score)}%` : 'N/A'}
                           </Badge>
                         </TableCell>
                         <TableCell>

@@ -23,15 +23,39 @@ class DataProfiler:
             "patterns": self._detect_patterns(series)
         }
 
+        # Try to convert string columns to numeric if they contain numeric data
+        numeric_series = series
+        is_numeric = pd.api.types.is_numeric_dtype(series)
+        
+        if not is_numeric and series.dtype == 'object':
+            # Try to convert string to numeric
+            try:
+                numeric_series = pd.to_numeric(series, errors='coerce')
+                # If we have at least 80% of values that could be converted to numeric, consider it numeric
+                if numeric_series.notna().mean() >= 0.8:
+                    is_numeric = True
+            except:
+                pass
+
         # Numeric statistics if applicable
-        if pd.api.types.is_numeric_dtype(series):
-            profile.update({
-                "min_value": str(series.min()),
-                "max_value": str(series.max()),
-                "mean_value": float(series.mean()),
-                "median_value": float(series.median()),
-                "std_dev": float(series.std()),
-            })
+        if is_numeric:
+            try:
+                profile.update({
+                    "min_value": str(numeric_series.min()) if not pd.isna(numeric_series.min()) else None,
+                    "max_value": str(numeric_series.max()) if not pd.isna(numeric_series.max()) else None,
+                    "mean_value": float(numeric_series.mean()) if not pd.isna(numeric_series.mean()) else None,
+                    "median_value": float(numeric_series.median()) if not pd.isna(numeric_series.median()) else None,
+                    "std_dev": float(numeric_series.std()) if not pd.isna(numeric_series.std()) else None,
+                })
+            except:
+                # Fallback if any calculation fails
+                profile.update({
+                    "min_value": None,
+                    "max_value": None,
+                    "mean_value": None,
+                    "median_value": None,
+                    "std_dev": None,
+                })
         else:
             profile.update({
                 "min_value": None,
@@ -61,6 +85,19 @@ class DataProfiler:
             valid_phones = series.dropna().str.match(r'^\+?[\d\s-]{10,}$')
             if valid_phones.mean() > 0.5:  # If more than 50% match phone pattern
                 return 'phone'
+            
+            # Check for numeric strings
+            try:
+                numeric_series = pd.to_numeric(series.dropna(), errors='coerce')
+                # If at least 80% of non-null values can be converted to numeric, consider it numeric
+                if numeric_series.notna().mean() >= 0.8:
+                    # Check if all values are integers
+                    if all(float(x).is_integer() for x in numeric_series.dropna()):
+                        return 'integer'
+                    else:
+                        return 'float'
+            except:
+                pass
             
             return 'string'
         
