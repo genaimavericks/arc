@@ -1016,6 +1016,35 @@ class SchemaAwareGraphAssistant:
             # Add schema awareness to the query
             start_time = time.time()
             
+            # Handle schema-related queries directly
+            if any(keyword in question.lower() for keyword in ['schema', 'structure', 'entities', 'nodes', 'relationships']):
+                try:
+                    # Get node information
+                    node_query = """
+                    MATCH (n)
+                    WITH DISTINCT labels(n) as labels, count(n) as count
+                    RETURN {labels: labels, count: count} as nodeInfo
+                    """
+                    node_info = self._safe_execute_query(self.chain.graph, node_query)
+                    
+                    # Get relationship information
+                    rel_query = """
+                    MATCH ()-[r]->() 
+                    WITH DISTINCT type(r) as type, count(r) as count
+                    RETURN {type: type, count: count} as relInfo
+                    """
+                    rel_info = self._safe_execute_query(self.chain.graph, rel_query)
+                    
+                    # Format results nicely
+                    nodes_str = "\nNodes:\n" + "\n".join([f"- {info['nodeInfo']['labels']}: {info['nodeInfo']['count']} instances" for info in node_info])
+                    rels_str = "\nRelationships:\n" + "\n".join([f"- {info['relInfo']['type']}: {info['relInfo']['count']} instances" for info in rel_info])
+                    
+                    return {"result": f"Here's the graph structure:{nodes_str}{rels_str}"}
+
+                except Exception as schema_e:
+                    print(f"ERROR: Schema query failed: {str(schema_e)}")
+                    # Fall through to regular processing
+            
             # Use a direct approach to generate and execute Cypher
             try:
                 # Step 1: Generate Cypher using the cypher_prompt

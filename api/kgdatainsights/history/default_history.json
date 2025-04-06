@@ -138,5 +138,117 @@
     "query": "What are the main entities in this knowledge graph?",
     "result": "I encountered an error processing your query: {code: Neo.ClientError.Statement.SyntaxError} {message: Invalid input 'Simple': expected 'FOREACH', 'ALTER', 'ORDER BY', 'CALL', 'USING PERIODIC COMMIT', 'CREATE', 'LOAD CSV', 'START DATABASE', 'STOP DATABASE', 'DEALLOCATE', 'DELETE', 'DENY', 'DETACH', 'DROP', 'DRYRUN', 'FINISH', 'GRANT', 'INSERT', 'LIMIT', 'MATCH', 'MERGE', 'NODETACH', 'OFFSET', 'OPTIONAL', 'REALLOCATE', 'REMOVE', 'RENAME', 'RETURN', 'REVOKE', 'ENABLE SERVER', 'SET', 'SHOW', 'SKIP', 'TERMINATE', 'UNWIND', 'USE' or 'WITH' (line 1, column 1 (offset: 0))\n\"Simple Query:\"\n ^}. \n\nHere's some basic information about the graph: [{'labels': ['Factory'], 'count': 2}, {'labels': ['Session'], 'count': 5}, {'labels': ['Message'], 'count': 2}, {'labels': ['Machine'], 'count': 1}, {'labels': ['Batch'], 'count': 1}, {'labels': ['Shift'], 'count': 1}, {'labels': ['Supplier'], 'count': 1}, {'labels': ['Product'], 'count': 1}]",
     "timestamp": "2025-04-06T20:42:48.139282"
+  },
+  {
+    "id": "21_1743957018",
+    "source_id": "default",
+    "query": "What are the main entities in this knowledge graph?",
+    "result": "I encountered an error processing your query: {code: Neo.ClientError.Statement.SyntaxError} {message: Invalid input 'Simple': expected 'FOREACH', 'ALTER', 'ORDER BY', 'CALL', 'USING PERIODIC COMMIT', 'CREATE', 'LOAD CSV', 'START DATABASE', 'STOP DATABASE', 'DEALLOCATE', 'DELETE', 'DENY', 'DETACH', 'DROP', 'DRYRUN', 'FINISH', 'GRANT', 'INSERT', 'LIMIT', 'MATCH', 'MERGE', 'NODETACH', 'OFFSET', 'OPTIONAL', 'REALLOCATE', 'REMOVE', 'RENAME', 'RETURN', 'REVOKE', 'ENABLE SERVER', 'SET', 'SHOW', 'SKIP', 'TERMINATE', 'UNWIND', 'USE' or 'WITH' (line 1, column 1 (offset: 0))\n\"Simple Query:\"\n ^}. \n\nHere's some basic information about the graph: [{'labels': ['Factory'], 'count': 2}, {'labels': ['Session'], 'count': 5}, {'labels': ['Message'], 'count': 4}, {'labels': ['Machine'], 'count': 1}, {'labels': ['Batch'], 'count': 1}, {'labels': ['Shift'], 'count': 1}, {'labels': ['Supplier'], 'count': 1}, {'labels': ['Product'], 'count': 1}]",
+    "timestamp": "2025-04-06T22:00:18.368383"
+  },
+  {
+    "id": "22_1743957064",
+    "source_id": "default",
+    "query": "What are the main entities in this knowledge graph?",
+    "result": "I encountered an error processing your query: {code: Neo.ClientError.Statement.SyntaxError} {message: Invalid input 'Simple': expected 'FOREACH', 'ALTER', 'ORDER BY', 'CALL', 'USING PERIODIC COMMIT', 'CREATE', 'LOAD CSV', 'START DATABASE', 'STOP DATABASE', 'DEALLOCATE', 'DELETE', 'DENY', 'DETACH', 'DROP', 'DRYRUN', 'FINISH', 'GRANT', 'INSERT', 'LIMIT', 'MATCH', 'MERGE', 'NODETACH', 'OFFSET', 'OPTIONAL', 'REALLOCATE', 'REMOVE', 'RENAME', 'RETURN', 'REVOKE', 'ENABLE SERVER', 'SET', 'SHOW', 'SKIP', 'TERMINATE', 'UNWIND', 'USE' or 'WITH' (line 1, column 1 (offset: 0))\n\"Simple Query:\"\n ^}. \n\nHere's some basic information about the graph: [{'labels': ['Factory'], 'count': 2}, {'labels': ['Session'], 'count': 5}, {'labels': ['Message'], 'count': 6}, {'labels': ['Machine'], 'count': 1}, {'labels': ['Batch'], 'count': 1}, {'labels': ['Shift'], 'count': 1}, {'labels': ['Supplier'], 'count': 1}, {'labels': ['Product'], 'count': 1}]",
+    "timestamp": "2025-04-06T22:01:04.153512"
+  },
+  {
+    "id": "23_1743957416",
+    "source_id": "default",
+    "query": "How many nodes and relationships are in the graph?",
+    "result": "I encountered an error processing your query: {code: Neo.ClientError.Statement.SyntaxError} {message: All sub queries in an UNION must have the same return column names (line 2, column 1 (offset: 39))\n\"UNION ALL\"\n ^}. \n\nHere's some basic information about the graph: [{'labels': ['Factory'], 'count': 2}, {'labels': ['Session'], 'count': 6}, {'labels': ['Message'], 'count': 8}, {'labels': ['Machine'], 'count': 1}, {'labels': ['Batch'], 'count': 1}, {'labels': ['Shift'], 'count': 1}, {'labels': ['Supplier'], 'count': 1}, {'labels': ['Product'], 'count': 1}]",
+    "timestamp": "2025-04-06T22:06:56.512437"
+  },
+  {
+    "id": "24_1743957524",
+    "source_id": "default",
+    "query": "What insights can you provide about this data?",
+    "result": "I'm sorry, but I don't have any information to provide insights about this data.",
+    "timestamp": "2025-04-06T22:08:41.442943"
+  },
+  {
+    "id": "25_1743959025",
+    "source_id": "default",
+    "query": "What insights can you provide about this data?",
+    "result": "I'm sorry, but I don't have any information to provide insights about this data.",
+    "timestamp": "2025-04-06T22:33:42.406459"
+  },
+  {
+    "id": "26_1743959035",
+    "source_id": "default",
+    "query": "What are the main entities in this knowledge graph?",
+    "result": "I encountered an error processing your query: {code: Neo.ClientError.Procedure.ProcedureNotFound} {message: There is no procedure with the name `db.schema` registered for this database instance. Please ensure you've spelled the procedure name correctly and that the procedure is properly deployed.}. \n\nHere's some basic information about the graph: [{'labels': ['Factory'], 'count': 2}, {'labels': ['Session'], 'count': 7}, {'labels': ['Message'], 'count': 14}, {'labels': ['Machine'], 'count': 1}, {'labels': ['Batch'], 'count': 1}, {'labels': ['Shift'], 'count': 1}, {'labels': ['Supplier'], 'count': 1}, {'labels': ['Product'], 'count': 1}]",
+    "timestamp": "2025-04-06T22:33:55.209316"
+  },
+  {
+    "id": "27_1743959268",
+    "source_id": "default",
+    "query": "What are the main entities in this knowledge graph?",
+    "result": "I encountered an error processing your query: {code: Neo.ClientError.Procedure.ProcedureNotFound} {message: There is no procedure with the name `db.schema` registered for this database instance. Please ensure you've spelled the procedure name correctly and that the procedure is properly deployed.}. \n\nHere's some basic information about the graph: [{'NodeTypes': ['Batch'], 'NodeCount': 1}, {'NodeTypes': ['Factory'], 'NodeCount': 2}, {'NodeTypes': ['Machine'], 'NodeCount': 1}, {'NodeTypes': ['Message'], 'NodeCount': 16}, {'NodeTypes': ['Product'], 'NodeCount': 1}, {'NodeTypes': ['Session'], 'NodeCount': 8}, {'NodeTypes': ['Shift'], 'NodeCount': 1}, {'NodeTypes': ['Supplier'], 'NodeCount': 1}]",
+    "timestamp": "2025-04-06T22:37:48.438737"
+  },
+  {
+    "id": "28_1743960136",
+    "source_id": "default",
+    "query": "What are the main entities in this knowledge graph?",
+    "result": "Here's the graph structure:\nNodes:\n- ['Factory']: 2 instances\n- ['Session']: 9 instances\n- ['Message']: 18 instances\n- ['Machine']: 1 instances\n- ['Batch']: 1 instances\n- ['Shift']: 1 instances\n- ['Supplier']: 1 instances\n- ['Product']: 1 instances\nRelationships:\n- LAST_MESSAGE: 5 instances\n- NEXT: 13 instances\n- PRODUCES: 2 instances\n- USES: 1 instances\n- WORKS_ON: 1 instances\n- SUPPLIES: 1 instances",
+    "timestamp": "2025-04-06T22:52:16.936552"
+  },
+  {
+    "id": "29_1743960165",
+    "source_id": "default",
+    "query": "How many factories are there? ",
+    "result": "There are 2 factories.",
+    "timestamp": "2025-04-06T22:52:42.044486"
+  },
+  {
+    "id": "30_1743960174",
+    "source_id": "default",
+    "query": "Show me the most connected nodes in the graph",
+    "result": "Here's the graph structure:\nNodes:\n- ['Factory']: 2 instances\n- ['Session']: 9 instances\n- ['Message']: 20 instances\n- ['Machine']: 1 instances\n- ['Batch']: 1 instances\n- ['Shift']: 1 instances\n- ['Supplier']: 1 instances\n- ['Product']: 1 instances\nRelationships:\n- LAST_MESSAGE: 6 instances\n- NEXT: 14 instances\n- PRODUCES: 2 instances\n- USES: 1 instances\n- WORKS_ON: 1 instances\n- SUPPLIES: 1 instances",
+    "timestamp": "2025-04-06T22:52:54.578244"
+  },
+  {
+    "id": "31_1743960178",
+    "source_id": "default",
+    "query": "What are the main entities in this knowledge graph?",
+    "result": "Here's the graph structure:\nNodes:\n- ['Factory']: 2 instances\n- ['Session']: 9 instances\n- ['Message']: 20 instances\n- ['Machine']: 1 instances\n- ['Batch']: 1 instances\n- ['Shift']: 1 instances\n- ['Supplier']: 1 instances\n- ['Product']: 1 instances\nRelationships:\n- LAST_MESSAGE: 6 instances\n- NEXT: 14 instances\n- PRODUCES: 2 instances\n- USES: 1 instances\n- WORKS_ON: 1 instances\n- SUPPLIES: 1 instances",
+    "timestamp": "2025-04-06T22:52:58.028352"
+  },
+  {
+    "id": "32_1743960183",
+    "source_id": "default",
+    "query": "What are the key patterns or trends in this data?",
+    "result": "I encountered an error processing your query: {code: Neo.ClientError.Statement.SyntaxError} {message: Invalid input 'This': expected 'FOREACH', 'ALTER', 'ORDER BY', 'CALL', 'USING PERIODIC COMMIT', 'CREATE', 'LOAD CSV', 'START DATABASE', 'STOP DATABASE', 'DEALLOCATE', 'DELETE', 'DENY', 'DETACH', 'DROP', 'DRYRUN', 'FINISH', 'GRANT', 'INSERT', 'LIMIT', 'MATCH', 'MERGE', 'NODETACH', 'OFFSET', 'OPTIONAL', 'REALLOCATE', 'REMOVE', 'RENAME', 'RETURN', 'REVOKE', 'ENABLE SERVER', 'SET', 'SHOW', 'SKIP', 'TERMINATE', 'UNWIND', 'USE' or 'WITH' (line 1, column 1 (offset: 0))\n\"This question is too broad to be converted into a specific Cypher query without additional context. The key patterns or trends in the data could refer to a wide range of potential analyses depending on the specific properties and relationships in the graph. For example, it could refer to the most common products produced by factories, the most frequently used machines, the suppliers with the most connections to factories, etc. Without more specific information about what the user is interested in, it's not possible to write a specific Cypher query to answer this question.\"\n ^}. \n\nHere's some basic information about the graph: [{'labels': ['Factory'], 'count': 2}, {'labels': ['Session'], 'count': 9}, {'labels': ['Message'], 'count': 20}, {'labels': ['Machine'], 'count': 1}, {'labels': ['Batch'], 'count': 1}, {'labels': ['Shift'], 'count': 1}, {'labels': ['Supplier'], 'count': 1}, {'labels': ['Product'], 'count': 1}]",
+    "timestamp": "2025-04-06T22:53:03.515452"
+  },
+  {
+    "id": "33_1743960207",
+    "source_id": "default",
+    "query": "Which factories are having good output",
+    "result": "I'm sorry, but I don't have the information to answer that question.",
+    "timestamp": "2025-04-06T22:53:24.047337"
+  },
+  {
+    "id": "34_1743960235",
+    "source_id": "default",
+    "query": "Which factories are having good production volumes?",
+    "result": "I'm sorry, but I don't have the information to answer that question.",
+    "timestamp": "2025-04-06T22:53:52.622120"
+  },
+  {
+    "id": "35_1743960239",
+    "source_id": "default",
+    "query": "Show me the most connected nodes in the graph",
+    "result": "Here's the graph structure:\nNodes:\n- ['Factory']: 2 instances\n- ['Session']: 9 instances\n- ['Message']: 26 instances\n- ['Machine']: 1 instances\n- ['Batch']: 1 instances\n- ['Shift']: 1 instances\n- ['Supplier']: 1 instances\n- ['Product']: 1 instances\nRelationships:\n- LAST_MESSAGE: 6 instances\n- NEXT: 20 instances\n- PRODUCES: 2 instances\n- USES: 1 instances\n- WORKS_ON: 1 instances\n- SUPPLIES: 1 instances",
+    "timestamp": "2025-04-06T22:53:59.821583"
+  },
+  {
+    "id": "36_1743960786",
+    "source_id": "default",
+    "query": "How many nodes and relationships are in the graph?",
+    "result": "Here's the graph structure:\nNodes:\n- ['Factory']: 1 instances\n- ['Batch']: 1 instances\n- ['Shift']: 1 instances\n- ['Product']: 1 instances\n- ['Session']: 1 instances\nRelationships:\n- PRODUCES: 2 instances\n- WORKS_ON: 1 instances",
+    "timestamp": "2025-04-06T23:03:06.944967"
   }
 ]
