@@ -62,3 +62,7 @@ uploads/
 api/uploads/
 api/db.logs
 runtime-data**
+
+data/*
+api/data/*
+api/uploads/*
