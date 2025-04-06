@@ -12,12 +12,12 @@ from typing import Dict, List, Optional, Any
 import httpx
 from fastapi import Depends, HTTPException
 from dotenv import load_dotenv
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
+from langchain.chat_models import ChatOpenAI
+from langchain.chains import GraphCypherQAChain
+from langchain.graphs import Neo4jGraph
+from langchain.prompts import ChatPromptTemplate
 from langchain_neo4j import (
-    Neo4jGraph,
-    Neo4jChatMessageHistory,
-    GraphCypherQAChain
+    Neo4jChatMessageHistory
 )
 
 from .templates.foamfactory.cypher_prompt_template import CYPHER_GENERATION_PROMPT
@@ -145,65 +145,81 @@ class SchemaAwareGraphAssistant:
         # Initialize cache
         self.cache = Cache()
     
-    def _get_connection_params(self) -> Dict[str, str]:
-        """Get Neo4j connection parameters from the database API"""
-        try:
-            # Use the database_api module to get connection params
-            config = get_database_config()
-            print('Database configuration' + str(config))
-            if self.source_id not in config:
-                # Fallback to default or environment variables if the source_id is not found
-                return {
-                    "uri": os.getenv("NEO4J_URI"),
-                    "username": os.getenv("NEO4J_USERNAME"),
-                    "password": os.getenv("NEO4J_PASSWORD"),
-                    "database": "neo4j"
-                }
-            
-            # Get connection parameters directly from JSON format
-            connection_params = config[self.source_id]
-            
-            # The JSON format already has the keys in the expected format
-            # Just need to ensure all required keys are present
-            params = {
-                "uri": connection_params.get("uri", ""),
-                "username": connection_params.get("username", ""),
-                "password": connection_params.get("password", ""),
-                "database": connection_params.get("database", "neo4j")
-            }
-            
-            return params
-            
-        except Exception as e:
-            print(f"Error getting connection parameters: {str(e)}")
-            # Fallback to environment variables
-            return {
-                "uri": os.getenv("NEO4J_URI"),
-                "username": os.getenv("NEO4J_USERNAME"),
-                "password": os.getenv("NEO4J_PASSWORD"),
-                "database": "neo4j"
-            }
-            
-    def _ensure_schema(self) -> None:
-        """Check if schema exists, fetch and save if needed"""
-        schema_file = SCHEMA_DIR / f"schema_{self.source_id}.json"
+    def _get_connection_params(self) -> dict:
+        """
+        Get connection parameters for the specified source from the database API.
         
-        # If schema file doesn't exist, fetch and save it
-        if not schema_file.exists():
-            print(f"Schema file for {self.source_id} not found. Fetching schema...")
+        Returns:
+            dict: Connection parameters including uri, username, password, and database
+        """
+        try:
+            # Get the full database configuration
+            config = get_database_config()
             
-            schema = self._fetch_neo4j_schema()
+            # Get the specific graph configuration
+            graph_config = config.get(self.source_id, {})
             
-            # Save the schema to file
-            with open(schema_file, "w") as f:
-                json.dump(schema, f, indent=2)
-                
-            print(f"Schema saved to {schema_file}")
+            # Convert to the expected format with consistent key names
+            return {
+                "uri": graph_config.get("uri"),
+                "username": graph_config.get("username"),
+                "password": graph_config.get("password"),
+                "database": graph_config.get("database")
+            }
+        except Exception as e:
+            print(f"ERROR: Failed to get connection params for {self.source_id}: {str(e)}")
+            raise ValueError(f"Invalid database configuration for {self.source_id}")
+    
+    def _ensure_schema(self) -> None:
+        """Check if schema exists, fetch and save if needed, deleting invalid existing files."""
+        try:
+            SCHEMA_DIR.mkdir(parents=True, exist_ok=True)
+            schema_file = SCHEMA_DIR / f"schema_{self.source_id}.json"
+
+            # --- Check and delete existing invalid file ---
+            if schema_file.exists():
+                try:
+                    with open(schema_file, 'r') as f:
+                        # Try loading to check if it's valid JSON at least
+                        existing_schema = json.load(f)
+                        # Check if it's a dictionary
+                        if not isinstance(existing_schema, dict):
+                            print(f"WARNING: Existing schema file {schema_file} is not a dictionary. Deleting.")
+                            schema_file.unlink() # Delete if not a dict
+                except (json.JSONDecodeError, Exception) as e:
+                     # Catch errors during loading (corrupt file) or other issues
+                     print(f"WARNING: Existing schema file {schema_file} is corrupt or invalid ({e}). Deleting.")
+                     schema_file.unlink() # Delete if corrupt/unreadable
+            # --- End check/delete ---
+
+            # If schema file doesn't exist (or was just deleted), fetch and save it
+            if not schema_file.exists():
+                print(f"Schema file for {self.source_id} not found or was invalid. Fetching schema...")
+                # Fetch attempt (this should already raise ValueError if it can't get a dict)
+                schema = self._fetch_neo4j_schema()
+
+                # Log the type after successful fetch (should always be dict here)
+                print(f"DEBUG [ensure_schema]: Successfully fetched schema of type: {type(schema)}")
+
+                # Save the schema (guaranteed to be a dict by _fetch_neo4j_schema)
+                with open(schema_file, "w") as f:
+                    json.dump(schema, f, indent=2)
+                print(f"Schema saved to {schema_file}")
+            else:
+                 # If we reach here, the existing file was checked and deemed valid JSON dict
+                 print(f"DEBUG: Using existing valid schema file: {schema_file}")
+
+        except Exception as e:
+            # Catch errors from fetching, saving, or other operations
+            print(f"ERROR: Failed to ensure schema: {str(e)}")
+            print(f"DEBUG: Stack trace: {traceback.format_exc()}")
+            raise ValueError(f"Could not initialize schema for {self.source_id}: {str(e)}")
     
     def _fetch_neo4j_schema(self) -> Dict[str, Any]:
-        """Fetch the Neo4j schema using the connection parameters"""
+        """Fetch the Neo4j schema using the connection parameters, ensuring a dictionary is returned."""
         params = self._get_connection_params()
-        
+        schema = None # Initialize schema
+
         # Log connection parameters (hide password)
         conn_debug = {
             "uri": params.get("uri"),
@@ -212,10 +228,10 @@ class SchemaAwareGraphAssistant:
             "password": "*****" if params.get("password") else None
         }
         print(f"DEBUG: Attempting to connect to Neo4j with params: {conn_debug}")
-        
+
+        # --- Attempt 1: LangChain Enhanced Schema ---
         try:
-            # First attempt: Try using LangChain's Neo4jGraph with enhanced schema (uses APOC)
-            print(f"DEBUG: Creating Neo4jGraph connection for {self.source_id}")
+            print(f"DEBUG: Creating Neo4jGraph connection for {self.source_id} (Attempt 1: Enhanced)")
             temp_graph = Neo4jGraph(
                 url=params.get("uri"),
                 username=params.get("username"),
@@ -224,21 +240,48 @@ class SchemaAwareGraphAssistant:
                 enhanced_schema=True,
                 refresh_schema=True  # Enable schema refresh to get latest schema
             )
-            
-            # Get the schema and return it
-            print(f"DEBUG: Successfully connected to Neo4j for {self.source_id}")
+
             print(f"DEBUG: Attempting to extract schema using enhanced method (requires APOC)")
-            schema = temp_graph.schema
-            print(f"DEBUG: Schema successfully extracted using enhanced method")
-            return schema
-            
+            fetched_schema = temp_graph.schema
+            print(f"DEBUG: Raw schema type from enhanced method: {type(fetched_schema)}")
+
+            # Explicitly check if the fetched schema is a dictionary
+            if isinstance(fetched_schema, dict):
+                print(f"DEBUG: Schema successfully extracted using enhanced method and is a dictionary.")
+                schema = fetched_schema # Assign valid schema
+            else:
+                print(f"WARNING: Enhanced schema extraction did not return a dictionary (type: {type(fetched_schema)}). Will try fallback.")
+                # Do not return here, let it fall through to the fallback
+
         except Exception as e:
-            print(f"ERROR: Enhanced schema extraction failed: {str(e)}")
+            print(f"ERROR: Enhanced schema extraction failed with exception: {str(e)}")
             print(f"DEBUG: Stack trace: ", traceback.format_exc())
+            # Fall through to fallback
+
+        # --- Attempt 2: Manual Fallback (if Attempt 1 failed or returned non-dict) ---
+        if not isinstance(schema, dict): # Check if we still don't have a valid dict schema
             print("INFO: Falling back to manual schema extraction without APOC...")
-            
-            # Second attempt: Use custom Cypher queries to extract schema without APOC
-            return self._fetch_schema_without_apoc(params)
+            try:
+                fallback_schema = self._fetch_schema_without_apoc(params)
+                # Check the fallback result as well
+                if isinstance(fallback_schema, dict):
+                     print("DEBUG: Manual schema extraction successful and returned a dictionary.")
+                     schema = fallback_schema # Assign valid schema from fallback
+                else:
+                     print(f"ERROR: Manual schema extraction fallback also failed to return a dictionary (type: {type(fallback_schema)}).")
+                     # schema remains None or the non-dict value from attempt 1
+            except Exception as fallback_e:
+                print(f"ERROR: Manual schema extraction fallback failed with exception: {str(fallback_e)}")
+                print(f"DEBUG: Fallback stack trace: ", traceback.format_exc())
+                # schema remains None or the non-dict value from attempt 1
+
+        # --- Final Check and Return ---
+        if isinstance(schema, dict):
+            return schema # Return the valid dictionary schema
+        else:
+            # If both methods failed to produce a dictionary, raise an error
+            # This error will be caught by _ensure_schema's exception handler
+            raise ValueError("Failed to fetch a valid dictionary schema from Neo4j using both enhanced and fallback methods.")
     
     def _fetch_schema_without_apoc(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Extract schema using direct Cypher queries without relying on APOC"""
@@ -371,6 +414,7 @@ class SchemaAwareGraphAssistant:
         
         # Prepare a schema-based prompt for the LLM
         schema_json = json.dumps(schema, indent=2)
+        schema_json = schema_json.replace("\n", "").replace("\t", "").replace("{", "{{").replace("}", "}}")
         schema_summary_json = json.dumps(schema_summary, indent=2)
         
         # Define a system prompt for prompt generation
@@ -392,14 +436,32 @@ class SchemaAwareGraphAssistant:
         
         The template should:
         1. Be tailored to the specific domain and structure of this knowledge graph
-        2. Include specific node labels, relationship types, and important properties from the schema
-        3. Provide guidance on Neo4j Cypher best practices
-        4. Include examples of good query patterns based on this schema
-        5. CRITICALLY IMPORTANT: Prompts with Cypher queries containing curly brackets must be properly escaped with double curly brackets.
-        6. Include placeholders for {query} where the user question will be inserted
-        7. CRITICALLY IMPORTANT: The prompt MUST explicitly instruct to return ONLY the raw Cypher query with NO explanations, NO question repetition, and NO additional text
-        8. The output must ONLY contain the executable Cypher query string without quotes or backticks around it
+        2. CRITICALLY IMPORTANT: Any literal curly braces `{}` that appear in the final prompt text you generate, INCLUDING within example Cypher queries, MUST be escaped by using double curly braces `{{}}`. The only exception is the user query placeholder `{query}` itself.
+        3. Include specific node labels, relationship types, and important properties from the schema
+        4. Provide guidance on Neo4j Cypher best practices
+        5. Include examples of good query patterns based on this schema
+        6. Strictly add 5 example queries each for simple, medium, and complex queries that would be useful for this specific knowledge graph covering all nodes, relationships and associated properties, in following format:
+
+        Simple Query:
+        <example_natural_language_query>
+        cypher query: <example_cypher_query>
         
+        Medium Query:
+        <example_natural_language_query>
+        cypher query: <example_cypher_query>
+        
+        Complex Query:
+        <example_natural_language_query>
+        cypher query: <example_cypher_query>
+        
+        7. Include placeholders for {query} where the user question will be inserted
+        8. CRITICALLY IMPORTANT: The prompt MUST explicitly instruct to return ONLY the raw Cypher query with NO explanations, NO question repetition, and NO additional text
+        9. The output must ONLY contain the executable Cypher query string without quotes or backticks around it
+        10. VERY IMPORTANT: Generate Cypher queries that embed values directly. DO NOT use parameters like $name.
+           - For string values, use single quotes: `{{name: 'Example Name'}}` (Note the double braces for the example itself!)
+           - For numeric values, use them directly: `{{born: 1234}}` (Note the double braces!)
+           - Ensure example Cypher queries you provide in the prompt follow this pattern, e.g.: `MATCH (p:Person {{name: 'Example Name'}})-[:ACTED_IN]->(m:Movie) RETURN m.title`
+    
         Do not use generic examples - use the actual node labels, relationship types and properties from the provided schema.
         Keep the prompt concise but comprehensive enough to guide accurate Cypher query generation.
         Focus on the most important entity types and relationships that would be commonly queried.
@@ -445,33 +507,33 @@ class SchemaAwareGraphAssistant:
             print(f"Generating Cypher prompt template for {self.source_id}...")
             cypher_messages = [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Here is the Neo4j schema: {schema_summary_json}\n\n{cypher_prompt_instruction}"}
+                {"role": "user", "content": f"Here is the Neo4j schema: {schema_json}\n\n{cypher_prompt_instruction}"}
             ]
             cypher_response = prompt_generator_llm.invoke(cypher_messages)
             cypher_prompt_template = cypher_response.content.strip()
             
             # Apply Neo4j property syntax escaping to prevent template variable confusion
-            cypher_prompt_template = self._escape_neo4j_properties(cypher_prompt_template)
-            print(f"DEBUG: Applied Neo4j property escaping to Cypher prompt template")
+            # cypher_prompt_template = self._escape_neo4j_properties(cypher_prompt_template)
+            # print(f"DEBUG: Applied Neo4j property escaping to Cypher prompt template")
             
             # Generate QA prompt template
             print(f"Generating QA prompt template for {self.source_id}...")
             qa_messages = [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Here is the Neo4j schema: {schema_summary_json}\n\n{qa_prompt_instruction}"}
+                {"role": "user", "content": f"Here is the Neo4j schema: {schema_json}\n\n{qa_prompt_instruction}"}
             ]
             qa_response = prompt_generator_llm.invoke(qa_messages)
             qa_prompt_template = qa_response.content.strip()
             
             # Apply Neo4j property syntax escaping to prevent template variable confusion
-            qa_prompt_template = self._escape_neo4j_properties(qa_prompt_template)
-            print(f"DEBUG: Applied Neo4j property escaping to QA prompt template")
+            # qa_prompt_template = self._escape_neo4j_properties(qa_prompt_template)
+            # print(f"DEBUG: Applied Neo4j property escaping to QA prompt template")
             
             # Generate sample queries
             print(f"Generating sample queries for {self.source_id}...")
             sample_queries_messages = [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Here is the Neo4j schema: {schema_summary_json}\n\n{sample_queries_instruction}"}
+                {"role": "user", "content": f"Here is the Neo4j schema: {schema_json}\n\n{sample_queries_instruction}"}
             ]
             sample_queries_response = prompt_generator_llm.invoke(sample_queries_messages)
             
@@ -513,7 +575,7 @@ class SchemaAwareGraphAssistant:
             # Create prompts dictionary
             prompts = {
                 "source_id": self.source_id,
-                "schema_summary": schema_summary,
+                "schema_summary": schema_json,
                 "cypher_prompt": cypher_prompt_template,
                 "qa_prompt": qa_prompt_template,
                 "sample_queries": sample_queries
@@ -533,50 +595,94 @@ class SchemaAwareGraphAssistant:
             raise RuntimeError(f"Failed to generate prompts for schema: {str(e)}")
     
     def _extract_schema_summary(self, schema: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract a summary of the schema for prompt generation"""
+        """Extract a summary of the schema for prompt generation, handling the structure from schema fetching methods."""
+        if not isinstance(schema, dict):
+            raise ValueError("Schema must be a dictionary")
+
         node_labels = []
-        relationship_types = []
+        relationship_types = set() # Use set for unique types
         properties_by_node = {}
-        relationships_by_node = {}
-        property_list = []
-        
-        # Process schema to extract information
-        if "nodes" in schema:
-            for node in schema["nodes"]:
-                label = node["labels"][0] if node.get("labels") else ""
-                if label:
+        relationships_by_node = {} # Maps source label -> list of {"type": T, "target": L}
+        property_list = set() # Use set for unique properties
+
+        try:
+            # --- Handle Node Properties ---
+            # Check for Langchain format ('node_props' with list of dicts) or fallback format ('node_props' with list of strings)
+            node_props_data = schema.get("node_props", {})
+            if not isinstance(node_props_data, dict):
+                print(f"WARNING: Expected 'node_props' to be a dict, got {type(node_props_data)}. Skipping node processing.")
+            else:
+                for label, props_info in node_props_data.items():
+                    if not isinstance(label, str):
+                        print(f"WARNING: Skipping non-string node label: {label}")
+                        continue
                     node_labels.append(label)
-                    
-                    # Extract properties for each node type
-                    if "properties" in node:
-                        properties_by_node[label] = node["properties"]
-                        for prop in node["properties"]:
-                            property_list.append(f"{label}.{prop}")
-        
-        # Process relationships and organize by source/target
-        if "relationships" in schema:
-            for rel in schema["relationships"]:
-                if "type" in rel:
-                    rel_type = rel["type"]
-                    relationship_types.append(rel_type)
-                    
-                    # Record which nodes have which relationships
-                    source = rel.get("source", "")
-                    target = rel.get("target", "")
-                    if source and target:
+                    current_props = []
+                    if isinstance(props_info, list):
+                        for prop_item in props_info:
+                            prop_name = None
+                            if isinstance(prop_item, dict) and isinstance(prop_item.get('property'), str):
+                                 # Langchain format: {'property': 'name', 'type': 'STRING'}
+                                prop_name = prop_item.get('property')
+                            elif isinstance(prop_item, str):
+                                # Fallback format: 'name'
+                                prop_name = prop_item
+
+                            if prop_name:
+                                current_props.append(prop_name)
+                                property_list.add(f"{label}.{prop_name}") # Add unique "Label.property"
+                    else:
+                         print(f"WARNING: Expected properties for label '{label}' to be a list, got {type(props_info)}")
+                    properties_by_node[label] = sorted(list(set(current_props))) # Store unique, sorted props for the label
+
+            # --- Handle Relationships ---
+            relationships_data = schema.get("relationships", [])
+            if not isinstance(relationships_data, list):
+                print(f"WARNING: Expected 'relationships' to be a list, got {type(relationships_data)}. Skipping relationship processing.")
+            else:
+                 for rel_info in relationships_data:
+                    if not isinstance(rel_info, dict):
+                        print(f"WARNING: Expected relationship info to be a dict, got {type(rel_info)}")
+                        continue
+
+                    rel_type = rel_info.get("type")
+                    # Langchain uses 'start', 'end'; Fallback uses 'source', 'target'
+                    source = rel_info.get("source") or rel_info.get("start")
+                    target = rel_info.get("target") or rel_info.get("end")
+
+                    if isinstance(rel_type, str):
+                        relationship_types.add(rel_type)
+
+                    if isinstance(source, str) and isinstance(target, str) and isinstance(rel_type, str):
                         if source not in relationships_by_node:
                             relationships_by_node[source] = []
-                        relationships_by_node[source].append({"type": rel_type, "target": target})
-        
+                        # Avoid adding duplicate relationship structures for the same source
+                        rel_entry = {"type": rel_type, "target": target}
+                        # Check existence based on content, not object identity
+                        if not any(entry == rel_entry for entry in relationships_by_node[source]):
+                             relationships_by_node[source].append(rel_entry)
+                    else:
+                        print(f"WARNING: Skipping relationship with invalid types/values: type={rel_type}({type(rel_type)}), source={source}({type(source)}), target={target}({type(target)})")
+
+            # --- Handle Relationship Properties (Optional, add if needed for prompts) ---
+            # rel_props_data = schema.get("rel_props", {})
+            # ... similar processing logic as node_props if needed ...
+
+        except Exception as e:
+            print(f"ERROR: Failed to extract schema summary: {str(e)}")
+            print(traceback.format_exc()) # Add traceback
+            raise ValueError(f"Invalid schema format during summary extraction: {str(e)}")
+
         # Create schema summary
+        final_property_list = sorted(list(property_list))
         return {
-            "node_labels": node_labels,
-            "relationship_types": relationship_types,
+            "node_labels": sorted(list(set(node_labels))), # Ensure unique and sorted
+            "relationship_types": sorted(list(relationship_types)), # Ensure unique and sorted
             "properties_by_node": properties_by_node,
             "relationships_by_node": relationships_by_node,
-            "property_list": property_list[:50]  # Limit properties sample
+            # Limit properties sample AFTER sorting and making unique
+            "property_list": final_property_list[:50]
         }
-    
 
     
     def _load_prompts(self) -> None:
@@ -686,35 +792,6 @@ class SchemaAwareGraphAssistant:
             print(f"DEBUG: {traceback.format_exc()}")
             
             
-    def _escape_neo4j_properties(self, prompt_text):
-        """Escape Neo4j property syntax in prompts to prevent template variable confusion
-        
-        This ensures that expressions like {name: 'John'} are properly escaped as {{name: 'John'}}
-        while preserving actual template variables like {query}
-        """
-        if not prompt_text:
-            return prompt_text
-            
-        # Define patterns that need escaping - Neo4j property patterns but not template variables
-        # This regex looks for {prop: value} patterns but ignores {query} or {context}
-        neo4j_prop_pattern = re.compile(r'\{([a-zA-Z0-9_]+\s*:(?![}]).*?)\}')
-        
-        # Find all Neo4j property patterns
-        matches = list(neo4j_prop_pattern.finditer(prompt_text))
-        
-        # Process matches from end to beginning to avoid offset issues
-        for match in reversed(matches):
-            # Skip if it looks like a template variable
-            content = match.group(1)
-            if content.strip() in ["query", "context", "response", "question"]:
-                continue
-                
-            # Replace with double braces
-            start, end = match.span()
-            prompt_text = prompt_text[:start] + "{" + prompt_text[start:end] + "}" + prompt_text[end:]
-            
-        return prompt_text
-        
     def _debug_print_prompts(self):
         """Print debug information about the loaded prompts"""
         print("\n=== DEBUG: PROMPT INFORMATION ===")
