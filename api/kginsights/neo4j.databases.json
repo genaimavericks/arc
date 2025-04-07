@@ -22,5 +22,11 @@
     "database": "neo4j",
     "uri": "bolt://172.104.129.10:7787",
     "password": "neo4j123"
+  },
+  "default_graph": {
+    "username": "neo4j",
+    "database": "neo4j",
+    "uri": "neo4j://localhost:7687",
+    "password": "neo4j123"
   }
 }
