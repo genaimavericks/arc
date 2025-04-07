@@ -13,18 +13,7 @@ import { ChunkSizeConfig } from "@/components/datapuur/chunk-size-config"
 import { IngestionMonitor } from "@/components/datapuur/ingestion-monitor"
 import { FileUp, Database, Table, Settings, Activity, History } from "lucide-react"
 import { motion } from "framer-motion"
-
-// Define job interface for type safety
-interface Job {
-  id: string
-  name: string
-  type: string
-  status: string
-  progress: number
-  startTime: string
-  endTime: string | null
-  details: string
-}
+import { useIngestion } from "@/lib/ingestion-context"
 
 // Define error interface
 interface IngestionError {
@@ -39,8 +28,16 @@ export default function IngestionPage() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [processingStatus, setProcessingStatus] = useState("")
   const [chunkSize, setChunkSize] = useState(1000)
-  const [ingestionJobs, setIngestionJobs] = useState<Job[]>([])
-  const [ingestionErrors, setIngestionErrors] = useState<IngestionError[]>([])
+  
+  // Use the global ingestion context instead of local state
+  const { jobs: ingestionJobs, addJob: handleJobCreated, updateJob: handleJobUpdated, addError, errors: contextErrors } = useIngestion()
+  
+  // Convert context errors to the format expected by the component
+  const ingestionErrors = contextErrors.map((message, index) => ({
+    id: index,
+    message,
+    timestamp: new Date().toISOString(),
+  }));
 
   // Animation variants
   const container = {
@@ -70,40 +67,8 @@ export default function IngestionPage() {
     setProcessingStatus(status)
   }
 
-  const handleJobCreated = (job: Job) => {
-    setIngestionJobs((prevJobs) => [job, ...prevJobs])
-  }
-
-  const handleJobUpdated = (updatedJob: Job) => {
-    setIngestionJobs((prevJobs) => {
-      // First update the job in the state
-      const updatedJobs = prevJobs.map((job) => (job.id === updatedJob.id ? updatedJob : job));
-      
-      // If the job has just completed or failed, set a timeout to remove it
-      if ((updatedJob.status === "completed" || updatedJob.status === "failed") && 
-          updatedJobs.find(job => job.id === updatedJob.id)?.status !== updatedJob.status) {
-        
-        // Remove the job after 10 seconds (10000ms)
-        setTimeout(() => {
-          setIngestionJobs(currentJobs => 
-            currentJobs.filter(job => job.id !== updatedJob.id)
-          );
-        }, 10000);
-      }
-      
-      return updatedJobs;
-    });
-  }
-
   const handleError = (error: { message: string }) => {
-    setIngestionErrors((prevErrors) => [
-      {
-        id: Date.now(),
-        message: error.message || "An unknown error occurred",
-        timestamp: new Date().toISOString(),
-      },
-      ...prevErrors,
-    ])
+    addError(error.message || "An unknown error occurred")
   }
 
   return (
@@ -148,8 +113,8 @@ export default function IngestionPage() {
               </motion.p>
 
               <motion.div variants={container} initial="hidden" animate="show" className="space-y-8">
-                {/* Ingestion Jobs - moved outside tabs to be visible at all times */}
-                {ingestionJobs.length > 0 && (
+                {/* Ingestion Jobs - shown on this page for convenience, but also available globally */}
+                {(ingestionJobs.some(job => job.status === "running" || job.status === "queued") || processingStatus) && (
                   <motion.div
                     variants={item}
                     className="bg-card/80 backdrop-blur-sm p-6 rounded-lg border border-border shadow-md"
@@ -173,7 +138,7 @@ export default function IngestionPage() {
                     <IngestionMonitor
                       jobs={ingestionJobs}
                       onJobUpdated={handleJobUpdated}
-                      errors={ingestionErrors.map((err) => err.message)}
+                      errors={contextErrors}
                     />
                   </motion.div>
                 )}

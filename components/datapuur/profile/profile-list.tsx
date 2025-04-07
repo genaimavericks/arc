@@ -276,8 +276,18 @@ export function ProfileList({ onProfileSelect, selectedProfileId, fileIdFilter }
         onProfileSelect("");
       }
       
-      // Refresh the profiles list
-      fetchProfiles();
+      // Check if this was the last item on the current page
+      const isLastItemOnPage = profiles.length === 1;
+      const shouldGoToPreviousPage = isLastItemOnPage && page > 1;
+      
+      // If we deleted the last item on a page (but not the first page), go to previous page
+      if (shouldGoToPreviousPage) {
+        setPage(page - 1);
+        // The page change will trigger fetchProfiles via the useEffect
+      } else {
+        // Otherwise just refresh the current page
+        fetchProfiles();
+      }
       
     } catch (error) {
       console.error("Error deleting profile:", error);
