@@ -276,16 +276,16 @@ async def get_activity_logs(
 
 @router.delete("/activity/clear")
 async def clear_activity_logs(
-    days: int = Query(15, ge=1, le=365),
+    hours: int = Query(2, ge=1, le=8760),  # Default to 2 hours, max is 1 year in hours
     db: Session = Depends(get_db),
     current_user: User = Depends(has_role("admin"))
 ):
     """
-    Delete activity logs older than the specified number of days.
+    Delete activity logs older than the specified number of hours.
     Only admin users can clear activity logs.
     """
     # Calculate the cutoff date
-    cutoff_date = datetime.now() - timedelta(days=days)
+    cutoff_date = datetime.now() - timedelta(hours=hours)
     
     # Delete logs older than the cutoff date
     deleted = db.query(ActivityLog).filter(ActivityLog.timestamp < cutoff_date).delete()
@@ -296,10 +296,10 @@ async def clear_activity_logs(
         db=db,
         username=current_user.username,
         action="Clear activity logs",
-        details=f"Cleared {deleted} activity logs older than {days} days"
+        details=f"Cleared {deleted} activity logs older than {hours} hours"
     )
     
-    return {"message": f"Successfully cleared {deleted} activity logs older than {days} days"}
+    return {"message": f"Successfully cleared {deleted} activity logs older than {hours} hours"}
 
 @router.post("/activity/log")
 async def log_admin_activity(
