@@ -1048,7 +1048,10 @@ async def get_schemas(
     try:
         # Query all schemas from the database
         schemas = db.query(Schema).order_by(Schema.created_at.desc()).all()
-        
+        print("DEBUG: Fetched schemas:")
+        for schema in schemas:
+            print(f"DEBUG: Schema {schema.id}: {schema.name} (source_id={schema.source_id})")
+            
         # Format the schemas for the frontend
         result = []
         for schema in schemas:

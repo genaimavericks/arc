@@ -557,6 +557,7 @@ class SchemaAwareGraphAssistant:
             - NO examples of multiple queries - just one single executable query
             - NO "Here's a Cypher query that..." text
             - NO "This query will..." explanatory text
+        12. EXTREMELY IMPORTANT: If no cypher query could be generated for given query then return None or empty. DO NOT RETURN text with explaination.
         
         Do not use generic examples - use the actual node labels, relationship types and properties from the provided schema.
         Keep the prompt concise but comprehensive enough to guide accurate Cypher query generation.
@@ -609,8 +610,8 @@ class SchemaAwareGraphAssistant:
             cypher_prompt_template = cypher_response.content.strip()
             
             # Apply Neo4j property syntax escaping to prevent template variable confusion
-            # cypher_prompt_template = self._escape_neo4j_properties(cypher_prompt_template)
-            # print(f"DEBUG: Applied Neo4j property escaping to Cypher prompt template")
+            cypher_prompt_template = self._escape_neo4j_properties(cypher_prompt_template)
+            print(f"DEBUG: Applied Neo4j property escaping to Cypher prompt template")
             
             # Generate QA prompt template
             print(f"Generating QA prompt template for {self.source_id}...")
@@ -622,8 +623,8 @@ class SchemaAwareGraphAssistant:
             qa_prompt_template = qa_response.content.strip()
             
             # Apply Neo4j property syntax escaping to prevent template variable confusion
-            # qa_prompt_template = self._escape_neo4j_properties(qa_prompt_template)
-            # print(f"DEBUG: Applied Neo4j property escaping to QA prompt template")
+            qa_prompt_template = self._escape_neo4j_properties(qa_prompt_template)
+            print(f"DEBUG: Applied Neo4j property escaping to QA prompt template")
             
             # Generate sample queries
             print(f"Generating sample queries for {self.source_id}...")
@@ -689,7 +690,38 @@ class SchemaAwareGraphAssistant:
             # Instead of using fallback prompts, raise the exception to fail explicitly
             # This makes debugging easier by exposing the actual error
             raise RuntimeError(f"Failed to generate prompts for schema: {str(e)}")
-    
+        
+
+    def _escape_neo4j_properties(self, prompt_text):
+        """Escape Neo4j property syntax in prompts to prevent template variable confusion
+        
+        This ensures that expressions like {name: 'John'} are properly escaped as {{name: 'John'}}
+        while preserving actual template variables like {query}
+        """
+        if not prompt_text:
+            return prompt_text
+
+        # Define patterns that need escaping - Neo4j property patterns but not template variables
+        # This regex looks for {prop: value} patterns but ignores {query} or {context}
+        neo4j_prop_pattern = re.compile(r'\{([a-zA-Z0-9_]+\s*:(?![}]).*?)\}')
+
+        # Find all Neo4j property patterns
+        matches = list(neo4j_prop_pattern.finditer(prompt_text))
+
+        # Process matches from end to beginning to avoid offset issues
+        for match in reversed(matches):
+            # Skip if it looks like a template variable
+            content = match.group(1)
+            if content.strip() in ["query", "context", "response", "question"]:
+                continue
+
+            # Replace with double braces
+            start, end = match.span()
+            prompt_text = prompt_text[:start] + "{" + prompt_text[start:end] + "}" + prompt_text[end:]
+
+        return prompt_text
+
+
     def _extract_schema_summary(self, schema: Dict[str, Any]) -> Dict[str, Any]:
         """Extract a summary of the schema for prompt generation, handling the structure from schema fetching methods."""
         if not isinstance(schema, dict):

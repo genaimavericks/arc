@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import Dict, List, Optional
 from ..auth import has_any_permission
 from ..models import User
-import yaml
+import json
 import os
 from pathlib import Path
 
@@ -28,48 +28,26 @@ class ErrorResponse(BaseModel):
 # Router
 router = APIRouter(prefix="/graph", tags=["graph"])
 
-# Helper function to read the YAML config file
+# Helper function to read the JSON config file
 def get_database_config():
     try:
-        yaml_path = Path(__file__).parent / "neo4j.databases.yaml"
-        with open(yaml_path, 'r') as file:
-            return yaml.safe_load(file)
+        json_path = Path(__file__).parent / "neo4j.databases.json"
+        with open(json_path, 'r') as file:
+            return json.load(file)
     except Exception as e:
         raise HTTPException(
             status_code=500, 
             detail=f"Error loading database configuration: {str(e)}"
         )
 
-# Utility function to parse connection params from the YAML format
-def parse_connection_params(params):
-    if not params:
+# Utility function to get connection params from JSON format
+def parse_connection_params(params_dict):
+    if not params_dict:
         return None
     
-    # If params is already a dictionary (from the new YAML format)
-    if isinstance(params, dict):
-        return {
-            "username": params.get("NEO4J_USERNAME", ""),
-            "database": params.get("NEO4J_DB", ""),
-            "uri": params.get("NEO4J_URI", ""),
-            "password": params.get("NEO4J_PASSWORD", "")
-        }
-    
-    # For backward compatibility with the old format
-    if isinstance(params, str):
-        params_dict = {}
-        for line in params.split('\n'):
-            if '=' in line:
-                key, value = line.strip().split('=', 1)
-                params_dict[key] = value
-        
-        return {
-            "username": params_dict.get("NEO4J_USERNAME", ""),
-            "database": params_dict.get("NEO4J_DB", ""),
-            "uri": params_dict.get("NEO4J_URI", ""),
-            "password": params_dict.get("NEO4J_PASSWORD", "")
-        }
-    
-    return None
+    # JSON format already has the correct structure
+    # Just return the dictionary directly
+    return params_dict
 
 # API Routes
 
@@ -115,19 +93,20 @@ async def get_graph_connection(
                 detail=f"Graph '{graph_name}' not found"
             )
         
-        # Parse connection parameters from YAML format
+        # Get connection parameters from JSON format
         connection_params = config[graph_name]
         
-        parsed_params = parse_connection_params(connection_params)
+        # JSON format already has the parameters in the correct structure
+        parsed_params = DatabaseConnectionParams(
+            username=connection_params.get("username", ""),
+            database=connection_params.get("database", ""),
+            uri=connection_params.get("uri", ""),
+            password=connection_params.get("password", "")
+        )
         
         return DatabaseInfo(
             name=graph_name,
-            connection_params=DatabaseConnectionParams(
-                username=parsed_params["username"],
-                database=parsed_params["database"],
-                uri=parsed_params["uri"],
-                password=parsed_params["password"]
-            ) if parsed_params else None
+            connection_params=parsed_params
         )
     except HTTPException:
         raise
