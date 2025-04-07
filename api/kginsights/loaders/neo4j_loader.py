@@ -38,12 +38,15 @@ class Neo4jLoader:
         try:
             # Get database configuration
             db_config = get_database_config()
+            print(f"Database configuration: {db_config}")  # Debug output
             if not db_config:
                 print("Failed to get database configuration")
                 return False
                 
             # Parse connection parameters for the specified graph
             graph_config = db_config.get(self.graph_name, {})
+            print(f"Graph configuration: {graph_config}")  # Debug output
+            print(f"Graph name: {self.graph_name}")  # Debug output
             self.connection_params = parse_connection_params(graph_config)
             if not self.connection_params:
                 print(f"Failed to parse connection parameters for graph: {self.graph_name}")

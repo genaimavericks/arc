@@ -1318,7 +1318,7 @@ async def load_data_to_neo4j(
             # Create load_input from path and query parameters
             load_input = LoadDataInput(
                 schema_id=schema_id,
-                graph_name=graph_name or "default",
+                graph_name=graph_name or "default_graph",
                 drop_existing=drop_existing,
                 use_source_data=True,
                 data_path=''  # Empty string instead of None to avoid validation error
