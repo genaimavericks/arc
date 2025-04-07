@@ -7,30 +7,67 @@ import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/components/ui/use-toast"
 import { format } from "date-fns"
 import {
   BarChart2,
-  FileText,
-  AlertTriangle,
-  CheckCircle,
-  Info,
-  Database,
   Calendar,
-  PieChart,
-  BarChart,
-  LineChart,
-  Clock,
-  Percent,
-  Hash,
+  Database,
+  FileBarChart,
+  FileLineChart,
+  FileSpreadsheet,
+  Filter,
   ListFilter,
+  MoreHorizontal,
+  Percent,
+  PieChart,
+  SquareCode,
+  Table as TableIcon,
+  Search,
+  AlertTriangle,
   Fingerprint,
-  Activity,
+  MapPin,
+  Mail,
+  Phone,
+  FileText,
+  Hash,
   ToggleLeft,
+  Key,
+  Clock,
+  Activity,
+  Info,
   Braces,
   FileQuestion,
+  CheckCircle,
+  BarChart,
+  LineChart
 } from "lucide-react"
 import LoadingSpinner from "@/components/loading-spinner"
+import { 
+  BarChart as RechartsBarChart, 
+  Bar, 
+  PieChart as RechartsPieChart, 
+  Pie,
+  Cell,
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  Legend, 
+  ResponsiveContainer 
+} from "recharts"
+
+// Register Chart.js components
+// ChartJS.register(
+//   CategoryScale,
+//   LinearScale,
+//   BarElement,
+//   Title,
+//   Tooltip,
+//   Legend,
+//   ArcElement
+// )
 
 interface ProfileDetailsProps {
   profileId: string;
@@ -50,9 +87,20 @@ interface ColumnProfile {
   validity: number
   min_value: any
   max_value: any
-  mean?: number
-  median?: number
+  mean_value?: number
+  median_value?: number
+  mode_value?: string
   std_dev?: number
+  frequent_values?: { [key: string]: number }
+  invalid_values?: { [key: string]: number }
+  outliers?: {
+    z_score: { [key: string]: number }
+    iqr: { [key: string]: number }
+  }
+  patterns?: {
+    has_nulls: boolean
+    completeness: number
+  }
   histogram?: {
     bins: any[]
     counts: number[]
@@ -78,6 +126,12 @@ interface ProfileData {
   created_at: string
   column_names?: Record<string, string>
   original_headers?: string[]
+  exact_duplicates_count: number
+  fuzzy_duplicates_count: number
+  duplicate_groups?: {
+    exact: any[]
+    fuzzy: any[]
+  }
 }
 
 export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
@@ -170,34 +224,27 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
 
   // Helper functions for quality score display
   const getQualityScoreLabel = (score?: number): string => {
-    if (score === undefined) return 'N/A';
-    
-    // Assuming score is already multiplied by 100 from the backend
+    if (score === undefined) return 'Unknown';
     if (score >= 90) return 'Excellent';
-    if (score >= 75) return 'Good';
-    if (score >= 60) return 'Fair';
-    if (score >= 40) return 'Poor';
-    return 'Bad';
+    if (score >= 80) return 'Good';
+    if (score >= 70) return 'Fair';
+    if (score >= 60) return 'Poor';
+    return 'Critical';
   };
 
-  const getQualityScoreBadgeVariant = (score?: number): "default" | "destructive" | "secondary" | "outline" => {
-    if (score === undefined) return 'default';
-    
-    // Assuming score is already multiplied by 100 from the backend
-    if (score >= 90) return 'default';
-    if (score >= 75) return 'secondary';
-    if (score >= 60) return 'outline';
-    return 'destructive';
-  };
-
+  // Badge variant for quality score
   const getQualityBadgeVariant = (score?: number): "default" | "destructive" | "secondary" | "outline" => {
-    if (score === undefined) return 'default';
-    
-    // Assuming score is already multiplied by 100 from the backend
+    if (score === undefined) return 'secondary';
     if (score >= 90) return 'default';
-    if (score >= 75) return 'secondary';
-    if (score >= 60) return 'outline';
+    if (score >= 75) return 'default';
+    if (score >= 60) return 'secondary';
+    if (score >= 40) return 'secondary';
     return 'destructive';
+  };
+
+  const formatValue = (value?: number | string): string => {
+    if (value === undefined || value === null) return '0';
+    return typeof value === 'number' ? value.toLocaleString() : value;
   };
 
   const getDataTypeIcon = (dataType: string) => {
@@ -221,11 +268,51 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
       case 'datetime':
       case 'timestamp':
         return <Calendar className="h-4 w-4 text-orange-500" />
-      case 'object':
-      case 'json':
-        return <Braces className="h-4 w-4 text-yellow-500" />
+      case 'email':
+        return <Mail className="h-4 w-4 text-amber-500" />
+      case 'phone':
+        return <Phone className="h-4 w-4 text-indigo-500" />
+      case 'uuid':
+        return <Key className="h-4 w-4 text-sky-500" />
+      case 'postal_code':
+        return <MapPin className="h-4 w-4 text-rose-500" />
       default:
-        return <FileQuestion className="h-4 w-4 text-gray-500" />
+        return <Database className="h-4 w-4 text-gray-500" />
+    }
+  }
+
+  const formatDataType = (dataType: string): string => {
+    switch (dataType?.toLowerCase()) {
+      case 'integer':
+      case 'int':
+        return 'Integer'
+      case 'float':
+      case 'double':
+      case 'decimal':
+      case 'numeric':
+        return 'Float'
+      case 'string':
+      case 'text':
+      case 'varchar':
+      case 'char':
+        return 'Text'
+      case 'boolean':
+      case 'bool':
+        return 'Boolean'
+      case 'date':
+      case 'datetime':
+      case 'timestamp':
+        return 'Date'
+      case 'email':
+        return 'Email'
+      case 'phone':
+        return 'Phone'
+      case 'uuid':
+        return 'UUID'
+      case 'postal_code':
+        return 'Postal Code'
+      default:
+        return dataType || 'Unknown'
     }
   }
 
@@ -275,16 +362,8 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
     return columnName;
   };
 
-  // Format data type for display
-  const formatDataType = (dataType: string | undefined): string => {
-    if (!dataType) return 'Unknown';
-    
-    // Capitalize first letter and format nicely
-    return dataType.charAt(0).toUpperCase() + dataType.slice(1).toLowerCase();
-  };
-
   // Format value for display
-  const formatValue = (value: any): string => {
+  const formatValueForDisplay = (value: any): string => {
     // Handle undefined or null values
     if (value === undefined || value === null) return 'N/A'
     
@@ -310,7 +389,7 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
     // Handle arrays
     if (Array.isArray(value)) {
       if (value.length === 0) return 'Empty array'
-      return `[${value.slice(0, 3).map(v => formatValue(v)).join(', ')}${value.length > 3 ? '...' : ''}]`
+      return `[${value.slice(0, 3).map(v => formatValueForDisplay(v)).join(', ')}${value.length > 3 ? '...' : ''}]`
     }
     
     // Handle objects
@@ -351,6 +430,14 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
       
       // Ensure the column data has all required properties
       if (columnData) {
+        // Calculate missing values by combining null_count with empty string count from frequent_values
+        let emptyStringCount = 0;
+        if (columnData.frequent_values && '' in columnData.frequent_values) {
+          emptyStringCount = columnData.frequent_values[''];
+        }
+        
+        const missingCount = (columnData.null_count || 0) + emptyStringCount;
+        
         // Make sure all required properties exist with appropriate defaults
         return {
           ...columnData,
@@ -359,13 +446,14 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
           count: columnData.count || 0,
           unique_count: columnData.unique_count || 0,
           null_count: columnData.null_count || 0,
-          missing_count: columnData.missing_count || 0,
+          missing_count: missingCount,
           quality_score: columnData.quality_score || 0,
           completeness: columnData.completeness || 0,
           uniqueness: columnData.uniqueness || 0,
           validity: columnData.validity || 0,
           min_value: columnData.min_value,
-          max_value: columnData.max_value
+          max_value: columnData.max_value,
+          mode_value: columnData.mode_value
         };
       }
       return null;
@@ -378,6 +466,14 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
       
       // Ensure the column data has all required properties
       if (columnData) {
+        // Calculate missing values by combining null_count with empty string count from frequent_values
+        let emptyStringCount = 0;
+        if (columnData.frequent_values && '' in columnData.frequent_values) {
+          emptyStringCount = columnData.frequent_values[''];
+        }
+        
+        const missingCount = (columnData.null_count || 0) + emptyStringCount;
+        
         // Make sure all required properties exist with appropriate defaults
         return {
           ...columnData,
@@ -386,13 +482,14 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
           count: columnData.count || 0,
           unique_count: columnData.unique_count || 0,
           null_count: columnData.null_count || 0,
-          missing_count: columnData.missing_count || 0,
+          missing_count: missingCount,
           quality_score: columnData.quality_score || 0,
           completeness: columnData.completeness || 0,
           uniqueness: columnData.uniqueness || 0,
           validity: columnData.validity || 0,
           min_value: columnData.min_value,
-          max_value: columnData.max_value
+          max_value: columnData.max_value,
+          mode_value: columnData.mode_value
         };
       }
       return null;
@@ -498,6 +595,101 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
                 </div>
               </CardContent>
             </Card>
+            
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <Fingerprint className="h-5 w-5 mr-2 text-primary" />
+                    <span className="font-medium">Exact Duplicates</span>
+                  </div>
+                  <span className="text-2xl font-bold">{formatValue(profile?.exact_duplicates_count)}</span>
+                </div>
+                {profile?.duplicate_groups?.exact && profile.duplicate_groups.exact.length > 0 && (
+                  <div className="mt-4">
+                    <div className="text-sm text-muted-foreground mb-2">Sample duplicate records:</div>
+                    <div className="max-h-[200px] overflow-auto rounded border text-xs">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            {/* Display headers for first 3-4 columns */}
+                            {Object.keys(profile.duplicate_groups.exact[0]).slice(0, 4).map((key, index) => (
+                              <TableHead key={index} className="p-2">{key}</TableHead>
+                            ))}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {/* Show up to 5 duplicate records */}
+                          {profile.duplicate_groups.exact.slice(0, 5).map((record, index) => (
+                            <TableRow key={index}>
+                              {Object.keys(record).slice(0, 4).map((key, keyIndex) => (
+                                <TableCell key={keyIndex} className="p-2 truncate">
+                                  {typeof record[key] === 'object' ? 
+                                    JSON.stringify(record[key]).substring(0, 30) : 
+                                    String(record[key]).substring(0, 30)}
+                                </TableCell>
+                              ))}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <Fingerprint className="h-5 w-5 mr-2 text-primary" />
+                    <span className="font-medium">Fuzzy Duplicates</span>
+                  </div>
+                  <span className="text-2xl font-bold">{formatValue(profile?.fuzzy_duplicates_count)}</span>
+                </div>
+                {profile?.duplicate_groups?.fuzzy && profile.duplicate_groups.fuzzy.length > 0 && (
+                  <div className="mt-4">
+                    <div className="text-sm text-muted-foreground mb-2">Sample similar records:</div>
+                    <div className="max-h-[200px] overflow-auto rounded border text-xs">
+                      {profile.duplicate_groups.fuzzy.slice(0, 3).map((group, groupIndex) => (
+                        <div key={groupIndex} className="mb-3 border-b pb-2">
+                          <div className="font-semibold p-2 bg-muted">
+                            Group {groupIndex + 1} - {group.count} similar records
+                          </div>
+                          {group.sample && group.sample.length > 0 && (
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  {/* Display headers for first 3-4 columns */}
+                                  {Object.keys(group.sample[0]).slice(0, 4).map((key, index) => (
+                                    <TableHead key={index} className="p-2">{key}</TableHead>
+                                  ))}
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {/* Show samples from this group */}
+                                {group.sample.map((record, index) => (
+                                  <TableRow key={index}>
+                                    {Object.keys(record).slice(0, 4).map((key, keyIndex) => (
+                                      <TableCell key={keyIndex} className="p-2 truncate">
+                                        {typeof record[key] === 'object' ? 
+                                          JSON.stringify(record[key]).substring(0, 30) : 
+                                          String(record[key]).substring(0, 30)}
+                                      </TableCell>
+                                    ))}
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
         </CardContent>
       </Card>
@@ -527,8 +719,8 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
                         {getDataTypeIcon(column.data_type)}
                         <span className="ml-2 font-medium">{formatColumnName(columnName)}</span>
                       </div>
-                      <Badge variant={getQualityBadgeVariant(profile?.data_quality_score)}>
-                        {getQualityScoreLabel(profile?.data_quality_score)}
+                      <Badge variant={getQualityBadgeVariant(column.quality_score * 100)}>
+                        {getQualityScoreLabel(column.quality_score * 100)}
                       </Badge>
                     </div>
                   )
@@ -552,8 +744,8 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
                       {formatDataType(selectedColumnData.data_type)} • {formatValue(selectedColumnData.count)} values
                     </CardDescription>
                   </div>
-                  <Badge variant={getQualityBadgeVariant(profile?.data_quality_score)}>
-                    {getQualityScoreLabel(profile?.data_quality_score)}
+                  <Badge variant={getQualityBadgeVariant(selectedColumnData.quality_score * 100)}>
+                    {getQualityScoreLabel(selectedColumnData.quality_score * 100)}
                   </Badge>
                 </div>
               </CardHeader>
@@ -578,8 +770,8 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
                             </span>
                             <span className="text-sm text-muted-foreground">
                               {selectedColumnData && selectedColumnData.count > 0 ? 
-                                `(${Math.round((selectedColumnData.unique_count / selectedColumnData.count) * 100)}%)` : 
-                                '(0%)'}
+                                `(${((selectedColumnData.unique_count / selectedColumnData.count) * 100).toFixed(1)}%)` : 
+                                '(0.0%)'}
                             </span>
                           </div>
                         </CardContent>
@@ -596,8 +788,8 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
                             </span>
                             <span className="text-sm text-muted-foreground">
                               {selectedColumnData && selectedColumnData.count > 0 ? 
-                                `(${Math.round((selectedColumnData.missing_count / selectedColumnData.count) * 100)}%)` : 
-                                '(0%)'}
+                                `(${((selectedColumnData.missing_count / selectedColumnData.count) * 100).toFixed(1)}%)` : 
+                                '(0.0%)'}
                             </span>
                           </div>
                         </CardContent>
@@ -636,25 +828,137 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
                       </Card>
                     )}
                     
-                    {/* Only show range for numeric data types */}
-                    {['integer', 'int', 'float', 'double', 'decimal', 'numeric'].includes(selectedColumnData.data_type?.toLowerCase()) && 
-                     selectedColumnData.min_value !== undefined && selectedColumnData.max_value !== undefined && (
+                    {/* Add histogram for numeric columns */}
+                    {['integer', 'int', 'float', 'double', 'decimal', 'numeric'].includes(selectedColumnData.data_type?.toLowerCase()) && (
                       <Card>
                         <CardHeader className="pb-2">
-                          <CardTitle className="text-sm font-medium">Range</CardTitle>
+                          <CardTitle className="text-sm font-medium">Value Distribution</CardTitle>
                         </CardHeader>
                         <CardContent>
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <div className="text-sm text-muted-foreground">Min</div>
-                              <div className="font-bold">{formatValue(selectedColumnData.min_value)}</div>
+                          {selectedColumnData.frequent_values && Object.keys(selectedColumnData.frequent_values).length > 0 ? (
+                            <ResponsiveContainer width="100%" height={250}>
+                              <RechartsBarChart 
+                                data={Object.entries(selectedColumnData.frequent_values)
+                                  .filter(([key]) => key !== '' && key !== 'null')
+                                  .map(([key, value]) => ({
+                                    name: key === 'null' ? '<null>' : key,
+                                    value: value
+                                  }))
+                                  .sort((a, b) => {
+                                    // Try to convert to numbers for numeric sorting if possible
+                                    const numA = parseFloat(a.name);
+                                    const numB = parseFloat(b.name);
+                                    return !isNaN(numA) && !isNaN(numB) ? numA - numB : 0;
+                                  })
+                                  .slice(0, 10)
+                                }
+                              >
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis 
+                                  dataKey="name" 
+                                  tick={{ fontSize: 10 }}
+                                  angle={-45}
+                                  textAnchor="end"
+                                  interval={0}
+                                />
+                                <YAxis />
+                                <Tooltip 
+                                  formatter={(value) => [`${value} occurrences`, 'Count']} 
+                                  labelFormatter={(label) => `Value: ${label}`}
+                                />
+                                <Bar dataKey="value" fill="#6366f1" />
+                              </RechartsBarChart>
+                            </ResponsiveContainer>
+                          ) : (
+                            <div className="h-[250px] flex items-center justify-center">
+                              <p className="text-muted-foreground">No distribution data available</p>
                             </div>
-                            <Separator className="w-12" />
-                            <div>
-                              <div className="text-sm text-muted-foreground">Max</div>
-                              <div className="font-bold">{formatValue(selectedColumnData.max_value)}</div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )}
+                    
+                    {/* Add invalid values section for special data types in Overview tab */}
+                    {['email', 'phone', 'uuid', 'postal_code'].includes(selectedColumnData.data_type?.toLowerCase()) && 
+                      selectedColumnData.invalid_values && Object.keys(selectedColumnData.invalid_values).length > 0 && (
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm font-medium">
+                            <div className="flex items-center">
+                              <AlertTriangle className="h-4 w-4 text-amber-500 mr-2" />
+                              Invalid Values
                             </div>
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-3">
+                            <div className="text-sm text-muted-foreground mb-2">
+                              The following values do not match the expected format for {formatDataType(selectedColumnData.data_type)}:
+                            </div>
+                            {Object.entries(selectedColumnData.invalid_values)
+                              .slice(0, 5)
+                              .map(([key, value], index) => (
+                                <div key={index} className="flex items-center justify-between border-b pb-2">
+                                  <div className="font-medium truncate max-w-[200px] text-red-600">{key}</div>
+                                  <div className="text-sm">{formatValue(value)} occurrences</div>
+                                </div>
+                              ))}
+                            {Object.keys(selectedColumnData.invalid_values).length > 5 && (
+                              <div className="text-sm text-muted-foreground text-center italic">
+                                + {Object.keys(selectedColumnData.invalid_values).length - 5} more invalid values
+                              </div>
+                            )}
                           </div>
+                        </CardContent>
+                      </Card>
+                    )}
+                    
+                    {/* Add visualization for string/categorical data */}
+                    {!['integer', 'int', 'float', 'double', 'decimal', 'numeric'].includes(selectedColumnData.data_type?.toLowerCase()) && (
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm font-medium">Value Distribution</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          {selectedColumnData.frequent_values && Object.keys(selectedColumnData.frequent_values).length > 0 ? (
+                            <ResponsiveContainer width="100%" height={250}>
+                              <RechartsPieChart>
+                                <Pie
+                                  data={Object.entries(selectedColumnData.frequent_values)
+                                    .map(([key, value]) => ({
+                                      name: key === 'null' ? '<null>' : key === '' ? '<empty>' : key,
+                                      value: value
+                                    }))
+                                    .sort((a, b) => b.value - a.value)
+                                    .slice(0, 5)
+                                  }
+                                  cx="50%"
+                                  cy="50%"
+                                  outerRadius={80}
+                                  fill="#8884d8"
+                                  dataKey="value"
+                                  nameKey="name"
+                                  label={({name, percent}) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                                >
+                                  {
+                                    Object.entries(selectedColumnData.frequent_values)
+                                      .map(([key, value], index) => (
+                                        <Cell 
+                                          key={`cell-${index}`} 
+                                          fill={['#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316'][index % 5]} 
+                                        />
+                                      ))
+                                  }
+                                </Pie>
+                                <Tooltip formatter={(value) => [`${value} occurrences`, 'Count']} />
+                                <Legend />
+                              </RechartsPieChart>
+                            </ResponsiveContainer>
+                          ) : (
+                            <div className="h-[250px] flex items-center justify-center">
+                              <p className="text-muted-foreground">No distribution data available</p>
+                            </div>
+                          )}
                         </CardContent>
                       </Card>
                     )}
@@ -676,94 +980,93 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
                         <>
                           <div>
                             <h4 className="text-sm font-medium mb-1">Min Value</h4>
-                            <p className="text-2xl font-bold">{formatValue(selectedColumnData.min_value)}</p>
+                            <p className="text-2xl font-bold">{formatValueForDisplay(selectedColumnData.min_value)}</p>
                           </div>
                           <div>
                             <h4 className="text-sm font-medium mb-1">Max Value</h4>
-                            <p className="text-2xl font-bold">{formatValue(selectedColumnData.max_value)}</p>
+                            <p className="text-2xl font-bold">{formatValueForDisplay(selectedColumnData.max_value)}</p>
                           </div>
-                          {selectedColumnData.mean !== undefined && (
+                          {selectedColumnData.mean_value !== undefined && (
                             <div>
                               <h4 className="text-sm font-medium mb-1">Mean</h4>
-                              <p className="text-2xl font-bold">{formatValue(selectedColumnData.mean)}</p>
+                              <p className="text-2xl font-bold">{formatValueForDisplay(selectedColumnData.mean_value)}</p>
                             </div>
                           )}
-                          {selectedColumnData.median !== undefined && (
+                          {selectedColumnData.median_value !== undefined && (
                             <div>
                               <h4 className="text-sm font-medium mb-1">Median</h4>
-                              <p className="text-2xl font-bold">{formatValue(selectedColumnData.median)}</p>
+                              <p className="text-2xl font-bold">{formatValueForDisplay(selectedColumnData.median_value)}</p>
+                            </div>
+                          )}
+                          {selectedColumnData.mode_value !== undefined && (
+                            <div>
+                              <h4 className="text-sm font-medium mb-1">Mode</h4>
+                              <p className="text-2xl font-bold">{formatValueForDisplay(selectedColumnData.mode_value)}</p>
                             </div>
                           )}
                           {selectedColumnData.std_dev !== undefined && (
                             <div>
                               <h4 className="text-sm font-medium mb-1">Standard Deviation</h4>
-                              <p className="text-2xl font-bold">{formatValue(selectedColumnData.std_dev)}</p>
+                              <p className="text-2xl font-bold">{formatValueForDisplay(selectedColumnData.std_dev)}</p>
                             </div>
                           )}
                         </>
                       )}
                     </div>
                     
-                    {/* Show histogram for numeric data types */}
+                    {/* Add outliers section */}
                     {['integer', 'int', 'float', 'double', 'decimal', 'numeric'].includes(selectedColumnData.data_type?.toLowerCase()) && 
-                      selectedColumnData.histogram && selectedColumnData.histogram.bins.length > 0 && (
+                      selectedColumnData.outliers && 
+                      (Object.keys(selectedColumnData.outliers.z_score).length > 0 || 
+                       Object.keys(selectedColumnData.outliers.iqr).length > 0) && (
                       <Card>
                         <CardHeader className="pb-2">
-                          <CardTitle className="text-sm font-medium">Distribution</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="h-[200px] flex items-end justify-between">
-                            {selectedColumnData.histogram.counts.map((count, index) => {
-                              const maxCount = Math.max(...selectedColumnData.histogram!.counts)
-                              const height = (count / maxCount) * 100
-                              return (
-                                <div key={index} className="flex flex-col items-center">
-                                  <div
-                                    className="w-6 bg-primary rounded-t"
-                                    style={{ height: `${Math.max(5, height)}%` }}
-                                  ></div>
-                                  <span className="text-xs text-muted-foreground mt-1 rotate-45 origin-left">
-                                    {selectedColumnData.histogram!.bins[index].toFixed(1)}
-                                  </span>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )}
-                    
-                    {/* Show pie chart visualization for string/categorical data types */}
-                    {!['integer', 'int', 'float', 'double', 'decimal', 'numeric'].includes(selectedColumnData.data_type?.toLowerCase()) && 
-                      selectedColumnData.top_values && selectedColumnData.top_values.length > 0 && (
-                      <Card>
-                        <CardHeader className="pb-2">
-                          <CardTitle className="text-sm font-medium">Value Distribution</CardTitle>
+                          <CardTitle className="text-sm font-medium">
+                            <div className="flex items-center">
+                              <AlertTriangle className="h-4 w-4 text-amber-500 mr-2" />
+                              Outliers Detected
+                            </div>
+                          </CardTitle>
+                          <CardDescription>
+                            Values that significantly deviate from the normal distribution
+                          </CardDescription>
                         </CardHeader>
                         <CardContent>
                           <div className="space-y-4">
-                            {selectedColumnData.top_values.map((item, index) => {
-                              const percentage = selectedColumnData.count > 0 ? (item.count / selectedColumnData.count) * 100 : 0
-                              const colors = ['bg-blue-500', 'bg-green-500', 'bg-yellow-500', 'bg-purple-500', 'bg-pink-500', 'bg-indigo-500', 'bg-red-500', 'bg-orange-500', 'bg-teal-500', 'bg-cyan-500']
-                              const color = colors[index % colors.length]
-                              
-                              return (
-                                <div key={index} className="flex items-center space-x-2">
-                                  <div className={`w-3 h-3 rounded-full ${color}`}></div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex justify-between">
-                                      <span className="text-sm font-medium truncate max-w-[200px]">
-                                        {item.value === null ? '<null>' : String(item.value)}
-                                      </span>
-                                      <span className="text-sm text-muted-foreground">
-                                        {formatValue(item.count)} ({percentage.toFixed(1)}%)
-                                      </span>
+                            {/* Z-Score based outliers */}
+                            {Object.keys(selectedColumnData.outliers.z_score).length > 0 && (
+                              <div>
+                                <h4 className="text-sm font-medium mb-2">Z-Score Method (±3σ)</h4>
+                                <div className="space-y-2 pl-2">
+                                  {Object.entries(selectedColumnData.outliers.z_score).map(([value, count], i) => (
+                                    <div key={i} className="flex items-center justify-between border-b pb-1">
+                                      <span className="font-medium text-red-600">{value}</span>
+                                      <span className="text-sm text-muted-foreground">{formatValue(count)} occurrences</span>
                                     </div>
-                                    <Progress value={percentage} className="h-2" />
-                                  </div>
+                                  ))}
                                 </div>
-                              )
-                            })}
+                              </div>
+                            )}
+                            
+                            {/* IQR based outliers */}
+                            {Object.keys(selectedColumnData.outliers.iqr).length > 0 && (
+                              <div>
+                                <h4 className="text-sm font-medium mb-2">IQR Method (Q1-1.5×IQR, Q3+1.5×IQR)</h4>
+                                <div className="space-y-2 pl-2">
+                                  {Object.entries(selectedColumnData.outliers.iqr).map(([value, count], i) => (
+                                    <div key={i} className="flex items-center justify-between border-b pb-1">
+                                      <span className="font-medium text-red-600">{value}</span>
+                                      <span className="text-sm text-muted-foreground">{formatValue(count)} occurrences</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            
+                            <div className="text-xs text-muted-foreground mt-2">
+                              <p>Z-Score: Values beyond 3 standard deviations from the mean</p>
+                              <p>IQR: Values beyond 1.5× interquartile range from Q1/Q3</p>
+                            </div>
                           </div>
                         </CardContent>
                       </Card>
@@ -781,30 +1084,30 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
                             <div className="flex justify-between mb-1">
                               <span className="text-sm font-medium">Completeness</span>
                               <span className="text-sm font-medium">
-                                {Math.round(selectedColumnData.completeness)}%
+                                {Math.round(selectedColumnData.completeness * 100)}%
                               </span>
                             </div>
-                            <Progress value={selectedColumnData.completeness} />
+                            <Progress value={selectedColumnData.completeness * 100} />
                           </div>
                           
                           <div>
                             <div className="flex justify-between mb-1">
                               <span className="text-sm font-medium">Uniqueness</span>
                               <span className="text-sm font-medium">
-                                {Math.round(selectedColumnData.uniqueness)}%
+                                {Math.round(selectedColumnData.uniqueness * 100)}%
                               </span>
                             </div>
-                            <Progress value={selectedColumnData.uniqueness} />
+                            <Progress value={selectedColumnData.uniqueness * 100} />
                           </div>
                           
                           <div>
                             <div className="flex justify-between mb-1">
                               <span className="text-sm font-medium">Validity</span>
                               <span className="text-sm font-medium">
-                                {Math.round(selectedColumnData.validity)}%
+                                {Math.round(selectedColumnData.validity * 100)}%
                               </span>
                             </div>
-                            <Progress value={selectedColumnData.validity} />
+                            <Progress value={selectedColumnData.validity * 100} />
                           </div>
                         </div>
                       </CardContent>
@@ -818,8 +1121,8 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
                         <div className="flex items-center justify-center">
                           <div className="relative h-32 w-32">
                             <div className="absolute inset-0 flex items-center justify-center">
-                              <span className={`text-3xl font-bold ${getQualityBadgeVariant(profile?.data_quality_score)}`}>
-                                {profile?.data_quality_score !== undefined ? `${Math.round(profile.data_quality_score)}%` : 'N/A'}
+                              <span className={`text-3xl font-bold ${getQualityBadgeVariant(selectedColumnData.quality_score * 100)}`}>
+                                {selectedColumnData.quality_score !== undefined ? `${Math.round(selectedColumnData.quality_score * 100)}%` : 'N/A'}
                               </span>
                             </div>
                             <svg className="h-full w-full" viewBox="0 0 100 100">
@@ -839,9 +1142,9 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
                                 fill="none"
                                 stroke="currentColor"
                                 strokeWidth="10"
-                                strokeDasharray={`${profile?.data_quality_score} 100`}
+                                strokeDasharray={`${selectedColumnData.quality_score * 100} 100`}
                                 strokeLinecap="round"
-                                className={getQualityBadgeVariant(profile?.data_quality_score)}
+                                className={getQualityBadgeVariant(selectedColumnData.quality_score * 100)}
                                 transform="rotate(-90 50 50)"
                               />
                             </svg>
@@ -849,6 +1152,37 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
                         </div>
                       </CardContent>
                     </Card>
+                    
+                    {/* Add new section to display invalid values for special data types */}
+                    {['email', 'phone', 'uuid', 'postal_code'].includes(selectedColumnData.data_type?.toLowerCase()) && (
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm font-medium">Invalid Values</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          {selectedColumnData.invalid_values && Object.keys(selectedColumnData.invalid_values).length > 0 ? (
+                            <div className="space-y-2">
+                              {Object.entries(selectedColumnData.invalid_values).map(([key, value], index) => (
+                                <div key={index} className="flex items-center justify-between">
+                                  <span className="font-medium truncate max-w-[200px]">{key}</span>
+                                  <div className="flex items-center">
+                                    <span className="text-sm text-muted-foreground mr-2">{formatValue(value)}</span>
+                                    <Progress
+                                      value={selectedColumnData.count > 0 && value !== undefined ? (value / selectedColumnData.count) * 100 : 0}
+                                      className="w-24"
+                                    />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="h-[200px] flex items-center justify-center">
+                              <p className="text-muted-foreground">No invalid values found</p>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )}
                   </TabsContent>
                 </Tabs>
               </CardContent>

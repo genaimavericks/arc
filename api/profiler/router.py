@@ -126,6 +126,35 @@ async def profile_data(
             profile_start = time.time()
             profiler = DataProfiler(df)
             profile_summary, column_profiles = profiler.generate_profile()
+            
+            # Detect exact and fuzzy duplicates
+            logger.info(f"[{request_id}] Starting duplicate detection")
+            try:
+                # Track time for duplicate detection
+                dup_start = time.time()
+                
+                # Detect exact duplicates (much faster operation)
+                exact_duplicates = profiler.detect_exact_duplicates()
+                profile_summary["exact_duplicates_count"] = exact_duplicates["count"]
+                
+                # Detect fuzzy duplicates (more intensive operation)
+                fuzzy_duplicates = profiler.detect_fuzzy_duplicates(threshold=0.9)
+                profile_summary["fuzzy_duplicates_count"] = fuzzy_duplicates["count"]
+                
+                # Create duplicate groups dictionary for storage
+                duplicate_groups = {
+                    "exact": exact_duplicates["values"],
+                    "fuzzy": fuzzy_duplicates["values"]
+                }
+                
+                dup_duration = time.time() - dup_start
+                logger.info(f"[{request_id}] Duplicate detection completed in {dup_duration:.2f} seconds")
+            except Exception as dup_error:
+                logger.warning(f"[{request_id}] Error in duplicate detection: {str(dup_error)}")
+                # Set default values if duplicate detection fails
+                profile_summary["exact_duplicates_count"] = 0
+                profile_summary["fuzzy_duplicates_count"] = 0
+                duplicate_groups = {"exact": [], "fuzzy": []}
             profile_duration = time.time() - profile_start
             logger.info(f"[{request_id}] Profile generation completed in {profile_duration:.2f} seconds")
             logger.debug(f"[{request_id}] Profile summary: {profile_summary}")
@@ -148,6 +177,39 @@ async def profile_data(
             # Convert NumPy types in column profiles to Python native types
             column_profiles_json = convert_numpy_types(column_profiles)
             
+            # Log detailed information about column profiles for debugging
+            logger.info(f"[{request_id}] Column profiles structure type: {type(column_profiles_json)}")
+            
+            if isinstance(column_profiles_json, list) and column_profiles_json:
+                # Log sample column profile
+                sample_column = column_profiles_json[0]
+                logger.info(f"[{request_id}] Sample column profile keys: {list(sample_column.keys()) if isinstance(sample_column, dict) else 'Not a dict'}")
+                
+                # Specifically check for quality metrics
+                if isinstance(sample_column, dict):
+                    quality_metrics = {k: sample_column.get(k) for k in ['quality_score', 'completeness', 'uniqueness', 'validity'] if k in sample_column}
+                    logger.info(f"[{request_id}] Quality metrics in sample column: {quality_metrics}")
+                    
+                    # If quality metrics are missing, log a warning
+                    missing_metrics = [k for k in ['quality_score', 'completeness', 'uniqueness', 'validity'] if k not in sample_column]
+                    if missing_metrics:
+                        logger.warning(f"[{request_id}] Missing quality metrics in column profiles: {missing_metrics}")
+            elif isinstance(column_profiles_json, dict) and column_profiles_json:
+                # If it's a dictionary of columns
+                sample_key = list(column_profiles_json.keys())[0]
+                sample_column = column_profiles_json[sample_key]
+                logger.info(f"[{request_id}] Sample column profile keys: {list(sample_column.keys()) if isinstance(sample_column, dict) else 'Not a dict'}")
+                
+                # Check for quality metrics
+                if isinstance(sample_column, dict):
+                    quality_metrics = {k: sample_column.get(k) for k in ['quality_score', 'completeness', 'uniqueness', 'validity'] if k in sample_column}
+                    logger.info(f"[{request_id}] Quality metrics in sample column: {quality_metrics}")
+                    
+                    # If quality metrics are missing, log a warning
+                    missing_metrics = [k for k in ['quality_score', 'completeness', 'uniqueness', 'validity'] if k not in sample_column]
+                    if missing_metrics:
+                        logger.warning(f"[{request_id}] Missing quality metrics in column profiles: {missing_metrics}")
+            
             profile_result = ProfileResult(
                 id=profile_id,
                 file_id=file_id,
@@ -156,7 +218,10 @@ async def profile_data(
                 total_rows=profile_summary["total_rows"],
                 total_columns=profile_summary["total_columns"],
                 data_quality_score=profile_summary["data_quality_score"],
-                column_profiles=column_profiles_json  # Store column profiles as JSON
+                column_profiles=column_profiles_json,  # Store column profiles as JSON
+                exact_duplicates_count=profile_summary["exact_duplicates_count"],
+                fuzzy_duplicates_count=profile_summary["fuzzy_duplicates_count"],
+                duplicate_groups=duplicate_groups
             )
             db.add(profile_result)
             
@@ -173,7 +238,7 @@ async def profile_data(
                 detail=f"Failed to save profile to database: {str(db_error)}"
             )
         
-        # Log the activity
+        # Record the activity in the activity log
         log_activity(
             db=db,
             username=current_user.username,
@@ -181,19 +246,35 @@ async def profile_data(
             details=f"Generated profile for {request.file_name} (file_id: {file_id})"
         )
 
+        # Ensure columns are in dictionary format keyed by column_name
+        column_dict = {}
+        if isinstance(column_profiles, list):
+            for col in column_profiles:
+                if isinstance(col, dict) and "column_name" in col:
+                    column_dict[col["column_name"]] = col
+        else:
+            # If it's already a dictionary or another format, use as is
+            column_dict = column_profiles
+
         # Prepare response
-        response = {
+        response_data = {
             "id": profile_result.id,
-            "file_id": file_id,
+            "file_id": request.file_id,
             "file_name": request.file_name,
             **profile_summary,
-            "columns": column_profiles,
-            "created_at": profile_result.created_at
+            "columns": column_dict,
+            "created_at": profile_result.created_at,
+            "exact_duplicates_count": profile_summary["exact_duplicates_count"],
+            "fuzzy_duplicates_count": profile_summary["fuzzy_duplicates_count"],
+            "duplicate_groups": duplicate_groups
         }
+
+        # Convert any NumPy types to Python native types for serialization
+        response_data = convert_numpy_types(response_data)
 
         total_duration = time.time() - start_time
         logger.info(f"[{request_id}] Profile request completed in {total_duration:.2f} seconds")
-        return response
+        return response_data
 
     except Exception as e:
         db.rollback()
@@ -248,7 +329,9 @@ async def list_profiles(
                 "total_rows": profile.total_rows,
                 "total_columns": profile.total_columns,
                 "data_quality_score": profile.data_quality_score * 100 if profile.data_quality_score is not None else None,
-                "created_at": profile.created_at
+                "created_at": profile.created_at,
+                "exact_duplicates_count": profile.exact_duplicates_count,
+                "fuzzy_duplicates_count": profile.fuzzy_duplicates_count
             })
         
         logger.info(f"[{request_id}] Returning {len(profiles)} profiles")
@@ -293,6 +376,83 @@ async def get_profile(
         
         # Get column profiles from JSON
         column_profiles = profile_result.column_profiles
+        
+        # Log the column profiles data for debugging
+        logger.info(f"[{request_id}] Column profiles data structure type: {type(column_profiles)}")
+        if column_profiles:
+            # Log the keys/structure
+            if isinstance(column_profiles, dict):
+                logger.info(f"[{request_id}] Column profiles keys: {list(column_profiles.keys())[:5]}...")
+                # Log a sample column profile
+                sample_key = list(column_profiles.keys())[0] if column_profiles else None
+                if sample_key:
+                    logger.info(f"[{request_id}] Sample column profile for key '{sample_key}': {column_profiles[sample_key]}")
+                    logger.info(f"[{request_id}] Sample column profile keys: {list(column_profiles[sample_key].keys()) if isinstance(column_profiles[sample_key], dict) else 'Not a dict'}")
+                    # Check for quality metrics
+                    if isinstance(column_profiles[sample_key], dict):
+                        quality_metrics = {k: column_profiles[sample_key].get(k) for k in ['quality_score', 'completeness', 'uniqueness', 'validity'] if k in column_profiles[sample_key]}
+                        logger.info(f"[{request_id}] Quality metrics found in sample: {quality_metrics}")
+            elif isinstance(column_profiles, list):
+                logger.info(f"[{request_id}] Column profiles is a list with {len(column_profiles)} items")
+                if column_profiles:
+                    logger.info(f"[{request_id}] Sample column profile: {column_profiles[0]}")
+                    logger.info(f"[{request_id}] Sample column profile keys: {list(column_profiles[0].keys()) if isinstance(column_profiles[0], dict) else 'Not a dict'}")
+                    # Check for quality metrics
+                    if isinstance(column_profiles[0], dict):
+                        quality_metrics = {k: column_profiles[0].get(k) for k in ['quality_score', 'completeness', 'uniqueness', 'validity'] if k in column_profiles[0]}
+                        logger.info(f"[{request_id}] Quality metrics found in sample: {quality_metrics}")
+        
+        # Ensure quality metrics are present in column profiles
+        if column_profiles:
+            if isinstance(column_profiles, dict):
+                for key, column in column_profiles.items():
+                    if isinstance(column, dict):
+                        # If any quality metrics are missing, log a warning and add default values
+                        missing_metrics = [k for k in ['quality_score', 'completeness', 'uniqueness', 'validity'] if k not in column]
+                        if missing_metrics:
+                            logger.warning(f"[{request_id}] Missing quality metrics in column '{key}': {missing_metrics}")
+                            # Set default values for missing metrics
+                            for metric in missing_metrics:
+                                column[metric] = 0.7 if metric == 'quality_score' else 0.0
+                            
+                            # Update the column_profiles dictionary with the fixed column data
+                            column_profiles[key] = column
+            
+            elif isinstance(column_profiles, list):
+                for i, column in enumerate(column_profiles):
+                    if isinstance(column, dict):
+                        # If any quality metrics are missing, log a warning and add default values
+                        missing_metrics = [k for k in ['quality_score', 'completeness', 'uniqueness', 'validity'] if k not in column]
+                        if missing_metrics:
+                            logger.warning(f"[{request_id}] Missing quality metrics in column at index {i}: {missing_metrics}")
+                            # Set default values for missing metrics
+                            for metric in missing_metrics:
+                                column[metric] = 0.7 if metric == 'quality_score' else 0.0
+                            
+                            # Update the column_profiles list with the fixed column data
+                            column_profiles[i] = column
+                
+                # Convert list to dictionary format for consistency with the frontend expectation
+                column_dict = {}
+                for i, column in enumerate(column_profiles):
+                    column_dict[str(i)] = column
+                column_profiles = column_dict
+        
+        # Log a sample column with quality metrics
+        if column_profiles:
+            if isinstance(column_profiles, dict) and column_profiles:
+                sample_key = list(column_profiles.keys())[0]
+                sample_column = column_profiles[sample_key]
+                if isinstance(sample_column, dict):
+                    quality_metrics = {k: sample_column.get(k) for k in ['quality_score', 'completeness', 'uniqueness', 'validity'] if k in sample_column}
+                    logger.debug(f"[{request_id}] API Response with quality metrics sample:")
+                    logger.debug(f"[{request_id}] Sample column quality metrics: {', '.join([f'{k}={v}' for k, v in quality_metrics.items()])}")
+            elif isinstance(column_profiles, list) and column_profiles:
+                sample_column = column_profiles[0]
+                if isinstance(sample_column, dict):
+                    quality_metrics = {k: sample_column.get(k) for k in ['quality_score', 'completeness', 'uniqueness', 'validity'] if k in sample_column}
+                    logger.debug(f"[{request_id}] API Response with quality metrics sample:")
+                    logger.debug(f"[{request_id}] Sample column quality metrics: {', '.join([f'{k}={v}' for k, v in quality_metrics.items()])}")
         
         # Extract original column headers if they exist in the column profiles
         original_headers = []
@@ -339,7 +499,17 @@ async def get_profile(
         # Log the extracted headers for debugging
         logger.debug(f"[{request_id}] Extracted column headers: {original_headers[:5]}...")
         
-        # Prepare response
+        # Ensure columns are in dictionary format keyed by column_name
+        column_dict = {}
+        if isinstance(column_profiles, list):
+            for col in column_profiles:
+                if isinstance(col, dict) and "column_name" in col:
+                    column_dict[col["column_name"]] = col
+        else:
+            # If it's already a dictionary or another format, use as is
+            column_dict = column_profiles
+        
+        # Prepare the response
         response = {
             "id": profile_result.id,
             "file_id": profile_result.file_id,
@@ -347,12 +517,19 @@ async def get_profile(
             "total_rows": profile_result.total_rows,
             "total_columns": profile_result.total_columns,
             "data_quality_score": profile_result.data_quality_score * 100 if profile_result.data_quality_score is not None else None,
-            "columns": column_profiles,
+            "columns": column_dict,
             "original_headers": original_headers,
-            "created_at": profile_result.created_at
+            "created_at": profile_result.created_at,
+            "exact_duplicates_count": profile_result.exact_duplicates_count,
+            "fuzzy_duplicates_count": profile_result.fuzzy_duplicates_count,
+            "duplicate_groups": profile_result.duplicate_groups
         }
         
-        logger.info(f"[{request_id}] Successfully retrieved profile with {len(column_profiles)} columns")
+        # Convert any NumPy types to Python native types for serialization
+        response = convert_numpy_types(response)
+        
+        logger.info(f"[{request_id}] Successfully retrieved profile with {len(column_dict)} columns")
+        logger.debug(f"[{request_id}] API Response: {response}")
         return response
     
     except Exception as e:
@@ -390,16 +567,37 @@ async def get_profile_by_file_id(
         
         logger.info(f"[{request_id}] Found profile {profile_result.id} for file {file_id}")
         
-        # Prepare response
-        return {
+        # Get column profiles from JSON
+        column_profiles = profile_result.column_profiles
+        
+        # Ensure columns are in dictionary format keyed by column_name
+        column_dict = {}
+        if isinstance(column_profiles, list):
+            for col in column_profiles:
+                if isinstance(col, dict) and "column_name" in col:
+                    column_dict[col["column_name"]] = col
+        else:
+            # If it's already a dictionary or another format, use as is
+            column_dict = column_profiles
+        
+        # Return the profile data
+        response_data = {
             "id": profile_result.id,
             "file_id": profile_result.file_id,
             "file_name": profile_result.file_name,
             "total_rows": profile_result.total_rows,
             "total_columns": profile_result.total_columns,
             "data_quality_score": profile_result.data_quality_score * 100 if profile_result.data_quality_score is not None else None,
-            "created_at": profile_result.created_at
+            "created_at": profile_result.created_at,
+            "exact_duplicates_count": profile_result.exact_duplicates_count,
+            "fuzzy_duplicates_count": profile_result.fuzzy_duplicates_count,
+            "columns": column_dict
         }
+        
+        # Convert any NumPy types to Python native types for serialization
+        response_data = convert_numpy_types(response_data)
+        
+        return response_data
     
     except Exception as e:
         logger.error(f"[{request_id}] Error retrieving profile by file ID: {str(e)}", exc_info=True)

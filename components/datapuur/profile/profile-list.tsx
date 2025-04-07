@@ -33,6 +33,8 @@ interface Profile {
   total_rows: number
   total_columns: number
   data_quality_score: number
+  exact_duplicates_count: number
+  fuzzy_duplicates_count: number
   created_at: string
 }
 
@@ -166,6 +168,7 @@ export function ProfileList({ onProfileSelect, selectedProfileId, fileIdFilter }
                     <TableRow>
                       <TableHead>Dataset</TableHead>
                       <TableHead>Size</TableHead>
+                      <TableHead>Duplicates</TableHead>
                       <TableHead>Quality Score</TableHead>
                       <TableHead>Created</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
@@ -186,6 +189,16 @@ export function ProfileList({ onProfileSelect, selectedProfileId, fileIdFilter }
                             </span>
                             <span className="text-xs text-muted-foreground">
                               {profile.total_columns} columns
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="flex items-center">
+                              Exact: {(profile.exact_duplicates_count !== undefined ? profile.exact_duplicates_count : 0).toLocaleString()}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              Fuzzy: {(profile.fuzzy_duplicates_count !== undefined ? profile.fuzzy_duplicates_count : 0).toLocaleString()}
                             </span>
                           </div>
                         </TableCell>
