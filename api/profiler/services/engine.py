@@ -14,6 +14,11 @@ class DataProfiler:
         self.df = df
         self.total_rows = len(df)
         self.total_columns = len(df.columns)
+        # Cache data types to avoid repeated detection
+        self.column_data_types = {}
+        # Pre-compute data types for all columns
+        for col in df.columns:
+            self.column_data_types[col] = self._detect_data_type(df[col])
 
     def profile_column(self, column_name: str) -> Dict:
         """
@@ -22,13 +27,19 @@ class DataProfiler:
         """
         series = self.df[column_name]
         
-        # Identify empty strings for string columns
+        # Use cached data type instead of detecting it multiple times
+        data_type = self.column_data_types[column_name]
+        
+        # Identify empty strings for string columns using vectorized operations
         empty_string_count = 0
         has_empty_string = False
-        if self._detect_data_type(series) == "string":
-            empty_series = series.dropna().apply(lambda x: isinstance(x, str) and x.strip() == "")
-            empty_string_count = empty_series.sum()
-            has_empty_string = empty_string_count > 0
+        if data_type == "string":
+            # Use vectorized string operations instead of apply+lambda
+            non_null_series = series.dropna()
+            if len(non_null_series) > 0:
+                empty_string_mask = (non_null_series.astype(str).str.strip() == "")
+                empty_string_count = empty_string_mask.sum()
+                has_empty_string = empty_string_count > 0
         
         # Calculate quality metrics - include empty strings as missing values for completeness
         total_missing = series.isnull().sum() + empty_string_count
@@ -50,12 +61,12 @@ class DataProfiler:
         
         profile = {
             "column_name": column_name,
-            "data_type": self._detect_data_type(series),
+            "data_type": data_type,  # Use cached data type
             "count": len(series) - series.isnull().sum() - empty_string_count,  # Count of valid values only
             "null_count": series.isnull().sum(),
             "unique_count": unique_count,  # Unique count excluding empty strings
             "frequent_values": self._get_frequent_values(series),
-            "invalid_values": self._get_invalid_values(series, self._detect_data_type(series)),
+            "invalid_values": self._get_invalid_values(series, data_type),  # Use cached data type
             "patterns": self._detect_patterns(series),
             # Add quality metrics
             "quality_score": quality_score,
@@ -65,7 +76,6 @@ class DataProfiler:
         }
 
         # Add outliers for numeric columns
-        data_type = profile["data_type"]
         if data_type in ['integer', 'float']:
             profile["outliers"] = self._detect_outliers(series)
         else:
@@ -131,7 +141,11 @@ class DataProfiler:
         if clean_series.empty:
             return 0.0
             
-        data_type = self._detect_data_type(series)
+        # Use cached data type if available, otherwise detect it
+        if hasattr(self, 'column_data_types') and series.name in self.column_data_types:
+            data_type = self.column_data_types[series.name]
+        else:
+            data_type = self._detect_data_type(series)
         
         # For numeric types, check for outliers
         if data_type in ['integer', 'float']:
@@ -230,9 +244,9 @@ class DataProfiler:
         Returns a float between 0.0 and 1.0.
         """
         # Weights for different components (add up to 1.0)
-        completeness_weight = 0.4  # Completeness is most important
-        validity_weight = 0.4      # Validity is equally important
-        uniqueness_weight = 0.2    # Uniqueness is less important (some columns should have low uniqueness)
+        completeness_weight = 0.5  # Completeness is most important
+        validity_weight = 0.48     # Validity is equally important
+        uniqueness_weight = 0.02   # Uniqueness is less important (some columns should have low uniqueness)
         
         # Calculate weighted score
         score = (completeness * completeness_weight + 
@@ -397,24 +411,18 @@ class DataProfiler:
         return outliers
 
     def calculate_data_quality_score(self) -> float:
-        scores = []
-        for column in self.df.columns:
-            column_score = 1.0
-            series = self.df[column]
-            
-            # Penalize for nulls
-            null_ratio = series.isnull().mean()
-            column_score *= (1 - null_ratio)
-            
-            # Penalize for high cardinality in categorical columns
-            if not pd.api.types.is_numeric_dtype(series):
-                unique_ratio = series.nunique() / len(series)
-                if unique_ratio > 0.9:  # High cardinality
-                    column_score *= 0.8
-            
-            scores.append(column_score)
+        column_quality_scores = []
         
-        return float(np.mean(scores))
+        # Get the quality score for each column that was already computed in profile_column
+        for column in self.df.columns:
+            profile = self.profile_column(column)
+            column_quality_scores.append(profile["quality_score"])
+        
+        # Calculate the mean of all column quality scores
+        if column_quality_scores:
+            return float(np.mean(column_quality_scores))
+        else:
+            return 0.0
 
     def generate_profile(self) -> Tuple[Dict, List[Dict]]:
         column_profiles = []

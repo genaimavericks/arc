@@ -12,6 +12,10 @@ import os
 import uuid
 import logging
 import time
+import json
+import csv
+from io import StringIO
+from fastapi.responses import StreamingResponse
 from sqlalchemy import desc
 from pathlib import Path
 from datetime import datetime
@@ -604,6 +608,144 @@ async def get_profile_by_file_id(
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/profiles/{profile_id}/export")
+async def export_profile(
+    profile_id: str,
+    format: str = Query(..., regex="^(csv|json)$"),
+    current_user: User = Depends(has_any_permission(["datapuur:read", "kginsights:read"])),
+    db: Session = Depends(get_db)
+):
+    """
+    Export a data profile in CSV or JSON format.
+    
+    Args:
+        profile_id: The ID of the profile to export
+        format: The export format, either 'csv' or 'json'
+        
+    Returns:
+        A downloadable file in the specified format
+    """
+    # Log the export request
+    logger.info(f"Export request received for profile_id: {profile_id}, format: {format}")
+    
+    try:
+        # Reuse existing get_profile function to retrieve the profile data
+        profile_data = await get_profile(profile_id, current_user, db)
+        
+        # Get the file name for the download
+        file_name = profile_data.get("file_name", "profile").replace(" ", "_")
+        
+        # Log audit trail
+        log_activity(
+            db=db,
+            user_id=current_user.id,
+            activity_type="profile_export",
+            resource_id=profile_id,
+            resource_type="profile",
+            details=f"Exported profile in {format} format"
+        )
+            
+        # Create export based on format
+        if format == 'json':
+            # For JSON, simply return the profile data as a downloadable file
+            return create_json_response(profile_data, f"{file_name}_profile.json")
+        else:
+            # For CSV, convert the hierarchical data to a flat format
+            return create_csv_response(profile_data, f"{file_name}_profile.csv")
+            
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Error exporting profile {profile_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to export profile: {str(e)}"
+        )
+
+def create_json_response(data: Dict, filename: str) -> StreamingResponse:
+    """Create a downloadable JSON response"""
+    # Convert data to JSON string with proper formatting
+    json_str = json.dumps(data, indent=2)
+    
+    # Create a streaming response
+    return StreamingResponse(
+        iter([json_str]), 
+        media_type="application/json",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+    
+def create_csv_response(data: Dict, filename: str) -> StreamingResponse:
+    """Create a downloadable CSV response with flattened data"""
+    # Create a CSV string buffer
+    csv_buffer = StringIO()
+    writer = csv.writer(csv_buffer)
+    
+    # Write the header information
+    writer.writerow(["Profile Summary"])
+    writer.writerow(["ID", data["id"]])
+    writer.writerow(["File Name", data["file_name"]])
+    writer.writerow(["Total Rows", data["total_rows"]])
+    writer.writerow(["Total Columns", data["total_columns"]])
+    writer.writerow(["Data Quality Score", f"{data['data_quality_score']:.2f}%"])
+    writer.writerow(["Created At", data["created_at"]])
+    writer.writerow(["Exact Duplicates", data["exact_duplicates_count"]])
+    writer.writerow(["Fuzzy Duplicates", data["fuzzy_duplicates_count"]])
+    writer.writerow([])  # Empty row for separation
+    
+    # Column profiles section
+    writer.writerow(["Column Profiles"])
+    
+    # Create header row for column data
+    column_headers = ["Column Name", "Data Type", "Count", "Null Count", "Unique Count", 
+                     "Quality Score", "Completeness", "Uniqueness", "Validity", 
+                     "Min Value", "Max Value", "Mean", "Median", "Mode", "Std Dev"]
+    writer.writerow(column_headers)
+    
+    # Process columns
+    columns_data = data["columns"]
+    if isinstance(columns_data, dict):
+        # Handle dictionary format
+        for col_name, col_data in columns_data.items():
+            # Extract column profile row
+            column_row = extract_column_row(col_name, col_data)
+            writer.writerow(column_row)
+    elif isinstance(columns_data, list):
+        # Handle array format
+        for i, col_data in enumerate(columns_data):
+            col_name = col_data.get("column_name", col_data.get("name", f"Column {i}"))
+            column_row = extract_column_row(col_name, col_data)
+            writer.writerow(column_row)
+    
+    # Get the CSV data and create a streaming response
+    csv_buffer.seek(0)
+    
+    return StreamingResponse(
+        iter([csv_buffer.getvalue()]), 
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+    
+def extract_column_row(col_name: str, col_data: Dict) -> List:
+    """Extract column data into a row for CSV export"""
+    return [
+        col_name,
+        col_data.get("data_type", ""),
+        col_data.get("count", 0),
+        col_data.get("null_count", 0),
+        col_data.get("unique_count", 0),
+        f"{col_data.get('quality_score', 0):.2f}%",
+        f"{col_data.get('completeness', 0):.2f}",
+        f"{col_data.get('uniqueness', 0):.2f}",
+        f"{col_data.get('validity', 0):.2f}",
+        col_data.get("min_value", ""),
+        col_data.get("max_value", ""),
+        col_data.get("mean_value", ""),
+        col_data.get("median_value", ""),
+        col_data.get("mode_value", ""),
+        col_data.get("std_dev", "")
+    ]
 
 @router.delete("/profiles/{profile_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_profile(

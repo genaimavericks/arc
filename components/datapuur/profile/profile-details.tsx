@@ -41,7 +41,8 @@ import {
   FileQuestion,
   CheckCircle,
   BarChart,
-  LineChart
+  LineChart,
+  Download
 } from "lucide-react"
 import LoadingSpinner from "@/components/loading-spinner"
 import { 
@@ -138,6 +139,7 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
   const [profile, setProfile] = useState<ProfileData | null>(null)
   const [loading, setLoading] = useState(true)
   const [selectedColumn, setSelectedColumn] = useState<string | null>(null)
+  const [exporting, setExporting] = useState(false)
   const { toast } = useToast()
 
   useEffect(() => {
@@ -496,6 +498,151 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
     }
   }, [selectedColumn, profile]);
 
+  // Handle export functionality
+  const handleExport = async (format: 'csv' | 'json') => {
+    if (!profile || exporting) return;
+    
+    try {
+      setExporting(true);
+      
+      if (format === 'json') {
+        // Create a JSON string with proper formatting
+        const jsonString = JSON.stringify(profile, null, 2);
+        
+        // Create a blob of the data
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        
+        // Create a temporary URL for the blob
+        const url = window.URL.createObjectURL(blob);
+        
+        // Create and trigger download
+        downloadFile(url, `${profile.file_name.replace(/\s+/g, '_')}_profile.json`);
+        
+        toast({
+          title: "Export Successful",
+          description: "Profile data has been exported as JSON",
+        });
+      } else {
+        // Create CSV content
+        const csvContent = generateCSV(profile);
+        
+        // Create a blob of the data
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        
+        // Create a temporary URL for the blob
+        const url = window.URL.createObjectURL(blob);
+        
+        // Create and trigger download
+        downloadFile(url, `${profile.file_name.replace(/\s+/g, '_')}_profile.csv`);
+        
+        toast({
+          title: "Export Successful",
+          description: "Profile data has been exported as CSV",
+        });
+      }
+    } catch (error) {
+      console.error(`Error exporting profile as ${format}:`, error);
+      toast({
+        title: "Export Failed",
+        description: `Failed to export profile data as ${format}. Please try again.`,
+        variant: "destructive",
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
+  
+  // Helper function to trigger file download
+  const downloadFile = (url: string, fileName: string) => {
+    // Create a temporary link element
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = fileName;
+    
+    // Append to the DOM, trigger click, and clean up
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  };
+  
+  // Generate CSV content from profile data
+  const generateCSV = (profileData: ProfileData): string => {
+    let csvRows: string[] = [];
+    
+    // Add header information
+    csvRows.push('Profile Summary');
+    csvRows.push(`ID,${profileData.id}`);
+    csvRows.push(`File Name,${profileData.file_name}`);
+    csvRows.push(`Total Rows,${profileData.total_rows}`);
+    csvRows.push(`Total Columns,${profileData.total_columns}`);
+    csvRows.push(`Data Quality Score,${profileData.data_quality_score?.toFixed(2)}%`);
+    csvRows.push(`Created At,${profileData.created_at}`);
+    csvRows.push(`Exact Duplicates,${profileData.exact_duplicates_count || 0}`);
+    csvRows.push(`Fuzzy Duplicates,${profileData.fuzzy_duplicates_count || 0}`);
+    csvRows.push(''); // Empty row for separation
+    
+    // Add column profiles section
+    csvRows.push('Column Profiles');
+    
+    // Create header row for column data
+    const columnHeaders = [
+      "Column Name", "Data Type", "Count", "Null Count", "Unique Count",
+      "Quality Score", "Completeness", "Uniqueness", "Validity",
+      "Min Value", "Max Value", "Mean", "Median", "Mode", "Std Dev"
+    ];
+    csvRows.push(columnHeaders.join(','));
+    
+    // Process columns
+    const columnsData = profileData.columns;
+    if (Array.isArray(columnsData)) {
+      // Handle array format
+      columnsData.forEach((colData, i) => {
+        const colName = colData.column_name || colData.name || `Column ${i}`;
+        const rowData = extractColumnData(colName, colData);
+        csvRows.push(rowData.join(','));
+      });
+    } else if (typeof columnsData === 'object' && columnsData !== null) {
+      // Handle dictionary format
+      Object.entries(columnsData).forEach(([colName, colData]) => {
+        const rowData = extractColumnData(colName, colData);
+        csvRows.push(rowData.join(','));
+      });
+    }
+    
+    // Join rows with newlines
+    return csvRows.join('\n');
+  };
+  
+  // Extract column data for CSV export
+  const extractColumnData = (colName: string, colData: ColumnProfile): string[] => {
+    // Escape any commas in the column name or values
+    const escapeCSV = (value: any): string => {
+      if (value === null || value === undefined) return '';
+      const strValue = String(value);
+      return strValue.includes(',') ? `"${strValue}"` : strValue;
+    };
+    
+    return [
+      escapeCSV(colName),
+      escapeCSV(colData.data_type || ''),
+      escapeCSV(colData.count || 0),
+      escapeCSV(colData.null_count || 0),
+      escapeCSV(colData.unique_count || 0),
+      escapeCSV(colData.quality_score ? `${(colData.quality_score * 100).toFixed(2)}%` : '0%'),
+      escapeCSV(colData.completeness?.toFixed(2) || 0),
+      escapeCSV(colData.uniqueness?.toFixed(2) || 0),
+      escapeCSV(colData.validity?.toFixed(2) || 0),
+      escapeCSV(colData.min_value || ''),
+      escapeCSV(colData.max_value || ''),
+      escapeCSV(colData.mean_value || ''),
+      escapeCSV(colData.median_value || ''),
+      escapeCSV(colData.mode_value || ''),
+      escapeCSV(colData.std_dev || '')
+    ];
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -532,9 +679,27 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
                 Profile generated on {format(new Date(profile.created_at), "MMMM d, yyyy 'at' h:mm a")}
               </CardDescription>
             </div>
-            <Badge variant={getQualityBadgeVariant(profile?.data_quality_score)}>
-              {profile?.data_quality_score !== undefined ? `${Math.round(profile.data_quality_score)}%` : 'N/A'}
-            </Badge>
+            <div className="flex space-x-2 items-center">
+              <button
+                onClick={() => handleExport('csv')}
+                className="flex items-center space-x-1 px-3 py-1 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 transition"
+                title="Export as CSV"
+              >
+                <FileSpreadsheet className="h-4 w-4" />
+                <span>CSV</span>
+              </button>
+              <button
+                onClick={() => handleExport('json')}
+                className="flex items-center space-x-1 px-3 py-1 bg-green-100 text-green-700 rounded-md hover:bg-green-200 transition"
+                title="Export as JSON"
+              >
+                <Braces className="h-4 w-4" />
+                <span>JSON</span>
+              </button>
+              <Badge variant={getQualityBadgeVariant(profile?.data_quality_score)}>
+                {profile?.data_quality_score !== undefined ? `${Math.round(profile.data_quality_score)}%` : 'N/A'}
+              </Badge>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -620,7 +785,7 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
                         </TableHeader>
                         <TableBody>
                           {/* Show up to 5 duplicate records */}
-                          {profile.duplicate_groups.exact.slice(0, 5).map((record, index) => (
+                          {profile.duplicate_groups.exact.slice(0, 5).map((record: any, index: number) => (
                             <TableRow key={index}>
                               {Object.keys(record).slice(0, 4).map((key, keyIndex) => (
                                 <TableCell key={keyIndex} className="p-2 truncate">
@@ -669,7 +834,7 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
                               </TableHeader>
                               <TableBody>
                                 {/* Show samples from this group */}
-                                {group.sample.map((record, index) => (
+                                {group.sample.map((record: any, index: number) => (
                                   <TableRow key={index}>
                                     {Object.keys(record).slice(0, 4).map((key, keyIndex) => (
                                       <TableCell key={keyIndex} className="p-2 truncate">
@@ -745,7 +910,7 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
                     </CardDescription>
                   </div>
                   <Badge variant={getQualityBadgeVariant(selectedColumnData.quality_score * 100)}>
-                    {getQualityScoreLabel(selectedColumnData.quality_score * 100)}
+                    {selectedColumnData.quality_score !== undefined ? `${Math.round(selectedColumnData.quality_score * 100)}%` : 'N/A'}
                   </Badge>
                 </div>
               </CardHeader>
