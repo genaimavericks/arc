@@ -17,6 +17,7 @@ import { DatasetPreviewModal } from "@/components/kginsights/dataset-preview-mod
 import { SchemaViewerModal } from "@/components/kginsights/schema-viewer-modal"
 import { GenerateKGModal } from "@/components/kginsights/generate-kg-modal"
 import { KGInsightsLayout } from "@/components/kginsights/kginsights-layout"
+import { FloatingChart } from "@/components/floating-chart"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -501,14 +502,18 @@ function KGraphDashboardContent() {
   }
 
   return (
-    <div className="flex-1 p-8">
+    <div className="flex-1 p-8 bg-gradient-to-b from-background to-background/95">
+      <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0 pointer-events-none">
+        <FloatingChart count={3} />
+      </div>
+
       {showErrorBanner && (
-        <div className="bg-yellow-500/20 border border-yellow-500 text-yellow-700 dark:text-yellow-200 px-4 py-2 rounded-md mb-4">
+        <div className="bg-yellow-500/20 border border-yellow-500 text-yellow-700 dark:text-yellow-200 px-4 py-2 rounded-md mb-4 relative z-10">
           <p>{error} - Using demo data instead.</p>
         </div>
       )}
 
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-6xl mx-auto relative z-10">
         <motion.h1
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
