@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { getApiBaseUrl } from "@/lib/config"
+import { useIngestion, Job } from "@/lib/ingestion-context"
 
 export function DatabaseConnection({
   onSchemaDetected,
@@ -17,7 +18,18 @@ export function DatabaseConnection({
   onStatusChange,
   onJobCreated,
   onError,
+}: {
+  onSchemaDetected: (schema: any) => void;
+  isProcessing: boolean;
+  setIsProcessing: (isProcessing: boolean) => void;
+  chunkSize: number;
+  onStatusChange: (status: string) => void;
+  onJobCreated: (job: Job) => void;
+  onError?: (error: { message: string }) => void;
 }) {
+  // Use the global ingestion context
+  const { addJob, updateJob, addError, setProcessingStatus } = useIngestion()
+  
   const [connectionType, setConnectionType] = useState("mysql")
   const [connectionConfig, setConnectionConfig] = useState({
     host: "",
@@ -27,11 +39,23 @@ export function DatabaseConnection({
     password: "",
     table: "",
   })
-  const [savedConnections, setSavedConnections] = useState([])
+  const [savedConnections, setSavedConnections] = useState<Array<{
+    id: string;
+    name: string;
+    type: string;
+    config: {
+      host: string;
+      port: string;
+      database: string;
+      username: string;
+      password: string;
+      table: string;
+    };
+  }>>([])
   const [error, setError] = useState("")
   const [connectionName, setConnectionName] = useState("")
 
-  const handleInputChange = (e) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
     setConnectionConfig({
       ...connectionConfig,
@@ -39,7 +63,7 @@ export function DatabaseConnection({
     })
   }
 
-  const handleTypeChange = (value) => {
+  const handleTypeChange = (value: string) => {
     setConnectionType(value)
 
     // Set default port based on database type
@@ -82,6 +106,7 @@ export function DatabaseConnection({
     setIsProcessing(true)
     setError("")
     onStatusChange("Testing database connection...")
+    setProcessingStatus("Testing database connection...")
 
     try {
       const apiBaseUrl = getApiBaseUrl()
@@ -103,11 +128,15 @@ export function DatabaseConnection({
       }
 
       onStatusChange("Connection successful! Database is accessible.")
+      setProcessingStatus("Connection successful! Database is accessible.")
     } catch (error: any) {
       console.error("Error testing connection:", error)
       setError(error.message || "Failed to connect to database")
       onStatusChange("")
       if (onError) onError({ message: error.message || "Failed to connect to database" })
+      
+      // Also add to global error context
+      addError(`Error connecting to ${connectionType} database at ${connectionConfig.host}:${connectionConfig.port}: ${error.message || "Failed to connect to database"}`)
     } finally {
       setIsProcessing(false)
     }
@@ -124,6 +153,7 @@ export function DatabaseConnection({
     setIsProcessing(true)
     setError("")
     onStatusChange("Connecting to database and fetching schema...")
+    setProcessingStatus("Connecting to database and fetching schema...")
 
     try {
       const apiBaseUrl = getApiBaseUrl()
@@ -148,11 +178,15 @@ export function DatabaseConnection({
       const data = await response.json()
       onSchemaDetected(data.schema)
       onStatusChange("Schema fetched successfully!")
+      setProcessingStatus("Schema fetched successfully!")
     } catch (error: any) {
       console.error("Error fetching schema:", error)
       setError(error.message || "Failed to fetch schema")
       onStatusChange("")
       if (onError) onError({ message: error.message || "Failed to fetch schema" })
+      
+      // Also add to global error context
+      addError(`Error fetching schema from ${connectionType} database at ${connectionConfig.host}:${connectionConfig.port}: ${error.message || "Failed to fetch schema"}`)
     } finally {
       setIsProcessing(false)
     }
@@ -169,6 +203,7 @@ export function DatabaseConnection({
     setIsProcessing(true)
     setError("")
     onStatusChange("Starting database ingestion...")
+    setProcessingStatus("Starting database ingestion...")
 
     try {
       const apiBaseUrl = getApiBaseUrl()
@@ -194,24 +229,34 @@ export function DatabaseConnection({
       const data = await response.json()
       onStatusChange("Database ingestion started!")
 
-      // Create a job object for monitoring
-      const job = {
+      // Create a job object for the UI
+      const job: Job = {
         id: data.job_id,
-        name: connectionName || `${connectionType}-${connectionConfig.database}-${connectionConfig.table}`,
+        name: `Database: ${connectionConfig.database}`,
         type: "database",
-        status: "running",
+        status: "queued",
         progress: 0,
         startTime: new Date().toISOString(),
         endTime: null,
-        details: `Starting ingestion for ${connectionConfig.database}.${connectionConfig.table}`,
+        details: `Ingesting from ${connectionType} database: ${connectionConfig.host}:${connectionConfig.port}/${connectionConfig.database}`,
       }
-
+      
+      // Add the job to the UI
       onJobCreated(job)
+      
+      // Also add to global context
+      addJob(job)
+      
+      onStatusChange(`Database ingestion job started with ID: ${data.job_id}`)
+      setProcessingStatus(`Database ingestion job started with ID: ${data.job_id}`)
     } catch (error: any) {
       console.error("Error starting ingestion:", error)
       setError(error.message || "Failed to start database ingestion")
       onStatusChange("")
       if (onError) onError({ message: error.message || "Failed to start database ingestion" })
+      
+      // Also add to global error context
+      addError(`Error starting ingestion from ${connectionType} database at ${connectionConfig.host}:${connectionConfig.port}: ${error.message || "Failed to start database ingestion"}`)
     } finally {
       setIsProcessing(false)
     }
@@ -244,7 +289,19 @@ export function DatabaseConnection({
     setTimeout(() => onStatusChange(""), 3000)
   }
 
-  const loadConnection = (connection) => {
+  const loadConnection = (connection: {
+    id: string;
+    name: string;
+    type: string;
+    config: {
+      host: string;
+      port: string;
+      database: string;
+      username: string;
+      password: string;
+      table: string;
+    };
+  }) => {
     setConnectionType(connection.type)
     setConnectionConfig({
       ...connection.config,
@@ -252,7 +309,7 @@ export function DatabaseConnection({
     })
   }
 
-  const deleteConnection = (id) => {
+  const deleteConnection = (id: string) => {
     setSavedConnections(savedConnections.filter((conn) => conn.id !== id))
   }
 

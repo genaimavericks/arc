@@ -9,6 +9,7 @@ class DataSource(BaseModel):
     type: str
     last_updated: str
     status: str
+    uploaded_by: str = "Unknown"
 
 class DataMetrics(BaseModel):
     total_records: int
@@ -53,4 +54,3 @@ class KGraphDashboard(BaseModel):
     graph: Dict[str, Any]
     metrics: GraphMetrics
     updates: List[Dict[str, str]]
-

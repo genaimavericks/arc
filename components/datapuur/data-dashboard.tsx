@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { PlusCircle, Search, Eye, BarChart2, Wand2, Compass, RefreshCw, Trash2 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { DatasetPreviewModal } from "@/components/datapuur/dataset-preview-modal"
@@ -28,6 +27,7 @@ interface DataSource {
   type: string
   last_updated: string
   status: string
+  uploaded_by: string
 }
 
 interface DataMetrics {
@@ -213,7 +213,8 @@ export function DataDashboard() {
     const filtered = datasets.filter((dataset) =>
       dataset.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       dataset.type.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      dataset.status.toLowerCase().includes(searchQuery.toLowerCase())
+      dataset.status.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      dataset.uploaded_by.toLowerCase().includes(searchQuery.toLowerCase())
     )
 
     // Sort the filtered datasets
@@ -364,7 +365,7 @@ export function DataDashboard() {
 
   return (
     <div className="w-full space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center mb-8">
         <div className="flex items-center gap-2">
           <Button onClick={handleNewDataset} className="flex items-center gap-2">
             <PlusCircle className="h-4 w-4" />
@@ -386,12 +387,15 @@ export function DataDashboard() {
         </div>
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-row items-left justify-between">
-          <CardTitle className="text-left">Datasets</CardTitle>
+      <div className="bg-card/80 backdrop-blur-sm p-6 rounded-lg border border-border shadow-md mb-8">
+        <div className="flex flex-row items-center justify-between mb-6">
+          <h3 className="text-xl font-semibold text-foreground flex items-center">
+            <Table className="w-5 h-5 mr-2 text-primary" />
+            Datasets
+          </h3>
           <div className="text-sm text-muted-foreground">Auto-refreshes every 30 seconds</div>
-        </CardHeader>
-        <CardContent>
+        </div>
+        <div>
           {isLoading ? (
             <div className="flex justify-center items-center h-64">
               <RefreshCw className="h-8 w-8 animate-spin text-primary" />
@@ -444,6 +448,17 @@ export function DataDashboard() {
                       </span>
                     )}
                   </TableHead>
+                  <TableHead 
+                    className="cursor-pointer hover:text-primary transition-colors"
+                    onClick={() => handleSort("uploaded_by")}
+                  >
+                    Uploaded By
+                    {sortColumn === "uploaded_by" && (
+                      <span className="ml-1">
+                        {sortDirection === "asc" ? "↑" : "↓"}
+                      </span>
+                    )}
+                  </TableHead>
                   <TableHead className="w-[180px] text-center">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -455,6 +470,7 @@ export function DataDashboard() {
                       <TableCell>{dataset.type}</TableCell>
                       <TableCell>{formatDate(dataset.last_updated)}</TableCell>
                       <TableCell className={getStatusClass(dataset.status)}>{dataset.status}</TableCell>
+                      <TableCell>{dataset.uploaded_by}</TableCell>
                       <TableCell>
                         <div className="flex justify-center space-x-2">
                           <Button
@@ -509,7 +525,7 @@ export function DataDashboard() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={5} className="h-24 text-center">
+                    <TableCell colSpan={6} className="h-24 text-center">
                       {searchQuery
                         ? "No matching datasets found."
                         : "No datasets available. Create one by clicking 'New Dataset'."}
@@ -519,8 +535,8 @@ export function DataDashboard() {
               </TableBody>
             </Table>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
       {selectedDataset && (
         <DatasetPreviewModal
           isOpen={previewModalOpen}

@@ -9,18 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { motion } from "framer-motion"
 import { getApiBaseUrl } from "@/lib/config"
-
-// Define job interface for type safety
-interface Job {
-  id: string
-  name: string
-  type: string
-  status: string
-  progress: number
-  startTime: string
-  endTime: string | null
-  details: string
-}
+import { useIngestion, Job } from "@/lib/ingestion-context"
 
 // Define component props interface
 interface FileUploadProps {
@@ -44,6 +33,9 @@ export function FileUpload({
   onJobUpdated,
   onError,
 }: FileUploadProps) {
+  // Use the global ingestion context
+  const { addJob, updateJob, addError, setProcessingStatus } = useIngestion()
+  
   // Update the component to handle multiple files
   // Change the file state from a single file to an array of files
   const [files, setFiles] = useState<File[]>([])
@@ -139,6 +131,7 @@ export function FileUpload({
     setUploadProgress({})
     setError("")
     onStatusChange(`Preparing to upload ${files.length} file${files.length > 1 ? "s" : ""}...`)
+    setProcessingStatus(`Preparing to upload ${files.length} file${files.length > 1 ? "s" : ""}...`)
 
     // Process each file sequentially
     for (let i = 0; i < files.length; i++) {
@@ -146,6 +139,7 @@ export function FileUpload({
       try {
         // Update status for current file
         onStatusChange(`Uploading file ${i + 1} of ${files.length}: ${file.name}...`)
+        setProcessingStatus(`Uploading file ${i + 1} of ${files.length}: ${file.name}...`)
 
         // Create a job object immediately to show in the UI, even before the upload completes
         // This ensures the job card appears right away for large files
@@ -161,11 +155,13 @@ export function FileUpload({
           details: `File: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`,
         }
         
-        // Notify about the job immediately - ensure this is called
+        // Notify about the job immediately - use both local and global state
         if (onJobCreated) {
           console.log("Creating initial job:", initialJob)
           onJobCreated(initialJob)
         }
+        // Also add to global context
+        addJob(initialJob)
 
         const formData = new FormData()
         formData.append("file", file)
@@ -220,11 +216,14 @@ export function FileUpload({
               
               // Update the job in the UI
               if (onJobUpdated) {
-                onJobUpdated(progressJob);
+                onJobUpdated(progressJob)
               }
+              // Also update in global context
+              updateJob(progressJob)
               
               // Update status
               onStatusChange(`Uploading file ${i + 1} of ${files.length}: ${file.name} (${percentComplete}%)...`);
+              setProcessingStatus(`Uploading file ${i + 1} of ${files.length}: ${file.name} (${percentComplete}%)...`);
             } catch (error) {
               console.error("Error uploading chunk:", error);
               throw error;
@@ -255,6 +254,7 @@ export function FileUpload({
           
           const data = await completeResponse.json();
           onStatusChange(`File ${i + 1} uploaded successfully! Processing data...`);
+          setProcessingStatus(`File ${i + 1} uploaded successfully! Processing data...`);
           
           // Continue with ingestion as before
           const ingestResponse = await fetch(`${apiBaseUrl}/api/datapuur/ingest-file`, {
@@ -300,6 +300,7 @@ export function FileUpload({
           }
           
           onStatusChange(`Ingestion job started for ${file.name} with ID: ${ingestData.job_id}`)
+          setProcessingStatus(`Ingestion job started for ${file.name} with ID: ${ingestData.job_id}`)
           
           // Update progress - ingestion started
           setUploadProgress((prev) => ({ ...prev, [i]: 90 }))
@@ -377,6 +378,18 @@ export function FileUpload({
                     endTime: new Date().toISOString(), // Set end time since it's completed
                     details: `Profile generated for: ${file.name}`,
                   });
+                  
+                  // Also add to global context
+                  addJob({
+                    id: profileData.id, // Using profile ID as job ID
+                    name: `Profile: ${file.name}`,
+                    type: "profile",
+                    status: "completed", // Since profiling is synchronous, it's already completed
+                    progress: 100,
+                    startTime: new Date().toISOString(),
+                    endTime: new Date().toISOString(), // Set end time since it's completed
+                    details: `Profile generated for: ${file.name}`,
+                  });
                 }
               }
             } catch (profileError) {
@@ -405,12 +418,14 @@ export function FileUpload({
               
               // Update the job in the UI - use onJobUpdated instead of onJobCreated for progress updates
               if (onJobUpdated) {
-                console.log("Updating job progress:", progressJob)
                 onJobUpdated(progressJob)
               }
+              // Also update in global context
+              updateJob(progressJob)
               
               // Update status
               onStatusChange(`Uploading file ${i + 1} of ${files.length}: ${file.name} (${percentComplete}%)...`)
+              setProcessingStatus(`Uploading file ${i + 1} of ${files.length}: ${file.name} (${percentComplete}%)...`)
             }
           })
           
@@ -448,6 +463,7 @@ export function FileUpload({
           // Wait for the upload to complete
           const data = await uploadPromise
           onStatusChange(`File ${i + 1} uploaded successfully! Processing data...`)
+          setProcessingStatus(`File ${i + 1} uploaded successfully! Processing data...`)
 
           // Create a new ingestion job
           const ingestResponse = await fetch(`${apiBaseUrl}/api/datapuur/ingest-file`, {
@@ -492,7 +508,11 @@ export function FileUpload({
             onJobCreated(updatedJob)
           }
           
+          // Update in global context - this will replace the temp job
+          updateJob(updatedJob)
+          
           onStatusChange(`Ingestion job started for ${file.name} with ID: ${ingestData.job_id}`)
+          setProcessingStatus(`Ingestion job started for ${file.name} with ID: ${ingestData.job_id}`)
           
           // Update progress - ingestion started
           setUploadProgress((prev) => ({ ...prev, [i]: 90 }))
@@ -570,6 +590,18 @@ export function FileUpload({
                     endTime: new Date().toISOString(), // Set end time since it's completed
                     details: `Profile generated for: ${file.name}`,
                   });
+                  
+                  // Also add to global context
+                  addJob({
+                    id: profileData.id, // Using profile ID as job ID
+                    name: `Profile: ${file.name}`,
+                    type: "profile",
+                    status: "completed", // Since profiling is synchronous, it's already completed
+                    progress: 100,
+                    startTime: new Date().toISOString(),
+                    endTime: new Date().toISOString(), // Set end time since it's completed
+                    details: `Profile generated for: ${file.name}`,
+                  });
                 }
               }
             } catch (profileError) {
@@ -591,6 +623,7 @@ export function FileUpload({
     }
 
     onStatusChange(`Completed processing ${files.length} file${files.length > 1 ? "s" : ""}`)
+    setProcessingStatus(`Completed processing ${files.length} file${files.length > 1 ? "s" : ""}`)
     setIsProcessing(false)
   }
 
