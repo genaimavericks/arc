@@ -646,14 +646,7 @@ function KGraphDashboardContent() {
                               >
                                 Delete
                               </Button>
-                              <span className="text-muted-foreground">|</span>
-                              <Button
-                                variant="link"
-                                className="text-green-500 hover:text-green-600 hover:bg-green-500/10"
-                                onClick={() => handleApplyToNeo4j(graph)}
-                              >
-                                Apply to Neo4j
-                              </Button>
+
                             </div>
                           </td>
                         </motion.tr>
