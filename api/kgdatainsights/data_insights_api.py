@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Response, status
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 import asyncio
@@ -105,6 +105,12 @@ class QueryHistoryResponse(BaseModel):
     """Response model for the query history endpoint."""
     source_id: str
     queries: List[HistoricalQuery]
+
+class DeleteHistoryResponse(BaseModel):
+    """Response model for delete history endpoints."""
+    source_id: str
+    message: str
+    deleted_count: int
 
 class PredefinedQuery(BaseModel):
     """Model for a predefined query."""
@@ -349,6 +355,114 @@ async def get_query_history(
         return QueryHistoryResponse(source_id=source_id, queries=queries)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving query history: {str(e)}")
+
+@router.delete("/{source_id}/query/history/{history_id}", response_model=DeleteHistoryResponse)
+async def delete_history_item(
+    source_id: str,
+    history_id: str,
+    current_user: User = Depends(has_any_permission(["kginsights:write"]))
+):
+    """
+    Delete a specific history item by ID.
+    
+    Args:
+        source_id: The ID of the data source
+        history_id: The ID of the history item to delete
+        
+    Returns:
+        DeleteHistoryResponse: Message confirming deletion
+    """
+    try:
+        # Try to load history from disk if not in memory
+        if source_id not in query_history:
+            history_file = os.path.join(HISTORY_DIR, f"{source_id}_history.json")
+            if os.path.exists(history_file):
+                with open(history_file, 'r') as f:
+                    query_history[source_id] = json.load(f)
+            else:
+                # No history file exists
+                return DeleteHistoryResponse(
+                    source_id=source_id,
+                    message=f"No history item found with ID {history_id}",
+                    deleted_count=0
+                )
+        
+        # Get the history for the source_id (or empty list if none)
+        history = query_history.get(source_id, [])
+        
+        # Check if history item exists
+        original_length = len(history)
+        query_history[source_id] = [item for item in history if item["id"] != history_id]
+        deleted_count = original_length - len(query_history[source_id])
+        
+        if deleted_count == 0:
+            return DeleteHistoryResponse(
+                source_id=source_id,
+                message=f"No history item found with ID {history_id}",
+                deleted_count=0
+            )
+        
+        # Save updated history back to disk
+        history_file = os.path.join(HISTORY_DIR, f"{source_id}_history.json")
+        with open(history_file, 'w') as f:
+            json.dump(query_history[source_id], f, cls=Neo4jJsonEncoder)
+        
+        return DeleteHistoryResponse(
+            source_id=source_id,
+            message=f"Successfully deleted history item {history_id}",
+            deleted_count=deleted_count
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting history item: {str(e)}")
+
+@router.delete("/{source_id}/query/history", response_model=DeleteHistoryResponse)
+async def delete_all_history(
+    source_id: str,
+    current_user: User = Depends(has_any_permission(["kginsights:write"]))
+):
+    """
+    Delete all history for a source ID.
+    
+    Args:
+        source_id: The ID of the data source
+        
+    Returns:
+        DeleteHistoryResponse: Message confirming deletion with count of deleted items
+    """
+    try:
+        # Try to load history from disk if not in memory
+        if source_id not in query_history:
+            history_file = os.path.join(HISTORY_DIR, f"{source_id}_history.json")
+            if os.path.exists(history_file):
+                with open(history_file, 'r') as f:
+                    query_history[source_id] = json.load(f)
+            else:
+                # No history file exists, nothing to delete
+                return DeleteHistoryResponse(
+                    source_id=source_id,
+                    message="No history exists for this source",
+                    deleted_count=0
+                )
+        
+        # Get the history for the source_id (or empty list if none)
+        history = query_history.get(source_id, [])
+        deleted_count = len(history)
+        
+        # Clear the history
+        query_history[source_id] = []
+        
+        # Save empty history back to disk
+        history_file = os.path.join(HISTORY_DIR, f"{source_id}_history.json")
+        with open(history_file, 'w') as f:
+            json.dump([], f)
+        
+        return DeleteHistoryResponse(
+            source_id=source_id,
+            message=f"Successfully deleted all history items",
+            deleted_count=deleted_count
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting history: {str(e)}")
 
 @router.get("/{source_id}/query/canned", response_model=PredefinedQueriesResponse)
 async def get_predefined_queries(
