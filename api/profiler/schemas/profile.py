@@ -58,6 +58,8 @@ class ProfileListItem(BaseModel):
     total_rows: int
     total_columns: int
     data_quality_score: float
+    exact_duplicates_count: Optional[int] = 0
+    fuzzy_duplicates_count: Optional[int] = 0
     created_at: datetime
 
     class Config:

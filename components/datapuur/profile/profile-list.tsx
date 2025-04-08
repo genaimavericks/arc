@@ -185,6 +185,8 @@ export function ProfileList({ onProfileSelect, selectedProfileId, fileIdFilter }
           total_rows: data.total_rows,
           total_columns: data.total_columns,
           data_quality_score: data.data_quality_score,
+          exact_duplicates_count: data.exact_duplicates_count,
+          fuzzy_duplicates_count: data.fuzzy_duplicates_count,
           created_at: data.created_at
         }]);
         setTotalProfiles(1);
