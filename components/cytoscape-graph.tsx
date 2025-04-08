@@ -23,9 +23,19 @@ interface Schema {
 
 interface CytoscapeGraphProps {
   schema: Schema;
+  showContainer?: boolean;
+  showTitle?: boolean;
+  height?: string;
+  customTitle?: string;
 }
 
-export default function CytoscapeGraph({ schema }: CytoscapeGraphProps) {
+export default function CytoscapeGraph({ 
+  schema, 
+  showContainer = true, 
+  showTitle = true, 
+  height = '500px',
+  customTitle = 'Graph Visualization'
+}: CytoscapeGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<any>(null);
 
@@ -117,13 +127,27 @@ export default function CytoscapeGraph({ schema }: CytoscapeGraphProps) {
     }
   }, [schema]);
 
-  return (
-    <div className="border rounded-md p-4 bg-white">
-      <h3 className="text-lg font-medium mb-2">Graph Visualization</h3>
-      <div 
-        ref={containerRef} 
-        style={{ width: '100%', height: '500px', border: '1px solid #e5e7eb', borderRadius: '0.375rem' }}
-      />
-    </div>
+  // Render the graph with or without container based on props
+  const graphContent = (
+    <div 
+      ref={containerRef} 
+      style={{ 
+        width: '100%', 
+        height: height, 
+        border: showContainer ? '1px solid #e5e7eb' : 'none', 
+        borderRadius: showContainer ? '0.375rem' : '0' 
+      }}
+    />
   );
+
+  if (showContainer) {
+    return (
+      <div className="border rounded-md p-4 bg-white">
+        {showTitle && <h3 className="text-lg font-medium mb-2">{customTitle}</h3>}
+        {graphContent}
+      </div>
+    );
+  }
+
+  return graphContent;
 }

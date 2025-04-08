@@ -50,6 +50,9 @@ export function GraphVisualization({ data, title = "Knowledge Graph Visualizatio
             <div className="w-full h-full">
               <CytoscapeGraph
                 schema={schemaData}
+                showContainer={false}
+                showTitle={false}
+                height="100%"
               />
             </div>
           </div>
