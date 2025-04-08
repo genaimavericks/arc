@@ -1,9 +1,0 @@
-[
-  {
-    "id": "1_1744007053",
-    "source_id": "foamfactory_graph",
-    "query": "What are the main entities in this knowledge graph?",
-    "result": "Here's the graph structure:\nNodes:\n- ['Session']: 495 instances\n- ['Team']: 100 instances\n- ['Date']: 1827 instances\n- ['Member']: 400 instances\n- ['Factory']: 5 instances\n- ['Machine']: 15 instances\n- ['Product']: 3 instances\n- ['Supplier']: 3 instances\n- ['RawMaterial']: 2 instances\n- ['Message']: 550 instances\nRelationships:\n- USED_ON: 27405 instances\n- HAS_MEMBER: 400 instances\n- HAS_MACHINE: 15 instances\n- OPERATED_ON: 27405 instances\n- USED_BY_TEAM: 27405 instances\n- PRODUCED_ON: 27405 instances\n- PRODUCED_USING: 27405 instances\n- SUPPLIED_BY: 21365 instances\n- NEXT: 447 instances\n- LAST_MESSAGE: 103 instances",
-    "timestamp": "2025-04-07T11:54:13.444378"
-  }
-]

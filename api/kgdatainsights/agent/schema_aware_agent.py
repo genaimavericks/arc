@@ -701,6 +701,17 @@ class SchemaAwareGraphAssistant:
         if not prompt_text:
             return prompt_text
 
+        # Check if there are already double braces around property patterns
+        # This regex looks for {{prop: value}} patterns which are already escaped
+        already_escaped_pattern = re.compile(r'\{\{([a-zA-Z0-9_]+\s*:(?![}]).*?)\}\}')
+        
+        # Mark positions that are already escaped to avoid double-escaping
+        already_escaped_positions = set()
+        for match in already_escaped_pattern.finditer(prompt_text):
+            start, end = match.span()
+            for i in range(start, end):
+                already_escaped_positions.add(i)
+        
         # Define patterns that need escaping - Neo4j property patterns but not template variables
         # This regex looks for {prop: value} patterns but ignores {query} or {context}
         neo4j_prop_pattern = re.compile(r'\{([a-zA-Z0-9_]+\s*:(?![}]).*?)\}')
@@ -710,13 +721,18 @@ class SchemaAwareGraphAssistant:
 
         # Process matches from end to beginning to avoid offset issues
         for match in reversed(matches):
+            start, end = match.span()
+            
+            # Skip if any part of this match is already in an escaped section
+            if any(i in already_escaped_positions for i in range(start, end)):
+                continue
+            
             # Skip if it looks like a template variable
             content = match.group(1)
             if content.strip() in ["query", "context", "response", "question"]:
                 continue
 
             # Replace with double braces
-            start, end = match.span()
             prompt_text = prompt_text[:start] + "{" + prompt_text[start:end] + "}" + prompt_text[end:]
 
         return prompt_text

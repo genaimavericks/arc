@@ -1,9 +1,0 @@
-[
-  {
-    "id": "1_1744007865",
-    "source_id": "default_graph",
-    "query": "What are the main entities in this knowledge graph?",
-    "result": "Here's the graph structure:\nNodes:\n- ['Session']: 2 instances\n- ['Factory']: 1 instances\n- ['Batch']: 1 instances\n- ['Shift']: 1 instances\n- ['Product']: 1 instances\nRelationships:\n- PRODUCES: 2 instances\n- WORKS_ON: 1 instances",
-    "timestamp": "2025-04-07T12:07:45.533894"
-  }
-]

@@ -5,7 +5,7 @@ import asyncio
 from datetime import datetime
 import json
 import os
-from fastapi import APIRouter, Depends, HTTPException, Query
+from pathlib import Path
 from .agent.insights_data_agent import get_kg_answer, init_graph
 from .agent.schema_aware_agent import get_schema_aware_assistant
 from .visualization_analyzer import analyze_data_for_visualization, GraphData
@@ -20,8 +20,10 @@ router = APIRouter(prefix="/datainsights", tags=["Data Insights"])
 query_history = {}
 
 # Directory to store query history and predefined queries as JSON files
-HISTORY_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "history")
-QUERIES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "queries")
+# Output directories
+OUTPUT_DIR = Path("runtime-data/output/kgdatainsights")
+HISTORY_DIR = OUTPUT_DIR / "history"
+QUERIES_DIR = OUTPUT_DIR / "queries"
 os.makedirs(HISTORY_DIR, exist_ok=True)
 os.makedirs(QUERIES_DIR, exist_ok=True)
 
