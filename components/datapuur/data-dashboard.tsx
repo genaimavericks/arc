@@ -333,8 +333,9 @@ export function DataDashboard() {
 
   const handleProfile = (datasetId: string, e: React.MouseEvent) => {
     // Navigate to the profile page with the dataset ID as a query parameter
+    // and set the active tab to "details" to show profile details directly
     e.preventDefault();
-    router.push(`/datapuur/profile?fileId=${datasetId}`);
+    router.push(`/datapuur/profile?fileId=${datasetId}&activeTab=details`);
   }
 
   const handleTransform = (datasetId: string) => {
