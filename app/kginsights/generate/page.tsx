@@ -403,7 +403,7 @@ function GenerateGraphContent() {
                       animate={{ scale: 1, opacity: 1 }}
                       transition={{ duration: 0.3, repeat: Infinity, repeatType: "reverse" }}
                     >
-                      <LoadingSpinner size="lg" />
+                      <LoadingSpinner size="default" />
                     </motion.div>
                     <p className="mt-4 text-muted-foreground animate-pulse">Generating schema...</p>
                   </div>
@@ -412,92 +412,153 @@ function GenerateGraphContent() {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ duration: 0.5 }}
-                    className="space-y-6"
                   >
-                    <h2 className="text-xl font-semibold flex items-center gap-2">
-                      <Save className="h-5 w-5 text-accent" />
-                      <span className="bg-clip-text text-transparent bg-gradient-to-r from-accent to-primary">Recommended Schema</span>
-                    </h2>
-                    <Separator className="bg-accent/10" />
+                    <div className="flex items-center justify-between mb-2">
+                      <h2 className="text-xl font-semibold flex items-center gap-2">
+                        <Save className="h-5 w-5 text-accent" />
+                        <span className="bg-clip-text text-transparent bg-gradient-to-r from-accent to-primary">Recommended Schema</span>
+                      </h2>
+                    </div>
+                    <Separator className="bg-accent/10 mb-4" />
                     
-                    <div className="space-y-6">
-                      {/* Graph Visualization */}
-                      <div className="border rounded-lg p-4 bg-background/80 shadow-inner hover:shadow-md transition-all duration-300 hover:bg-background/90">
-                        <div className="h-[250px]">
-                          <CytoscapeGraph schema={schema} />
+                    {/* Visualization Section */}
+                    <div className="mb-6 relative">
+                      <div className="border rounded-lg overflow-hidden shadow-md">
+                        <div className="bg-muted/30 p-3 border-b border-border/40">
+                          <h3 className="text-md font-medium text-primary/90">Graph Visualization</h3>
+                        </div>
+                        <div className="bg-background p-0">
+                          <div className="h-[300px] w-full">
+                            <CytoscapeGraph 
+                              schema={schema} 
+                              showContainer={false} 
+                              showTitle={false} 
+                              height="300px" 
+                            />
+                          </div>
                         </div>
                       </div>
-                      
-                      {/* Schema Details */}
-                      <div className="space-y-4 max-h-[280px] overflow-y-auto custom-scrollbar pr-2">
-                        <div>
-                          <h3 className="text-lg font-medium mb-2 text-primary/90">Nodes:</h3>
-                          <ul className="list-disc pl-5 space-y-1">
-                            {schema.nodes.map((node, index) => (
-                              <motion.li 
-                                key={index}
-                                initial={{ opacity: 0, x: -5 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                transition={{ duration: 0.2, delay: index * 0.05 }}
-                                className="bg-muted/30 p-2 rounded-md hover:bg-muted/50 transition-colors"
-                              >
-                                <span className="font-medium text-foreground/90">{node.label}</span> 
-                                <span className="text-muted-foreground text-sm">
-                                  ({Object.entries(node.properties || {}).map(([key, type]) => `${key}: ${type}`).join(", ")})
-                                </span>
-                              </motion.li>
-                            ))}
-                          </ul>
+                    </div>
+                    
+                    {/* Schema Details Section */}
+                    <div className="space-y-4">
+                      {/* Nodes Card */}
+                      <div className="border rounded-lg overflow-hidden shadow-md bg-background">
+                        <div className="bg-muted/30 p-3 border-b border-border/40 flex justify-between items-center">
+                          <h3 className="text-md font-medium text-primary/90">Nodes</h3>
+                          <span className="text-xs text-muted-foreground bg-muted/50 px-2 py-1 rounded">
+                            {schema.nodes.length} node{schema.nodes.length !== 1 ? 's' : ''}
+                          </span>
                         </div>
-                        
-                        <div>
-                          <h3 className="text-lg font-medium mb-2 text-accent/90">Relationships:</h3>
-                          <ul className="list-disc pl-5 space-y-1">
-                            {schema.relationships.map((rel, index) => (
-                              <motion.li 
-                                key={index}
-                                initial={{ opacity: 0, x: -5 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                transition={{ duration: 0.2, delay: index * 0.05 }}
-                                className="bg-muted/30 p-2 rounded-md hover:bg-muted/50 transition-colors"
-                              >
-                                <span className="font-medium text-foreground/90">{rel.startNode}</span> 
-                                <span className="mx-1 text-accent font-mono">-[{rel.type}]-&gt;</span>
-                                <span className="font-medium text-foreground/90">{rel.endNode}</span>
-                                {rel.properties && Object.keys(rel.properties).length > 0 && (
-                                  <div className="ml-4 mt-1 text-sm text-muted-foreground">
-                                    Properties: {Object.entries(rel.properties).map(([key, type]) => `${key}: ${type}`).join(", ")}
-                                  </div>
-                                )}
-                              </motion.li>
-                            ))}
-                          </ul>
-                        </div>
-                        
-                        {schema.indexes && schema.indexes.length > 0 && (
-                          <div>
-                            <h3 className="text-lg font-medium mb-2 text-secondary/90">Indexes:</h3>
-                            <ul className="list-disc pl-5 space-y-1">
-                              {schema.indexes.map((index, i) => (
+                        <div className="p-4">
+                          <div className="max-h-[180px] overflow-y-auto custom-scrollbar pr-2">
+                            <ul className="space-y-2">
+                              {schema.nodes.map((node, index) => (
                                 <motion.li 
-                                  key={i}
+                                  key={index}
                                   initial={{ opacity: 0, x: -5 }}
                                   animate={{ opacity: 1, x: 0 }}
-                                  transition={{ duration: 0.2, delay: i * 0.05 }}
-                                  className="bg-muted/30 p-2 rounded-md hover:bg-muted/50 transition-colors"
+                                  transition={{ duration: 0.2, delay: index * 0.05 }}
+                                  className="bg-muted/30 p-3 rounded-md hover:bg-muted/40 transition-colors border border-border/20"
                                 >
-                                  {index}
+                                  <div className="flex flex-col">
+                                    <span className="font-semibold text-foreground/90 mb-1">{node.label}</span> 
+                                    <div className="text-muted-foreground text-sm">
+                                      {Object.entries(node.properties || {}).map(([key, type], idx) => (
+                                        <span key={idx} className="inline-block mr-2 mb-1 bg-background/70 px-1.5 py-0.5 rounded border border-border/30">
+                                          <span className="font-medium">{key}:</span> {type}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
                                 </motion.li>
                               ))}
                             </ul>
                           </div>
-                        )}
-                        
-                        <div>
-                          <h3 className="text-lg font-medium mb-2 text-secondary/90">Justification:</h3>
-                          <p className="text-muted-foreground bg-muted/30 p-3 rounded-md border border-border/50">
-                            This schema captures the relationships between the entities in your data 
-                            while maintaining appropriate properties and constraints for optimal graph traversal.
+                        </div>
+                      </div>
+                      
+                      {/* Relationships Card */}
+                      {schema.relationships.length > 0 && (
+                        <div className="border rounded-lg overflow-hidden shadow-md bg-background">
+                          <div className="bg-muted/30 p-3 border-b border-border/40 flex justify-between items-center">
+                            <h3 className="text-md font-medium text-accent/90">Relationships</h3>
+                            <span className="text-xs text-muted-foreground bg-muted/50 px-2 py-1 rounded">
+                              {schema.relationships.length} relationship{schema.relationships.length !== 1 ? 's' : ''}
+                            </span>
+                          </div>
+                          <div className="p-4">
+                            <div className="max-h-[180px] overflow-y-auto custom-scrollbar pr-2">
+                              <ul className="space-y-2">
+                                {schema.relationships.map((rel, index) => (
+                                  <motion.li 
+                                    key={index}
+                                    initial={{ opacity: 0, x: -5 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    transition={{ duration: 0.2, delay: index * 0.05 }}
+                                    className="bg-muted/30 p-3 rounded-md hover:bg-muted/40 transition-colors border border-border/20"
+                                  >
+                                    <div className="flex flex-col">
+                                      <div className="flex items-center gap-1 mb-1 flex-wrap">
+                                        <span className="font-medium text-foreground/90">{rel.startNode}</span> 
+                                        <span className="mx-1 text-accent font-mono whitespace-nowrap">-[{rel.type}]-&gt;</span>
+                                        <span className="font-medium text-foreground/90">{rel.endNode}</span>
+                                      </div>
+                                      {rel.properties && Object.keys(rel.properties).length > 0 && (
+                                        <div className="text-muted-foreground text-sm mt-1">
+                                          {Object.entries(rel.properties).map(([key, type], idx) => (
+                                            <span key={idx} className="inline-block mr-2 mb-1 bg-background/70 px-1.5 py-0.5 rounded border border-border/30">
+                                              <span className="font-medium">{key}:</span> {type}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </motion.li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Indexes Card */}
+                      {schema.indexes && schema.indexes.length > 0 && (
+                        <div className="border rounded-lg overflow-hidden shadow-md bg-background">
+                          <div className="bg-muted/30 p-3 border-b border-border/40 flex justify-between items-center">
+                            <h3 className="text-md font-medium text-secondary/90">Indexes</h3>
+                            <span className="text-xs text-muted-foreground bg-muted/50 px-2 py-1 rounded">
+                              {schema.indexes.length} index{schema.indexes.length !== 1 ? 'es' : ''}
+                            </span>
+                          </div>
+                          <div className="p-4">
+                            <div className="max-h-[150px] overflow-y-auto custom-scrollbar pr-2">
+                              <ul className="space-y-2">
+                                {schema.indexes.map((index, i) => (
+                                  <motion.li 
+                                    key={i}
+                                    initial={{ opacity: 0, x: -5 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    transition={{ duration: 0.2, delay: i * 0.05 }}
+                                    className="bg-muted/30 p-2 rounded-md hover:bg-muted/40 transition-colors border border-border/20"
+                                  >
+                                    {index}
+                                  </motion.li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Notes Card */}
+                      <div className="border rounded-lg overflow-hidden shadow-md bg-background">
+                        <div className="bg-muted/30 p-3 border-b border-border/40">
+                          <h3 className="text-md font-medium text-secondary/90">Notes</h3>
+                        </div>
+                        <div className="p-4">
+                          <p className="text-sm text-muted-foreground bg-muted/20 p-3 rounded-md border border-border/30">
+                            This schema captures the structure of your TelecomChurn data with appropriate indexes for optimal query performance. Property types have been mapped to match the original CSV column data types.
                           </p>
                         </div>
                       </div>

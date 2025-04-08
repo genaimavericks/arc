@@ -142,11 +142,16 @@ export function InsightsChatMessages({
                   
                   {/* Render graphs, tables, or other visualizations based on metadata */}
                   {message.metadata?.type === "graph" && message.metadata.data && (
-                    <div className="mt-3">
-                      <GraphVisualization 
-                        data={message.metadata.data}
-                        title="Knowledge Graph Visualization"
-                      />
+                    <div className="mt-3 border rounded-md overflow-hidden">
+                      <div className="p-2 bg-background border-b">
+                        <h4 className="text-xs font-medium">Knowledge Graph Visualization</h4>
+                      </div>
+                      <div className="h-[200px]">
+                        <GraphVisualization 
+                          data={message.metadata.data}
+                          title=""
+                        />
+                      </div>
                     </div>
                   )}
                   
