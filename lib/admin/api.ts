@@ -310,7 +310,7 @@ export async function exportData(): Promise<any> {
   }
 }
 
-export async function clearActivityLogs(days: number): Promise<void> {
+export async function clearActivityLogs(hours: number = 2): Promise<void> {
   try {
     const apiUrl = getApiBaseUrl();
     const token = localStorage.getItem("token");
@@ -320,7 +320,7 @@ export async function clearActivityLogs(days: number): Promise<void> {
       "Content-Type": "application/json",
     };
 
-    const response = await fetch(`${apiUrl}/api/admin/activity/clear${days ? `?days=${days}` : ""}`, {
+    const response = await fetch(`${apiUrl}/api/admin/activity/clear${hours ? `?hours=${hours}` : ""}`, {
       method: "DELETE",
       headers: headers,
     });

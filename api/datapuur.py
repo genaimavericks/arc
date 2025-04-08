@@ -678,91 +678,236 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                 raise ValueError(f"Error processing CSV file: {str(e)}")
         
         elif file_type == "json":
-            # Read JSON
-            with open(file_path, 'r') as f:
-                data = json.load(f)
-            
-            # Function to flatten nested JSON
-            def flatten_json(nested_json, prefix=''):
-                flattened = {}
-                for key, value in nested_json.items():
-                    if isinstance(value, dict):
-                        # Recursively flatten nested dictionaries
-                        flattened.update(flatten_json(value, f"{prefix}{key}_"))
-                    elif isinstance(value, list):
-                        # Handle lists by converting them to strings if they contain simple types
-                        # or by flattening if they contain dictionaries
-                        if all(not isinstance(item, dict) for item in value):
-                            # For lists of simple types, convert to string
-                            flattened[f"{prefix}{key}"] = str(value)
-                        else:
-                            # For lists of dictionaries, flatten each item
-                            for i, item in enumerate(value):
-                                if isinstance(item, dict):
-                                    flattened.update(flatten_json(item, f"{prefix}{key}_{i}_"))
-                                else:
-                                    flattened[f"{prefix}{key}_{i}"] = item
-                    else:
-                        # For simple types, just add them with the prefix
-                        flattened[f"{prefix}{key}"] = value
-                return flattened
-            
-            # Convert to DataFrame - ensure data is always a list
-            if isinstance(data, list):
-                # Handle empty list case
-                if len(data) == 0:
-                    # Create empty DataFrame with default columns
-                    df = pd.DataFrame(columns=['data'])
-                else:
-                    # Flatten each item in the list if it's a dictionary
-                    flattened_data = []
-                    for item in data:
-                        if isinstance(item, dict):
-                            flattened_data.append(flatten_json(item))
-                        else:
-                            flattened_data.append({"value": item})
+            try:
+                # Get file size to determine processing approach
+                file_size = os.path.getsize(file_path)
+                
+                # For very large files (>50MB), use a streaming approach
+                if file_size > 50 * 1024 * 1024:  # 50MB
+                    # Update job status
+                    job.details = f"Processing large JSON file ({file_size / (1024 * 1024):.2f} MB) with optimized engine"
+                    db_session.commit()
                     
-                    # Convert list of flattened dictionaries to DataFrame
-                    df = pd.DataFrame(flattened_data)
+                    # Use ijson for streaming JSON parsing
+                    import ijson
                     
-                    # Ensure all columns have consistent types by inferring types
-                    for col in df.columns:
-                        # Try to convert numeric columns
-                        if df[col].dtype == object:  # Only attempt conversion on object (string) columns
-                            # Check if column contains numeric data by trying conversion
-                            try:
-                                # If more than 80% of non-null values can be converted to numeric, treat as numeric
-                                non_null_values = df[col].dropna()
-                                if len(non_null_values) > 0:
-                                    numeric_count = sum(pd.to_numeric(non_null_values, errors='coerce').notna())
-                                    if numeric_count / len(non_null_values) > 0.8:
-                                        df.loc[:, col] = pd.to_numeric(df[col], errors='coerce')
-                            except:
-                                pass
+                    # Initialize an empty DataFrame
+                    df = None
+                    processed_items = 0
+                    total_items_estimate = max(1, file_size // 1000)  # Rough estimate based on file size
+                    
+                    # Function to efficiently flatten JSON with iteration instead of recursion
+                    def flatten_json_iterative(nested_json, prefix=''):
+                        items = []
+                        if isinstance(nested_json, dict):
+                            items = nested_json.items()
                         
-                            # Check if column contains boolean data
-                            # Look for columns with values that match boolean patterns
-                            if all(str(val).lower() in ['true', 'false', '1', '0', 'yes', 'no', 'y', 'n', '', 'nan', 'none', 'null'] 
-                                  for val in df[col].dropna().astype(str)):
-                                # Convert to boolean using .loc to avoid SettingWithCopyWarning
-                                df.loc[:, col] = df[col].map(
-                                    lambda x: True if pd.notna(x) and str(x).lower() in ['true', '1', 'yes', 'y'] 
-                                    else False if pd.notna(x) and str(x).lower() in ['false', '0', 'no', 'n']
-                                    else None
-                                )
-            else:
-                # If data is not a list (e.g., single object), flatten it and convert to a single-row DataFrame
-                flattened_data = flatten_json(data) if isinstance(data, dict) else {"value": data}
-                df = pd.DataFrame([flattened_data])
-            
-            # Save to parquet
-            df.to_parquet(output_file, index=False)
-            
-            # Update progress
-            for progress in range(0, 100, 10):
-                job.progress = progress
-                db_session.commit()
-                time.sleep(0.2)  # Simulate processing time
+                        flattened = {}
+                        for key, value in items:
+                            new_key = f"{prefix}{key}"
+                            if isinstance(value, dict):
+                                flattened.update(flatten_json_iterative(value, f"{new_key}_"))
+                            elif isinstance(value, list):
+                                if all(not isinstance(item, dict) for item in value):
+                                    flattened[new_key] = str(value)
+                                else:
+                                    for i, item in enumerate(value):
+                                        if isinstance(item, dict):
+                                            flattened.update(flatten_json_iterative(item, f"{new_key}_{i}_"))
+                                        else:
+                                            flattened[f"{new_key}_{i}"] = item
+                            else:
+                                flattened[new_key] = value
+                        return flattened
+                    
+                    # Process the file in a streaming manner
+                    with open(file_path, 'rb') as f:
+                        # Check if the JSON is an array at the root
+                        parser = ijson.parse(f)
+                        prefix, event, value = next(parser)
+                        f.seek(0)  # Reset file position
+                        
+                        if prefix == '' and event == 'start_array':
+                            # It's an array of objects, process each item
+                            batch_size = 1000
+                            batch = []
+                            
+                            for item in ijson.items(f, 'item'):
+                                if isinstance(item, dict):
+                                    batch.append(flatten_json_iterative(item))
+                                else:
+                                    batch.append({"value": item})
+                                
+                                processed_items += 1
+                                
+                                # Process in batches for better performance
+                                if len(batch) >= batch_size:
+                                    batch_df = pd.DataFrame(batch)
+                                    
+                                    # Convert numeric columns
+                                    for col in batch_df.columns:
+                                        if batch_df[col].dtype == object:
+                                            try:
+                                                numeric_values = pd.to_numeric(batch_df[col], errors='coerce')
+                                                if numeric_values.notna().sum() / len(numeric_values) > 0.8:
+                                                    batch_df[col] = numeric_values
+                                            except:
+                                                pass
+                                    
+                                    # Save or append to parquet
+                                    if df is None:
+                                        batch_df.to_parquet(output_file, index=False, compression='snappy')
+                                        df = batch_df  # Just to mark that we've started writing
+                                    else:
+                                        # Use pyarrow for efficient appending
+                                        import pyarrow as pa
+                                        import pyarrow.parquet as pq
+                                        
+                                        existing_table = pq.read_table(output_file)
+                                        batch_table = pa.Table.from_pandas(batch_df)
+                                        combined_table = pa.concat_tables([existing_table, batch_table])
+                                        pq.write_table(combined_table, output_file, compression='snappy')
+                                    
+                                    # Update progress
+                                    progress = min(int((processed_items / total_items_estimate) * 100), 99)
+                                    job.progress = progress
+                                    job.details = f"Processed {processed_items} items ({progress}% estimated)"
+                                    db_session.commit()
+                                    
+                                    # Clear batch
+                                    batch = []
+                            
+                            # Process any remaining items
+                            if batch:
+                                batch_df = pd.DataFrame(batch)
+                                
+                                # Convert numeric columns
+                                for col in batch_df.columns:
+                                    if batch_df[col].dtype == object:
+                                        try:
+                                            numeric_values = pd.to_numeric(batch_df[col], errors='coerce')
+                                            if numeric_values.notna().sum() / len(numeric_values) > 0.8:
+                                                batch_df[col] = numeric_values
+                                        except:
+                                            pass
+                                
+                                # Save or append to parquet
+                                if df is None:
+                                    batch_df.to_parquet(output_file, index=False, compression='snappy')
+                                else:
+                                    import pyarrow as pa
+                                    import pyarrow.parquet as pq
+                                    
+                                    existing_table = pq.read_table(output_file)
+                                    batch_table = pa.Table.from_pandas(batch_df)
+                                    combined_table = pa.concat_tables([existing_table, batch_table])
+                                    pq.write_table(combined_table, output_file, compression='snappy')
+                        else:
+                            # It's a single object, process it directly
+                            f.seek(0)  # Reset file position
+                            data = json.load(f)
+                            
+                            if isinstance(data, dict):
+                                flattened_data = flatten_json_iterative(data)
+                                df = pd.DataFrame([flattened_data])
+                            else:
+                                df = pd.DataFrame([{"value": data}])
+                            
+                            # Save to parquet
+                            df.to_parquet(output_file, index=False, compression='snappy')
+                    
+                    # Update progress
+                    job.progress = 99
+                    job.details = f"Finalizing JSON processing..."
+                    db_session.commit()
+                else:
+                    # For smaller files, use the standard approach but with optimizations
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    
+                    # Function to flatten nested JSON more efficiently
+                    def flatten_json(nested_json, prefix=''):
+                        flattened = {}
+                        for key, value in nested_json.items():
+                            if isinstance(value, dict):
+                                # Recursively flatten nested dictionaries
+                                flattened.update(flatten_json(value, f"{prefix}{key}_"))
+                            elif isinstance(value, list):
+                                # Handle lists by converting them to strings if they contain simple types
+                                # or by flattening if they contain dictionaries
+                                if all(not isinstance(item, dict) for item in value):
+                                    # For lists of simple types, convert to string
+                                    flattened[f"{prefix}{key}"] = str(value)
+                                else:
+                                    # For lists of dictionaries, flatten each item
+                                    for i, item in enumerate(value):
+                                        if isinstance(item, dict):
+                                            flattened.update(flatten_json(item, f"{prefix}{key}_{i}_"))
+                                        else:
+                                            flattened[f"{prefix}{key}_{i}"] = item
+                            else:
+                                # For simple types, just add them with the prefix
+                                flattened[f"{prefix}{key}"] = value
+                        return flattened
+                    
+                    # Convert to DataFrame - ensure data is always a list
+                    if isinstance(data, list):
+                        # Handle empty list case
+                        if len(data) == 0:
+                            # Create empty DataFrame with default columns
+                            df = pd.DataFrame(columns=['data'])
+                        else:
+                            # Flatten each item in the list if it's a dictionary
+                            flattened_data = []
+                            for item in data:
+                                if isinstance(item, dict):
+                                    flattened_data.append(flatten_json(item))
+                                else:
+                                    flattened_data.append({"value": item})
+                            
+                            # Convert list of flattened dictionaries to DataFrame
+                            df = pd.DataFrame(flattened_data)
+                            
+                            # Ensure all columns have consistent types by inferring types
+                            for col in df.columns:
+                                # Try to convert numeric columns
+                                if df[col].dtype == object:  # Only attempt conversion on object (string) columns
+                                    # Check if column contains numeric data by trying conversion
+                                    try:
+                                        # If more than 80% of non-null values can be converted to numeric, treat as numeric
+                                        non_null_values = df[col].dropna()
+                                        if len(non_null_values) > 0:
+                                            numeric_count = sum(pd.to_numeric(non_null_values, errors='coerce').notna())
+                                            if numeric_count / len(non_null_values) > 0.8:
+                                                df.loc[:, col] = pd.to_numeric(df[col], errors='coerce')
+                                    except:
+                                        pass
+                                
+                                # Check if column contains boolean data
+                                # Look for columns with values that match boolean patterns
+                                if all(str(val).lower() in ['true', 'false', '1', '0', 'yes', 'no', 'y', 'n', '', 'nan', 'none', 'null'] 
+                                      for val in df[col].dropna().astype(str)):
+                                    # Convert to boolean using .loc to avoid SettingWithCopyWarning
+                                    df.loc[:, col] = df[col].map(
+                                        lambda x: True if pd.notna(x) and str(x).lower() in ['true', '1', 'yes', 'y'] 
+                                        else False if pd.notna(x) and str(x).lower() in ['false', '0', 'no', 'n']
+                                        else None
+                                    )
+                    else:
+                        # If data is not a list (e.g., single object), flatten it and convert to a single-row DataFrame
+                        flattened_data = flatten_json(data) if isinstance(data, dict) else {"value": data}
+                        df = pd.DataFrame([flattened_data])
+                    
+                    # Save to parquet with compression for better performance
+                    df.to_parquet(output_file, index=False, compression='snappy')
+                    
+                    # Update progress in a single step without sleep
+                    job.progress = 99
+                    job.details = "JSON processing completed"
+                    db_session.commit()
+            except Exception as e:
+                logger.error(f"Error processing JSON file: {str(e)}")
+                raise ValueError(f"Error processing JSON file: {str(e)}")
         
         # Mark job as completed
         job.status = "completed"
@@ -846,7 +991,7 @@ def process_db_ingestion_with_db(job_id, db_type, db_config, chunk_size, db):
                         existing_df = pd.read_parquet(output_file)
                         # Concatenate with new chunk
                         combined_df = pd.concat([existing_df, chunk], ignore_index=True)
-                        # Write back to file
+                        # Write back to the file
                         combined_df.to_parquet(output_file, index=False)
                     else:
                         chunk.to_parquet(output_file, index=False)
@@ -1486,13 +1631,6 @@ async def get_ingestion_preview(
                         "type": "json"
                     }
                 
-                # Convert all columns to appropriate Python types first
-                for col in preview_df.columns:
-                    if preview_df[col].dtype.kind in 'iuf':  # Integer, unsigned int, or float
-                        preview_df.loc[:, col] = preview_df[col].astype(float)
-                    elif preview_df[col].dtype.kind == 'b':  # Boolean
-                        preview_df.loc[:, col] = preview_df[col].astype(bool)
-                
                 # Convert to records and ensure all values have proper Python types
                 try:
                     # First attempt - standard conversion
@@ -1506,8 +1644,16 @@ async def get_ingestion_preview(
                                 clean_record[key] = float(value)
                             elif isinstance(value, np.bool_):
                                 clean_record[key] = bool(value)
+                            elif isinstance(value, (dict, list)):
+                                # Ensure nested objects are properly serialized
+                                clean_record[key] = json.loads(json.dumps(value))
                             else:
-                                clean_record[key] = value
+                                # Convert any other complex types to strings
+                                try:
+                                    json.dumps(value)  # Test if serializable
+                                    clean_record[key] = value
+                                except (TypeError, OverflowError):
+                                    clean_record[key] = str(value)
                         records.append(clean_record)
                 except Exception as e:
                     # Fallback - if any error occurs, create a simpler structure
@@ -1993,13 +2139,31 @@ async def get_data_sources(
     for job in completed_jobs:
         if job.type == "profile":
             continue
+            
+        # Get uploaded_by information from the UploadedFile table if it's a file type
+        uploaded_by = "Unknown"
+        if job.type == "file":
+            # Try to find the file record that matches this job
+            file_info = None
+            if job.config:
+                try:
+                    config_data = json.loads(job.config)
+                    if "file_id" in config_data:
+                        file_info = db.query(UploadedFile).filter(UploadedFile.id == config_data["file_id"]).first()
+                except json.JSONDecodeError:
+                    pass
+                    
+            if file_info and file_info.uploaded_by:
+                uploaded_by = file_info.uploaded_by
+                
         sources.append(
             DataSource(
                 id=job.id,
                 name=job.name,
                 type="File" if job.type == "file" else "Database",
                 last_updated=job.end_time.strftime("%Y-%m-%d %H:%M:%S") if isinstance(job.end_time, datetime) else job.end_time,
-                status="Active"
+                status="Active",
+                uploaded_by=uploaded_by
             )
         )
     

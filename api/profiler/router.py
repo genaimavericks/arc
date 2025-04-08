@@ -4,6 +4,7 @@ This module implements API endpoints for data profiling.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 import pandas as pd
 import numpy as np
@@ -383,9 +384,9 @@ async def get_profile_by_file_id(
         
         if not profile_result:
             logger.warning(f"[{request_id}] No profile found for file ID {file_id}")
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No profile found for file ID {file_id}"
+                content={"detail": f"No profile found for file ID {file_id}"}
             )
         
         logger.info(f"[{request_id}] Found profile {profile_result.id} for file {file_id}")

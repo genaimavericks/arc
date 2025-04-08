@@ -38,6 +38,9 @@ import { InsightsChatInput } from "@/components/kginsights/insights/input"
 import { ThemeConfig } from "@/components/kginsights/insights/theme-config"
 import { ChartTheme } from "@/components/kginsights/insights/chart-visualization"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { motion } from "framer-motion"
+import { SparklesCore } from "@/components/sparkles"
+import { FloatingChart } from "@/components/floating-chart"
 
 // Message type for chat history
 export interface ChatMessage {
@@ -502,7 +505,23 @@ export default function InsightsChat() {
   }, [messages]);
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full bg-gradient-to-b from-background to-background/95">
+      <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0 opacity-10 pointer-events-none">
+        <SparklesCore
+          id="insightsparkles"
+          background="transparent"
+          minSize={0.4}
+          maxSize={1.5}
+          particleDensity={15}
+          className="w-full h-full"
+          particleColor="#888"
+        />
+      </div>
+      
+      <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0 pointer-events-none">
+        <FloatingChart count={3} />
+      </div>
+
       {/* Sidebar with predefined queries and history */}
       {sidebarOpen && (
         <div className="w-72 border-r bg-card/50 p-4 flex flex-col h-full max-h-full">
@@ -749,10 +768,10 @@ export default function InsightsChat() {
             </TabsContent>
           </Tabs>
         </div>
-      )}
+      </motion.div>
       
       {/* Main chat area */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col relative z-10">
         {/* Chat messages */}
         <div className="flex-1 overflow-hidden relative">
           <InsightsChatMessages 
@@ -764,12 +783,17 @@ export default function InsightsChat() {
         </div>
         
         {/* Input area */}
-        <div className="p-3 border-t bg-background/80 backdrop-blur-sm">
+        <motion.div 
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ duration: 0.5 }}
+          className="p-3 border-t border-primary/10 bg-background/90 backdrop-blur-md shadow-lg"
+        >
           <div className="flex items-center gap-2">
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8"
+              className="h-9 w-9 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors duration-300"
               onClick={() => setSidebarOpen(!sidebarOpen)}
               title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
             >
@@ -787,25 +811,45 @@ export default function InsightsChat() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault()
-                    handleSendMessage(input)
+                    if (input.trim()) {
+                      handleSendMessage(input)
+                      setInput("")
+                    }
                   }
                 }}
                 placeholder="Ask a question about your knowledge graph..."
-                className="flex-1 h-9 text-sm"
+                className="flex-1 h-9 text-sm bg-card/50 backdrop-blur-sm border-primary/20 shadow-sm focus-visible:ring-primary pl-4 pr-10 transition-all duration-300"
               />
               
               <Button 
-                onClick={() => handleSendMessage(input)} 
+                onClick={() => {
+                  if (input.trim()) {
+                    handleSendMessage(input)
+                    setInput("")
+                  }
+                }}
                 size="sm" 
-                className="h-9 px-3"
+                className="h-9 px-3 absolute right-0 rounded-l-none bg-primary hover:bg-primary/90 text-primary-foreground transition-all duration-300 hover:shadow"
                 disabled={loading || !input.trim()}
               >
-                <Send className="h-4 w-4 mr-1" />
-                Send
+                {loading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
               </Button>
             </div>
           </div>
-        </div>
+          
+          <div className="flex justify-center mt-1">
+            <div className="text-xs text-muted-foreground flex items-center gap-2">
+              <div className="text-center flex items-center">
+                <Sparkles className="h-3 w-3 mr-1 text-primary/60" />
+                <span>Powered by Knowledge Graph AI</span>
+              </div>
+            </div>
+          </div>
+        </motion.div>
       </div>
     </div>
   )

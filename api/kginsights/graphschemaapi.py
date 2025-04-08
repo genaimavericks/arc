@@ -1246,7 +1246,7 @@ async def cleanup_schemas(
 @router.post("/clean-neo4j-database")
 async def clean_neo4j_database(
     current_user: User = Depends(has_any_permission(["kginsights:manage"])),
-    graph_name: str = "default"
+    graph_name: str = "default_graph"
 ):
     """
     Clean the Neo4j database by removing all nodes, relationships, constraints, and indexes.
