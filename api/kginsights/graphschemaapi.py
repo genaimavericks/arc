@@ -860,7 +860,7 @@ async def save_schema(
 ):
     """Save the generated schema to the database and as a JSON file."""
     try:
-        print(f"DEBUG: save_schema called with schema data")
+        print(f"DEBUG: save_schema called with schema data :  {save_input} ")
         
         schema_data = save_input.schema
         csv_file_path = save_input.csv_file_path
@@ -1024,7 +1024,7 @@ async def save_schema(
             )
             db.add(schema_record)
             db.commit()
-            print(f"DEBUG: Schema saved to database with ID: {schema_record.id}")
+            print(f"DEBUG: Schema record created: {schema_record}")
         except Exception as db_error:
             print(f"WARNING: Could not save schema to database: {db_error}")
             # Continue even if database save fails - we still have the file
@@ -1177,12 +1177,12 @@ async def delete_schema(
         db.commit()
         
         # Clean up files
-        for file_path in files_to_clean:
-            try:
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-            except Exception as e:
-                print(f"Warning: Could not delete file {file_path}: {str(e)}")
+#        for file_path in files_to_clean:
+#            try:
+#                if os.path.exists(file_path):
+#                    os.remove(file_path)
+#            except Exception as e:
+#                print(f"Warning: Could not delete file {file_path}: {str(e)}")
                 
         return {"message": f"Schema {schema_id} deleted successfully"}
         
