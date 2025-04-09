@@ -1103,13 +1103,17 @@ class SchemaAwareGraphAssistant:
                         self.chain.cypher_prompt.format(**cypher_gen_inputs)
                     ).content
                     print(f"DEBUG: Generated Cypher:\n{generated_cypher}")
-                    
+                    # Check if the Cypher query is None or empty
+                    if generated_cypher is None or generated_cypher.strip() == "":
+                        print("DEBUG: Generated Cypher query is None or empty")
+                        return {"result": "Not able to prepare valid queries. Update your queries with appropriate data attributes"}
+
                     # Step 2: Extract valid Cypher query
                     clean_cypher = self._extract_valid_cypher_query(generated_cypher)
-                    
-                    # Step 3: Execute the query
-                    print(f"DEBUG: Executing extracted Cypher: {clean_cypher}")
+
+
                     try:
+                        print(f"DEBUG: Executing extracted Cypher: {generated_cypher}")
                         context = self._safe_execute_query(self.chain.graph, clean_cypher)
                     except Exception as exec_error:
                         print(f"DEBUG: Error executing extracted query: {str(exec_error)}")
@@ -1131,7 +1135,15 @@ class SchemaAwareGraphAssistant:
                 else:
                     # Fallback to standard chain invocation
                     print("DEBUG: Falling back to standard chain invocation")
-                    result = self.chain.invoke({"query": question})
+                    try:
+                        result = self.chain.invoke({"query": question})
+                    except Exception as chain_error:
+                        print(f"DEBUG: Standard chain invocation failed: {str(chain_error)}")
+                        # Check if error is related to None Cypher query
+                        if "Invalid input 'None'" in str(chain_error):
+                            return {"result": "Not able to prepare valid queries. Please update your question with specific data attributes or relationships."}
+                        # Otherwise, raise the error to be caught by the outer try-except
+                        raise
             except Exception as e:
                 print(f"ERROR: Direct approach failed: {str(e)}")
                 print(f"DEBUG: {traceback.format_exc()}")
@@ -1142,7 +1154,7 @@ class SchemaAwareGraphAssistant:
                     fallback_query = "MATCH (n) RETURN labels(n) as labels, count(n) as count LIMIT 10"
                     context = self._safe_execute_query(self.chain.graph, fallback_query)
                     result = {
-                        "result": f"I encountered an error processing your query: {str(e)}. \n\nHere's some basic information about the graph: {context}"
+                        "result": f"I encountered an error processing your query. \n\nHere's some basic information about the graph: {context}"
                     }
                 except Exception as e2:
                     print(f"ERROR: Even simple fallback failed: {str(e2)}")

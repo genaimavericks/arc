@@ -768,7 +768,7 @@ export default function InsightsChat() {
             </TabsContent>
           </Tabs>
         </div>
-      </motion.div>
+      )}
       
       {/* Main chat area */}
       <div className="flex-1 flex flex-col relative z-10">
