@@ -529,7 +529,7 @@ async def apply_schema_to_neo4j(
     try:
         print(f"DEBUG: Starting apply_schema_to_neo4j with input: {apply_input}")
         schema_id = apply_input.schema_id
-        graph_name = apply_input.graph_name
+        graph_name = 'default_graph'
         drop_existing = apply_input.drop_existing
         
         # Get the schema from the database
@@ -686,7 +686,7 @@ async def apply_schema_to_neo4j(
         print(f"DEBUG: Neo4j configuration loaded. Available graphs: {list(config.keys())}")
         
         # Get connection parameters for the specified graph
-        graph_name = apply_input.graph_name
+        graph_name = 'default_graph'
         print(f"DEBUG: Parsing connection parameters for graph: {graph_name}")
         
         connection_params = parse_connection_params(config.get(graph_name, {}))
