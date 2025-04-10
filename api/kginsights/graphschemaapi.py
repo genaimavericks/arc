@@ -1025,14 +1025,16 @@ async def save_schema(
             db.add(schema_record)
             db.commit()
             print(f"DEBUG: Schema record created: {schema_record}")
+            return {
+            'message': f'Schema "{schema_data.get("name")}" saved successfully',
+            'file_path': output_path
+            }
         except Exception as db_error:
             print(f"WARNING: Could not save schema to database: {db_error}")
             # Continue even if database save fails - we still have the file
+            raise HTTPException(status_code=500, detail=f"Failed to save schema:")
         
-        return {
-            'message': f'Schema "{schema_data.get("name")}" saved successfully',
-            'file_path': output_path
-        }
+
     except HTTPException:
         raise
     except Exception as e:
