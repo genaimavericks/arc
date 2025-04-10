@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from sqlalchemy import create_engine, event
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -9,10 +10,19 @@ from typing import Generator
 # Configure logging
 logging.basicConfig(level=logging.ERROR)  # Set root logger to ERROR level
 
+# Output directories
+OUTPUT_DIR = Path("runtime-data/output/db")
+LOG_DIR = OUTPUT_DIR / "logs"
+DATA_DIR = OUTPUT_DIR / "data"
+
+# Create directories if they don't exist
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
 # Set up file logging for SQL queries
 sql_logger = logging.getLogger('sql_queries')
 sql_logger.setLevel(logging.INFO)
-log_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'db.logs')
+log_file_path = os.path.join(LOG_DIR, 'db.logs')
 file_handler = logging.FileHandler(log_file_path)
 file_handler.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s - %(message)s')
@@ -51,8 +61,7 @@ DB_NAME = os.getenv("DB_NAME", "rsw")
 # Configure database URL based on DB_TYPE
 if DB_TYPE == "sqlite":
     # Create database directory if it doesn't exist
-    os.makedirs(os.path.dirname(os.path.abspath(__file__)), exist_ok=True)
-    SQLALCHEMY_DATABASE_URL = f"sqlite:///{os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database.db')}"
+    SQLALCHEMY_DATABASE_URL = f"sqlite:///{os.path.join(DATA_DIR, 'database.db')}"
     connect_args = {"check_same_thread": False}
 elif DB_TYPE == "postgresql" or DB_TYPE == "postgres":
     SQLALCHEMY_DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"

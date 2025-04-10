@@ -547,14 +547,8 @@ def llm_result_to_graph_data(llm_result: LLMVisualizationResponse, structured_da
             else:
                 # Last resort - create sample data for testing
                 logger.warning("No axis data found, creating sample data")
-                graph_data.x_axis = AxisData(
-                    label="Sample Categories",
-                    values=["Category A", "Category B", "Category C", "Category D"]
-                )
-                graph_data.y_axis = AxisData(
-                    label="Sample Values",
-                    values=[25, 40, 30, 50]
-                )
+                graph_data.type = VisualizationType.NONE
+                
     
     # For pie charts, extract labels and values
     elif viz_type == VisualizationType.PIE:
@@ -577,8 +571,7 @@ def llm_result_to_graph_data(llm_result: LLMVisualizationResponse, structured_da
             else:
                 # Last resort - create sample data for testing
                 logger.warning("No pie chart data found, creating sample data")
-                graph_data.labels = ["Category A", "Category B", "Category C"]
-                graph_data.values = [40, 30, 30]
+                graph_data.type = VisualizationType.NONE
     
     # Log the result
     if viz_type != VisualizationType.NONE:
