@@ -81,6 +81,7 @@ function GenerateGraphContent() {
   const [kgDescription, setKgDescription] = useState<string>("")
   const [metadata, setMetadata] = useState<string>("")
   const [showChat, setShowChat] = useState(true)
+  const [savingStatus, setSavingStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
   const { toast } = useToast()
 
   // Fetch data sources on component mount
@@ -199,8 +200,15 @@ function GenerateGraphContent() {
     }
 
     try {
-      // Set loading state
+      // Set loading and saving status
       setLoading(true)
+      setSavingStatus('saving')
+      
+      // Show toast to indicate saving is in progress
+      toast({
+        title: "Saving Schema",
+        description: "Please wait while your schema is being saved...",
+      })
       
       console.log("Saving schema:", {
         ...schema,
@@ -237,17 +245,36 @@ function GenerateGraphContent() {
       const data = await response.json()
       console.log("Schema saved successfully:", data)
       
+      // Set success status
+      setSavingStatus('success')
+      
       toast({
         title: "Success",
         description: `Schema "${schemaName}" saved successfully!`,
       })
+      
+      // Reset success status after 3 seconds
+      setTimeout(() => {
+        setSavingStatus('idle')
+      }, 3000)
+      
     } catch (error) {
       console.error("Error saving schema:", error)
+      
+      // Set error status
+      setSavingStatus('error')
+      
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "Failed to save schema. Please try again.",
         variant: "destructive",
       })
+      
+      // Reset error status after 3 seconds
+      setTimeout(() => {
+        setSavingStatus('idle')
+      }, 3000)
+      
     } finally {
       // Reset loading state
       setLoading(false)
@@ -349,12 +376,35 @@ function GenerateGraphContent() {
             </Button>
             
             <Button
-              className="bg-accent hover:bg-accent/90 text-accent-foreground flex items-center gap-2 shadow-md transition-all duration-300 hover:shadow-lg hover:scale-105"
+              className={`flex items-center gap-2 shadow-md transition-all duration-300 hover:shadow-lg ${savingStatus === 'error' ? 'bg-red-500 hover:bg-red-600 text-white' : savingStatus === 'success' ? 'bg-green-500 hover:bg-green-600 text-white' : 'bg-accent hover:bg-accent/90 text-accent-foreground hover:scale-105'}`}
               onClick={handleSaveSchema}
-              disabled={loading || (!schema && !selectedSource)}
+              disabled={loading || (!schema && !selectedSource) || savingStatus === 'saving'}
             >
-              <Save className="w-4 h-4" />
-              {loading ? "Saving..." : "Save Schema"}
+              {savingStatus === 'saving' ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Saving Schema...
+                </>
+              ) : savingStatus === 'success' ? (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  Saved!
+                </>
+              ) : savingStatus === 'error' ? (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  Failed
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4" />
+                  Save Schema
+                </>
+              )}
             </Button>
           </div>
         </motion.div>

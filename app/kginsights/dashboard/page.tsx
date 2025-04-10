@@ -384,7 +384,7 @@ function KGraphDashboardContent() {
 
   // Function to handle new knowledge graph
   const handleNewKnowledgeGraph = () => {
-    router.push("/kginsights/create")
+    router.push("/kginsights/generate")
   }
 
   // Function to handle search graphs
