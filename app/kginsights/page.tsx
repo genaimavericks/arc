@@ -79,7 +79,7 @@ function KGInsightsContent() {
                 initial={{ opacity: 0, y: -20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5 }}
-                className="text-4xl font-bold text-foreground mb-6"
+                className="page-title mb-6"
               >
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">
                   KGInsights
@@ -91,7 +91,7 @@ function KGInsightsContent() {
                 initial={{ opacity: 0, y: -20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 0.1 }}
-                className="text-muted-foreground text-xl mb-8"
+                className="description text-xl mb-8"
               >
                 Visualize and manage knowledge graphs with our advanced analytics tools.
               </motion.p>
@@ -120,50 +120,45 @@ function KGInsightsContent() {
                     />
 
                     {/* Icon container - Fixed positioning and z-index */}
-                    <div className="relative z-10 mb-4">
-                      <card.icon className="w-10 h-10 text-primary" />
+                    <div className="z-10 relative">
+                      <div className="flex items-start mb-4">
+                        <card.icon className="h-8 w-8 mr-4 text-primary" />
+                        <div>
+                          <h3 className="card-title text-foreground">
+                            {card.title}
+                          </h3>
+                          <p className="description mt-1">
+                            {card.description}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Animated arrow */}
                       <motion.div
-                        className="absolute -inset-1 rounded-full bg-primary/20"
-                        animate={{
-                          scale: [1, 1.2, 1],
-                          opacity: [0.5, 0.2, 0.5],
-                        }}
+                        className="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity"
+                        animate={{ x: [0, 5, 0] }}
                         transition={{
-                          duration: 2,
+                          duration: 1.5,
                           repeat: Number.POSITIVE_INFINITY,
                           repeatType: "reverse",
                         }}
-                      />
-                    </div>
-
-                    <h3 className="text-xl font-semibold text-foreground mb-2 relative z-10">{card.title}</h3>
-                    <p className="text-muted-foreground relative z-10">{card.description}</p>
-
-                    {/* Animated arrow */}
-                    <motion.div
-                      className="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity"
-                      animate={{ x: [0, 5, 0] }}
-                      transition={{
-                        duration: 1.5,
-                        repeat: Number.POSITIVE_INFINITY,
-                        repeatType: "reverse",
-                      }}
-                    >
-                      <svg
-                        className="w-5 h-5 text-primary"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                        xmlns="http://www.w3.org/2000/svg"
                       >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M14 5l7 7m0 0l-7 7m7-7H3"
-                        />
-                      </svg>
-                    </motion.div>
+                        <svg
+                          className="w-5 h-5 text-primary"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M14 5l7 7m0 0l-7 7m7-7H3"
+                          />
+                        </svg>
+                      </motion.div>
+                    </div>
                   </motion.div>
                 ))}
               </motion.div>

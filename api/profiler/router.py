@@ -26,6 +26,7 @@ from ..auth import has_permission, log_activity, has_any_permission
 from .models import ProfileResult, ColumnProfile
 from .schemas.profile import ProfileRequest, ProfileResponse, ProfileListResponse, ProfileSummaryResponse
 from .services.engine import DataProfiler
+from pathlib import Path  # Import Path for directory handling
 
 # Set up logging
 LOG_DIR = Path(__file__).parent.parent / "logs"
@@ -101,6 +102,47 @@ async def profile_data(
         # Check if the file exists
         parquet_path = DATA_DIR / f"{request.file_path}"
         logger.debug(f"[{request_id}] Looking for parquet file at: {parquet_path}")
+        
+        # Check if this file is from a cancelled upload
+        # Extract job_id from the file_path (which is typically the job_id.parquet)
+        job_id = os.path.splitext(request.file_path)[0]  # Remove .parquet extension
+        
+        # Check if there's a cancellation marker for this job
+        cancel_marker = Path(__file__).parent.parent / "uploads" / f"cancel_{job_id}"
+        if cancel_marker.exists():
+            logger.info(f"[{request_id}] Cancellation marker found for job {job_id}, aborting profile generation")
+            return {
+                "id": str(uuid.uuid4()),
+                "status": "cancelled",
+                "message": "Profile generation cancelled because the associated upload was cancelled",
+                "file_id": request.file_id,
+                "file_name": request.file_name,
+                "created_at": datetime.now().isoformat(),
+                "summary": {"status": "cancelled"},
+                "columns": []
+            }
+        
+        # Also check if there's a cancellation marker in localStorage format
+        # This is a more generic check for any upload ID that might be associated with this file
+        upload_cancel_markers = list((Path(__file__).parent.parent / "uploads").glob("cancel_upload-*"))
+        for marker in upload_cancel_markers:
+            marker_name = marker.name
+            upload_id = marker_name.replace("cancel_", "")
+            
+            # Check if this upload ID is associated with the file
+            # This is a heuristic and may need adjustment based on how upload IDs are stored
+            if upload_id in job_id:
+                logger.info(f"[{request_id}] Upload cancellation marker found for upload {upload_id}, aborting profile generation")
+                return {
+                    "id": str(uuid.uuid4()),
+                    "status": "cancelled",
+                    "message": "Profile generation cancelled because the associated upload was cancelled",
+                    "file_id": request.file_id,
+                    "file_name": request.file_name,
+                    "created_at": datetime.now().isoformat(),
+                    "summary": {"status": "cancelled"},
+                    "columns": []
+                }
         
         if not os.path.exists(parquet_path):
             logger.error(f"[{request_id}] File not found at path: {parquet_path}")

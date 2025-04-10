@@ -519,7 +519,7 @@ export default function InsightsChat() {
       </div>
       
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0 pointer-events-none">
-        <FloatingChart count={3} />
+        <FloatingChart count={3} avoidRightSide={true} zIndex={0} />
       </div>
 
       {/* Sidebar with predefined queries and history */}

@@ -159,6 +159,49 @@
   }
 }
 
+/* Typography system for consistent styling */
+@layer components {
+  /* Page Headings */
+  .page-title {
+    @apply text-2xl md:text-3xl font-bold text-foreground tracking-tight;
+  }
+  
+  /* Section Headings */
+  .section-title {
+    @apply text-xl md:text-2xl font-semibold text-foreground tracking-tight;
+  }
+  
+  /* Card Headings */
+  .card-title {
+    @apply text-lg md:text-xl font-semibold text-foreground;
+  }
+  
+  /* Descriptions */
+  .description {
+    @apply text-sm md:text-base text-muted-foreground leading-relaxed;
+  }
+  
+  /* Standard body text */
+  .body-text {
+    @apply text-sm md:text-base text-foreground leading-normal;
+  }
+  
+  /* Small helper text */
+  .helper-text {
+    @apply text-xs text-muted-foreground;
+  }
+  
+  /* Consistent spacing for text sections */
+  .text-section {
+    @apply space-y-2;
+  }
+  
+  /* Form labels */
+  .form-label {
+    @apply text-sm font-medium text-foreground mb-2 block;
+  }
+}
+
 /* Background Animations */
 @keyframes float {
   0% {

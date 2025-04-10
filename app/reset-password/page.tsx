@@ -5,7 +5,7 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { SparklesCore } from "@/components/sparkles"
 import { motion } from "framer-motion"
-import { Bot, Lock, ArrowLeft, CheckCircle, AlertTriangle, Check, X } from "lucide-react"
+import { Bot, Lock, ArrowLeft, CheckCircle, AlertTriangle, Check, X, KeyRound } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -13,6 +13,7 @@ import { useAuth } from "@/lib/auth-context"
 import { useSearchParams, useRouter } from "next/navigation"
 import { getApiBaseUrl } from "@/lib/config"
 import Image from "next/image"
+import { cn } from "@/lib/utils"
 
 export default function ResetPasswordPage() {
   const [password, setPassword] = useState("")
@@ -168,11 +169,11 @@ export default function ResetPasswordPage() {
   }, [isSubmitted, router])
 
   return (
-    <main className="min-h-screen bg-background dark:bg-black/[0.96] antialiased bg-grid-white/[0.02] relative overflow-hidden">
+    <main className="min-h-screen bg-gradient-to-br from-background via-background/95 to-background/90 dark:from-black dark:via-black/95 dark:to-black/90 antialiased relative overflow-hidden">
       {/* Return to login button */}
       <Link
         href="/login"
-        className="absolute top-6 left-6 z-20 w-10 h-10 flex items-center justify-center rounded-full bg-black/10 dark:bg-white/10 hover:bg-black/20 dark:hover:bg-white/20 transition-colors duration-200"
+        className="absolute top-6 left-6 z-20 w-10 h-10 flex items-center justify-center rounded-full bg-white/10 dark:bg-white/10 hover:bg-white/20 dark:hover:bg-white/20 transition-colors duration-200 backdrop-blur-sm"
         aria-label="Return to login page"
       >
         <ArrowLeft className="w-5 h-5 text-foreground" />
@@ -185,211 +186,245 @@ export default function ResetPasswordPage() {
           background="transparent"
           minSize={0.6}
           maxSize={1.4}
-          particleDensity={100}
+          particleDensity={80}
           className="w-full h-full"
           particleColor="var(--foreground)"
         />
       </div>
 
-      <div className="relative z-10 flex items-center justify-center min-h-screen">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="w-full max-w-md p-8 bg-white/5 dark:bg-white/5 bg-black/5 backdrop-blur-sm rounded-lg border border-white/10 dark:border-white/10 border-black/10"
-        >
-          <div className="flex flex-col items-center mb-6">
-            <motion.div
-              className="relative w-16 h-16"
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.95 }}
-              onHoverStart={() => setIsLogoAnimating(true)}
-              onHoverEnd={() => setIsLogoAnimating(false)}
-              onClick={() => setIsLogoAnimating(true)}
-            >
+      <div className="relative z-10 flex items-center justify-center min-h-screen px-4 sm:px-6">
+        <div className="w-full max-w-md">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="p-8 bg-white/10 dark:bg-black/40 backdrop-blur-md rounded-2xl border border-white/20 dark:border-white/10 shadow-xl"
+          >
+            <div className="flex flex-col items-center mb-8">
               <motion.div
-                className="absolute inset-0 rounded-full bg-primary/20 z-0"
-                initial={{ scale: 0, opacity: 0 }}
-                animate={{
-                  scale: isLogoAnimating ? 1.2 : 0,
-                  opacity: isLogoAnimating ? 1 : 0,
-                }}
-                transition={{ duration: 0.3 }}
-              />
-              <motion.div
-                animate={{
-                  rotate: isLogoAnimating ? [0, 10, -10, 0] : 0,
-                }}
-                transition={{
-                  duration: 0.5,
-                  ease: "easeInOut",
-                  times: [0, 0.2, 0.8, 1],
-                }}
+                className="relative w-20 h-20"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onHoverStart={() => setIsLogoAnimating(true)}
+                onHoverEnd={() => setIsLogoAnimating(false)}
+                onClick={() => setIsLogoAnimating(true)}
               >
-                <Image
-                  src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/no_bg_logo-M7cBq60PCuZ1sN7MH6T2WMZRrdyQMZ.png"
-                  alt="RSW Logo"
-                  width={64}
-                  height={64}
-                  className="object-contain relative z-10"
+                <motion.div
+                  className="absolute inset-0 rounded-full bg-gradient-to-r from-primary/30 via-secondary/30 to-accent/30 z-0"
+                  initial={{ scale: 0, opacity: 0 }}
+                  animate={{
+                    scale: isLogoAnimating ? 1.2 : 0,
+                    opacity: isLogoAnimating ? 1 : 0,
+                  }}
+                  transition={{ duration: 0.4 }}
                 />
+                <motion.div
+                  animate={{
+                    rotate: isLogoAnimating ? [0, 10, -10, 0] : 0,
+                  }}
+                  transition={{
+                    duration: 0.5,
+                    ease: "easeInOut",
+                    times: [0, 0.2, 0.8, 1],
+                  }}
+                  className="relative z-10 flex items-center justify-center w-full h-full"
+                >
+                  <Image
+                    src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/no_bg_logo-M7cBq60PCuZ1sN7MH6T2WMZRrdyQMZ.png"
+                    alt="RSW Logo"
+                    width={80}
+                    height={80}
+                    className="object-contain"
+                  />
+                </motion.div>
               </motion.div>
-            </motion.div>
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary via-secondary to-accent font-bold text-sm mt-2">
-              Cognitive Data Expert
-            </span>
-          </div>
-
-          <h1 className="text-2xl font-bold text-foreground text-center mb-6">Set New Password</h1>
-
-          {error && (
-            <div className="bg-red-100 border border-red-400 text-red-800 px-4 py-3 rounded-md mb-4 shadow-sm">
-              <p className="font-medium text-center">{error}</p>
+              <h1 className="text-2xl font-bold text-foreground text-center mt-4 mb-1">Set New Password</h1>
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary via-secondary to-accent font-semibold text-sm">
+                Cognitive Data Expert
+              </span>
             </div>
-          )}
 
-          {useFallbackMode && !isSubmitted && (
-            <div className="bg-yellow-100 border border-yellow-400 text-yellow-800 px-4 py-2 rounded-md mb-4 flex items-start">
-              <AlertTriangle className="h-5 w-5 mr-2 mt-0.5 flex-shrink-0" />
-              <div>
-                <p className="font-medium">Using Demo Mode</p>
-                <p className="text-sm">API server is unavailable. Password reset will be simulated.</p>
-              </div>
-            </div>
-          )}
-
-          {isSubmitted ? (
-            <div className="text-center">
-              <div className="flex justify-center mb-4">
-                <CheckCircle className="w-16 h-16 text-green-500" />
-              </div>
-              <h2 className="text-xl font-semibold text-foreground mb-2">Password Reset Successful</h2>
-              <p className="text-foreground/70 mb-6">
-                Your password has been reset successfully. You will be redirected to the login page.
-              </p>
-              <Link
-                href="/login"
-                className="text-primary hover:text-primary/80 flex items-center justify-center"
+            {!token && (
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 px-4 py-3 rounded-lg mb-6 shadow-sm backdrop-blur-sm"
               >
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Back to Login
-              </Link>
-            </div>
-          ) : (
-            <>
-              <p className="text-foreground/70 mb-6">Enter your new password below.</p>
-
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label htmlFor="password" className="block text-sm font-medium text-foreground/70 mb-1">
-                    New Password
-                  </label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-                    <Input
-                      id="password"
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className={`pl-10 pr-10 bg-white/5 dark:bg-white/5 bg-black/5 border-white/10 dark:border-white/10 border-black/10 text-foreground ${
-                        password && !passwordValidation.valid ? "border-red-500" : ""
-                      }`}
-                      placeholder="Enter new password"
-                      required
-                    />
-                    {password && (
-                      <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                        {passwordValidation.valid ? (
-                          <Check className="h-4 w-4 text-green-500" />
-                        ) : (
-                          <X className="h-4 w-4 text-red-500" />
-                        )}
-                      </div>
-                    )}
+                <div className="flex items-start">
+                  <AlertTriangle className="h-5 w-5 mr-2 mt-0.5 flex-shrink-0 text-amber-500" />
+                  <div>
+                    <p className="font-medium">Missing Reset Token</p>
+                    <p className="text-sm mt-1">Please request a new password reset link from the forgot password page.</p>
+                    <Link
+                      href="/forgot-password"
+                      className="mt-2 inline-flex items-center text-primary hover:text-primary/80 transition-colors duration-200 text-sm font-medium"
+                    >
+                      <ArrowLeft className="w-3 h-3 mr-1" />
+                      Go to Forgot Password
+                    </Link>
                   </div>
-                  
-                  {password && (
-                    <div className="mt-2 space-y-1">
-                      <p className="text-xs font-medium text-foreground/70">Password must contain:</p>
-                      <ul className="space-y-1">
-                        <li className={`text-xs flex items-center ${passwordValidation.length ? "text-green-500" : "text-foreground/50"}`}>
-                          {passwordValidation.length ? <Check className="h-3 w-3 mr-1" /> : <X className="h-3 w-3 mr-1" />}
-                          At least 8 characters
+                </div>
+              </motion.div>
+            )}
+
+            {isSubmitted ? (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="bg-green-500/10 border border-green-500/20 text-green-700 dark:text-green-400 p-6 rounded-lg mb-6 flex flex-col items-center"
+              >
+                <CheckCircle className="w-16 h-16 text-green-500 mb-4" />
+                <h3 className="text-xl font-semibold mb-2">Password Reset Successful</h3>
+                <p className="text-center mb-4">Your password has been reset successfully.</p>
+                <p className="text-sm text-muted-foreground">Redirecting to login page...</p>
+              </motion.div>
+            ) : (
+              <>
+                {error && token && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="bg-red-500/10 border border-red-500/20 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg mb-6 shadow-sm relative backdrop-blur-sm"
+                  >
+                    <button 
+                      onClick={() => setError(null)}
+                      className="absolute top-2 right-2 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                      aria-label="Close notification"
+                    >
+                      <X size={18} />
+                    </button>
+                    <p className="font-medium text-center pr-6">{error}</p>
+                  </motion.div>
+                )}
+
+                {token && (
+                  <form onSubmit={handleSubmit} className="space-y-5">
+                    <div className="space-y-1">
+                      <label
+                        htmlFor="password"
+                        className="block text-sm font-medium text-foreground mb-1 ml-1"
+                      >
+                        New Password
+                      </label>
+                      <div className="relative group">
+                        <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground group-focus-within:text-primary h-5 w-5 transition-colors duration-200" />
+                        <Input
+                          id="password"
+                          type="password"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          className="pl-10 h-11 bg-white/5 dark:bg-white/5 border-white/10 dark:border-white/10 focus:border-primary focus:ring-1 focus:ring-primary text-foreground rounded-lg"
+                          placeholder="Enter new password"
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    {/* Password Requirements */}
+                    <div className="bg-white/5 dark:bg-white/5 rounded-lg p-3 border border-white/10 dark:border-white/10">
+                      <p className="text-sm font-medium mb-2 text-foreground">Password Requirements:</p>
+                      <ul className="space-y-1 text-sm">
+                        <li className="flex items-center">
+                          <span className={`mr-2 ${passwordValidation.length ? 'text-green-500' : 'text-muted-foreground'}`}>
+                            {passwordValidation.length ? <Check size={16} /> : <AlertTriangle size={16} />}
+                          </span>
+                          <span className={passwordValidation.length ? 'text-foreground' : 'text-muted-foreground'}>
+                            At least 8 characters
+                          </span>
                         </li>
-                        <li className={`text-xs flex items-center ${passwordValidation.hasUpperCase ? "text-green-500" : "text-foreground/50"}`}>
-                          {passwordValidation.hasUpperCase ? <Check className="h-3 w-3 mr-1" /> : <X className="h-3 w-3 mr-1" />}
-                          At least one uppercase letter
+                        <li className="flex items-center">
+                          <span className={`mr-2 ${passwordValidation.hasUpperCase ? 'text-green-500' : 'text-muted-foreground'}`}>
+                            {passwordValidation.hasUpperCase ? <Check size={16} /> : <AlertTriangle size={16} />}
+                          </span>
+                          <span className={passwordValidation.hasUpperCase ? 'text-foreground' : 'text-muted-foreground'}>
+                            At least one uppercase letter
+                          </span>
                         </li>
-                        <li className={`text-xs flex items-center ${passwordValidation.hasLowerCase ? "text-green-500" : "text-foreground/50"}`}>
-                          {passwordValidation.hasLowerCase ? <Check className="h-3 w-3 mr-1" /> : <X className="h-3 w-3 mr-1" />}
-                          At least one lowercase letter
+                        <li className="flex items-center">
+                          <span className={`mr-2 ${passwordValidation.hasLowerCase ? 'text-green-500' : 'text-muted-foreground'}`}>
+                            {passwordValidation.hasLowerCase ? <Check size={16} /> : <AlertTriangle size={16} />}
+                          </span>
+                          <span className={passwordValidation.hasLowerCase ? 'text-foreground' : 'text-muted-foreground'}>
+                            At least one lowercase letter
+                          </span>
                         </li>
-                        <li className={`text-xs flex items-center ${passwordValidation.hasNumber ? "text-green-500" : "text-foreground/50"}`}>
-                          {passwordValidation.hasNumber ? <Check className="h-3 w-3 mr-1" /> : <X className="h-3 w-3 mr-1" />}
-                          At least one number
-                        </li>
-                        <li className={`text-xs flex items-center ${passwordValidation.hasSpecial ? "text-green-500" : "text-foreground/50"}`}>
-                          {passwordValidation.hasSpecial ? <Check className="h-3 w-3 mr-1" /> : <X className="h-3 w-3 mr-1" />}
-                          Special character (recommended)
+                        <li className="flex items-center">
+                          <span className={`mr-2 ${passwordValidation.hasNumber ? 'text-green-500' : 'text-muted-foreground'}`}>
+                            {passwordValidation.hasNumber ? <Check size={16} /> : <AlertTriangle size={16} />}
+                          </span>
+                          <span className={passwordValidation.hasNumber ? 'text-foreground' : 'text-muted-foreground'}>
+                            At least one number
+                          </span>
                         </li>
                       </ul>
                     </div>
-                  )}
-                </div>
 
-                <div>
-                  <label htmlFor="confirmPassword" className="block text-sm font-medium text-foreground/70 mb-1">
-                    Confirm New Password
-                  </label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-                    <Input
-                      id="confirmPassword"
-                      type="password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      className={`pl-10 pr-10 bg-white/5 dark:bg-white/5 bg-black/5 border-white/10 dark:border-white/10 border-black/10 text-foreground ${
-                        confirmPassword && !passwordsMatch ? "border-red-500" : ""
-                      }`}
-                      placeholder="Confirm new password"
-                      required
-                    />
-                    {confirmPassword && (
-                      <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                        {passwordsMatch ? (
-                          <Check className="h-4 w-4 text-green-500" />
-                        ) : (
-                          <X className="h-4 w-4 text-red-500" />
+                    <div className="space-y-1">
+                      <label
+                        htmlFor="confirmPassword"
+                        className="block text-sm font-medium text-foreground mb-1 ml-1"
+                      >
+                        Confirm Password
+                      </label>
+                      <div className="relative group">
+                        <KeyRound className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground group-focus-within:text-primary h-5 w-5 transition-colors duration-200" />
+                        <Input
+                          id="confirmPassword"
+                          type="password"
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          className={cn(
+                            "pl-10 h-11 bg-white/5 dark:bg-white/5 border-white/10 dark:border-white/10 focus:ring-1 text-foreground rounded-lg",
+                            confirmPassword && (passwordsMatch ? "focus:border-green-500 focus:ring-green-500" : "focus:border-red-500 focus:ring-red-500"),
+                            confirmPassword && (passwordsMatch ? "border-green-500/50" : "border-red-500/50")
+                          )}
+                          placeholder="Confirm your password"
+                          required
+                        />
+                        {confirmPassword && (
+                          <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                            {passwordsMatch ? (
+                              <Check className="h-5 w-5 text-green-500" />
+                            ) : (
+                              <X className="h-5 w-5 text-red-500" />
+                            )}
+                          </div>
                         )}
                       </div>
-                    )}
-                  </div>
-                  {confirmPassword && !passwordsMatch && (
-                    <p className="text-xs text-red-500 mt-1">Passwords do not match</p>
-                  )}
-                </div>
+                    </div>
 
-                <Button
-                  type="submit"
-                  className="w-full bg-primary hover:bg-primary/90 text-white btn-glow"
-                  disabled={isSubmitting || !token || !passwordValidation.valid || !passwordsMatch}
-                >
-                  {isSubmitting ? "Resetting..." : "Reset Password"}
-                </Button>
-              </form>
-
-              <div className="mt-6 text-center">
-                <Link
-                  href="/login"
-                  className="text-primary hover:text-primary/80 flex items-center justify-center"
-                >
-                  <ArrowLeft className="w-4 h-4 mr-2" />
-                  Back to Login
-                </Link>
-              </div>
-            </>
-          )}
-        </motion.div>
+                    <Button
+                      type="submit"
+                      className={cn(
+                        "w-full h-11 bg-gradient-to-r from-primary via-primary to-primary/90 hover:from-primary/90 hover:to-primary",
+                        "text-white font-medium rounded-lg shadow-md hover:shadow-lg transition-all duration-200",
+                        "flex items-center justify-center gap-2 mt-2"
+                      )}
+                      disabled={isSubmitting}
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <div className="h-5 w-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          <span>Processing...</span>
+                        </>
+                      ) : (
+                        <>
+                          <KeyRound className="h-5 w-5" />
+                          <span>Set New Password</span>
+                        </>
+                      )}
+                    </Button>
+                  </form>
+                )}
+              </>
+            )}
+          </motion.div>
+          
+          <p className="text-center text-muted-foreground text-sm mt-6">
+            RSW Smart Data Intelligence Platform
+          </p>
+        </div>
       </div>
     </main>
   )

@@ -4,7 +4,7 @@ import Navbar from "@/components/navbar"
 import { SparklesCore } from "@/components/sparkles"
 import KGInsightsSidebar from "@/components/kginsights-sidebar"
 import { motion } from "framer-motion"
-import { Plus, Search, Eye, FileText, PlusCircle, RefreshCw, Trash2, Database } from "lucide-react"
+import { Plus, Search, Eye, FileText, PlusCircle, RefreshCw, Trash2, Database, Upload, Settings, LineChart } from "lucide-react"
 import { useEffect, useState } from "react"
 import { getKGraphDashboard } from "@/lib/api"
 import LoadingSpinner from "@/components/loading-spinner"
@@ -575,7 +575,7 @@ function KGraphDashboardContent() {
                         <th className="px-6 py-3 text-left text-foreground font-medium">Name</th>
                         <th className="px-6 py-3 text-left text-foreground font-medium">Description</th>
                         <th className="px-6 py-3 text-left text-foreground font-medium">Created</th>
-                        <th className="px-6 py-3 text-left text-foreground font-medium">Actions</th>
+                        <th className="px-6 py-3 text-right text-foreground font-medium">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -594,59 +594,66 @@ function KGraphDashboardContent() {
                           <td className="px-6 py-4 text-muted-foreground">{graph.description}</td>
                           <td className="px-6 py-4 text-muted-foreground">{graph.created}</td>
                           <td className="px-6 py-4">
-                            <div className="flex gap-2">
+                            <div className="flex justify-end gap-2">
                               {graph.type === "schema" ? (
                                 <>
                                   <Button
-                                    variant="link"
+                                    variant="ghost"
+                                    size="icon"
                                     className="text-orange-500 hover:text-orange-600 hover:bg-orange-500/10"
                                     onClick={() => handleViewSchema(graph.id, graph.name)}
+                                    title="View Schema"
                                   >
-                                    View Schema
+                                    <FileText className="w-5 h-5" />
                                   </Button>
-                                  <span className="text-muted-foreground">|</span>
                                   <Button
-                                    variant="link"
+                                    variant="ghost"
+                                    size="icon"
                                     className="text-blue-500 hover:text-blue-600 hover:bg-blue-500/10"
                                     onClick={() => handleApplyToNeo4j(graph)}
+                                    title="Apply to Neo4j"
                                   >
-                                    Apply to Neo4j
+                                    <Database className="w-5 h-5" />
                                   </Button>
-                                  <span className="text-muted-foreground">|</span>
                                   <Button
-                                    variant="link"
+                                    variant="ghost"
+                                    size="icon"
                                     className="text-green-500 hover:text-green-600 hover:bg-green-500/10"
                                     onClick={() => handleLoadDataToNeo4j(graph.id, graph.name)}
+                                    title="Load Data"
                                   >
-                                    Load Data
+                                    <Upload className="w-5 h-5" />
                                   </Button>
                                 </>
                               ) : (
                                 <Button
-                                  variant="link"
-                                  className="text-primary hover:text-primary/80 p-0 h-auto"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="text-primary hover:text-primary/80 hover:bg-primary/10"
                                   onClick={() => handleManageSchema(graph.id)}
+                                  title="Manage Schema"
                                 >
-                                  Manage Schema
+                                  <Settings className="w-5 h-5" />
                                 </Button>
                               )}
-                              <span className="text-muted-foreground">|</span>
                               <Button
-                                variant="link"
-                                className="text-primary hover:text-primary/80 p-0 h-auto"
+                                variant="ghost"
+                                size="icon"
+                                className="text-primary hover:text-primary/80 hover:bg-primary/10"
                                 onClick={() => handleInsights(graph.id)}
+                                title="Insights"
                               >
-                                Insights
+                                <LineChart className="w-5 h-5" />
                               </Button>
-                              <span className="text-muted-foreground">|</span>
                               <Button
-                                variant="link"
+                                variant="ghost"
+                                size="icon"
                                 className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
                                 onClick={() => handleDeleteGraph(graph)}
+                                title="Delete"
                               >
-                                Delete
+                                <Trash2 className="w-5 h-5" />
                               </Button>
-
                             </div>
                           </td>
                         </motion.tr>
@@ -685,9 +692,7 @@ function KGraphDashboardContent() {
                       <thead>
                         <tr className="border-t border-b border-border">
                           <th className="px-6 py-3 text-left text-foreground font-medium">Dataset</th>
-                          <th className="px-6 py-3 text-left text-foreground font-medium">Preview</th>
-                          <th className="px-6 py-3 text-left text-foreground font-medium">Schema</th>
-                          <th className="px-6 py-3 text-left text-foreground font-medium">Generate KG</th>
+                          <th className="px-6 py-3 text-right text-foreground font-medium">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -709,34 +714,35 @@ function KGraphDashboardContent() {
                               </div>
                             </td>
                             <td className="px-6 py-4">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="text-amber-500 hover:text-amber-600 hover:bg-amber-500/10"
-                                onClick={() => handlePreview(dataset.id, dataset.name)}
-                              >
-                                <Eye className="w-5 h-5" />
-                              </Button>
-                            </td>
-                            <td className="px-6 py-4">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="text-orange-500 hover:text-orange-600 hover:bg-orange-500/10"
-                                onClick={() => handleViewSchema(dataset.id, dataset.name)}
-                              >
-                                <FileText className="w-5 h-5" />
-                              </Button>
-                            </td>
-                            <td className="px-6 py-4">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="text-primary hover:text-primary/80 hover:bg-primary/10"
-                                onClick={() => handleGenerateKG(dataset.id, dataset.name)}
-                              >
-                                <PlusCircle className="w-5 h-5" />
-                              </Button>
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="text-amber-500 hover:text-amber-600 hover:bg-amber-500/10"
+                                  onClick={() => handlePreview(dataset.id, dataset.name)}
+                                  title="Preview"
+                                >
+                                  <Eye className="w-5 h-5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="text-orange-500 hover:text-orange-600 hover:bg-orange-500/10"
+                                  onClick={() => handleViewSchema(dataset.id, dataset.name)}
+                                  title="Schema"
+                                >
+                                  <FileText className="w-5 h-5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="text-primary hover:text-primary/80 hover:bg-primary/10"
+                                  onClick={() => handleGenerateKG(dataset.id, dataset.name)}
+                                  title="Generate KG"
+                                >
+                                  <PlusCircle className="w-5 h-5" />
+                                </Button>
+                              </div>
                             </td>
                           </motion.tr>
                         ))}

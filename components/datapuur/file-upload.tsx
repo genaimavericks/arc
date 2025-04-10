@@ -34,7 +34,12 @@ export function FileUpload({
   onError,
 }: FileUploadProps) {
   // Use the global ingestion context
-  const { addJob, updateJob, addError, setProcessingStatus } = useIngestion()
+  const { addJob, updateJob, addError, setProcessingStatus, jobs } = useIngestion()
+  
+  // Add references for cancellation
+  const [isCancelling, setIsCancelling] = useState(false)
+  const xhrRef = useRef<XMLHttpRequest | null>(null)
+  const uploadIdRef = useRef<string | null>(null)
   
   // Update the component to handle multiple files
   // Change the file state from a single file to an array of files
@@ -135,6 +140,12 @@ export function FileUpload({
 
     // Process each file sequentially
     for (let i = 0; i < files.length; i++) {
+      // Check if we should stop processing (files array might have been cleared by cancelUpload)
+      if (files.length === 0 || isCancelling) {
+        console.log("Upload cancelled, stopping file processing")
+        break
+      }
+      
       const file = files[i]
       try {
         // Update status for current file
@@ -177,8 +188,15 @@ export function FileUpload({
           
           // Create a unique upload ID for this file
           const uploadId = `upload-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+          uploadIdRef.current = uploadId;
           
           for (let start = 0; start < file.size; start += CHUNK_SIZE) {
+            // Check for cancellation before each chunk
+            if (isCancelling || localStorage.getItem(`cancelled_upload_${uploadId}`) === "true") {
+              console.log("Upload cancelled during chunking, stopping chunk upload")
+              throw new Error("Upload cancelled by user")
+            }
+            
             const chunk = file.slice(start, start + CHUNK_SIZE);
             const chunkFormData = new FormData();
             chunkFormData.append('file', chunk, file.name);
@@ -230,6 +248,12 @@ export function FileUpload({
             }
           }
           
+          // Check for cancellation before completing the upload
+          if (isCancelling || localStorage.getItem(`cancelled_upload_${uploadId}`) === "true") {
+            console.log("Upload cancelled before completion, stopping upload process")
+            throw new Error("Upload cancelled by user")
+          }
+          
           // Complete the chunked upload
           const apiBaseUrl = getApiBaseUrl();
           const completeResponse = await fetch(`${apiBaseUrl}/api/datapuur/complete-chunked-upload`, {
@@ -253,6 +277,13 @@ export function FileUpload({
           }
           
           const data = await completeResponse.json();
+          
+          // Check if the upload was cancelled by the server
+          if (data.cancelled) {
+            console.log("Server reported upload was cancelled")
+            throw new Error("Upload cancelled by user")
+          }
+          
           onStatusChange(`File ${i + 1} uploaded successfully! Processing data...`);
           setProcessingStatus(`File ${i + 1} uploaded successfully! Processing data...`);
           
@@ -276,6 +307,12 @@ export function FileUpload({
           }
           
           const ingestData = await ingestResponse.json();
+          
+          // Check if the ingestion was cancelled by the server
+          if (ingestData.cancelled) {
+            console.log("Server reported ingestion was cancelled")
+            throw new Error("Upload cancelled by user")
+          }
           
           // Update the job with the real job ID
           const updatedJob: Job = {
@@ -306,7 +343,7 @@ export function FileUpload({
           setUploadProgress((prev) => ({ ...prev, [i]: 90 }))
           
           // If profile generation is enabled, request a profile for this file
-          if (generateProfile) {
+          if (generateProfile && !isCancelling && localStorage.getItem(`cancelled_upload_${uploadId}`) !== "true") {
             try {
               // First, get file details to get the file path
               const fileDetailsResponse = await fetch(`${apiBaseUrl}/api/datapuur/ingestion-preview/${ingestData.job_id}`, {
@@ -316,11 +353,23 @@ export function FileUpload({
                 },
               });
 
+              // Check for cancellation again before proceeding
+              if (isCancelling) {
+                console.log("Upload cancelled before profile generation, skipping profile")
+                throw new Error("Upload cancelled by user")
+              }
+
               if (!fileDetailsResponse.ok) {
                 console.error("Error fetching file details for profiling, but continuing with ingestion");
               } else {
                 const fileDetails = await fileDetailsResponse.json();
                 console.log("$$$$$$$$$$$$$$$$$$$Preview generation started:", fileDetails);
+                
+                // Check for cancellation again before proceeding with profile generation
+                if (isCancelling) {
+                  console.log("Upload cancelled before profile API call, skipping profile")
+                  throw new Error("Upload cancelled by user")
+                }
                 
                 // Now call profile API with the file details
                 const profileResponse = await fetch(`${apiBaseUrl}/api/profiler/profile-data`, {
@@ -403,6 +452,7 @@ export function FileUpload({
         } else {
           // Use XMLHttpRequest for smaller files (existing code)
           const xhr = new XMLHttpRequest()
+          xhrRef.current = xhr;
           
           // Set up progress tracking
           xhr.upload.addEventListener("progress", (event) => {
@@ -486,6 +536,12 @@ export function FileUpload({
 
           const ingestData = await ingestResponse.json()
 
+          // Check if the ingestion was cancelled by the server
+          if (ingestData.cancelled) {
+            console.log("Server reported ingestion was cancelled")
+            throw new Error("Upload cancelled by user")
+          }
+
           // Update the job with the real job ID
           const updatedJob: Job = {
             id: ingestData.job_id,
@@ -518,7 +574,7 @@ export function FileUpload({
           setUploadProgress((prev) => ({ ...prev, [i]: 90 }))
           
           // If profile generation is enabled, request a profile for this file
-          if (generateProfile) {
+          if (generateProfile && !isCancelling) {
             try {
               // First, get file details to get the file path
               const fileDetailsResponse = await fetch(`${apiBaseUrl}/api/datapuur/sources/${ingestData.job_id}`, {
@@ -528,11 +584,23 @@ export function FileUpload({
                 },
               });
 
+              // Check for cancellation before proceeding
+              if (isCancelling) {
+                console.log("Upload cancelled before profile generation, skipping profile")
+                throw new Error("Upload cancelled by user")
+              }
+
               if (!fileDetailsResponse.ok) {
                 console.error("Error fetching file details for profiling, but continuing with ingestion");
               } else {
                 const fileDetails = await fileDetailsResponse.json();
                 console.log("$$$$$$$$$$$$$$$$$$$ Sources File details:", fileDetails);
+                
+                // Check for cancellation again before proceeding with profile generation
+                if (isCancelling) {
+                  console.log("Upload cancelled before profile API call, skipping profile")
+                  throw new Error("Upload cancelled by user")
+                }
                 
                 // Now call profile API with the file details
                 const profileResponse = await fetch(`${apiBaseUrl}/api/profiler/profile-data`, {
@@ -616,9 +684,42 @@ export function FileUpload({
       } catch (error) {
         console.error(`Error uploading file ${file.name}:`, error)
         const errorMessage = error instanceof Error ? error.message : "Failed to upload file"
-        setError(`Error with file ${file.name}: ${errorMessage}`)
-        if (onError) onError({ message: errorMessage })
-        // Continue with next file despite error
+        
+        // Check if this was a cancellation
+        if (errorMessage.includes("cancelled") || isCancelling || localStorage.getItem(`cancelled_upload_${uploadIdRef.current}`) === "true") {
+          // This is a cancellation, not an error
+          console.log(`Upload of ${file.name} was cancelled`)
+          
+          // Get the job ID from the global context or create a temporary one
+          const jobId = jobs.find(j => j.name === file.name && (j.status === "running" || j.status === "queued"))?.id || `temp-${Date.now()}`
+          
+          const cancelledJob: Job = {
+            id: jobId,
+            name: file.name,
+            type: "file",
+            status: "cancelled", // Mark as cancelled instead of failed
+            progress: 0,
+            startTime: new Date().toISOString(),
+            endTime: new Date().toISOString(),
+            details: `Upload cancelled: ${file.name}`,
+          }
+          
+          // Update in the UI
+          if (onJobUpdated) onJobUpdated(cancelledJob)
+          
+          // Also update in the global context if available
+          if (typeof updateJob === 'function') {
+            updateJob(cancelledJob)
+          }
+          
+          // Don't show error message for cancellations
+          setError("")
+        } else {
+          // This is a genuine error
+          setError(`Error with file ${file.name}: ${errorMessage}`)
+          if (onError) onError({ message: errorMessage })
+        }
+        // Continue with next file regardless
       }
     }
 
@@ -632,6 +733,99 @@ export function FileUpload({
     setUploadProgress({})
     setError("")
     onStatusChange("")
+  }
+
+  // Add function to cancel ongoing upload
+  const cancelUpload = async () => {
+    setIsCancelling(true)
+    
+    try {
+      // Cancel XHR request if it exists
+      if (xhrRef.current) {
+        xhrRef.current.abort()
+        xhrRef.current = null
+      }
+      
+      // Cancel chunked upload if it exists
+      if (uploadIdRef.current) {
+        const apiBaseUrl = getApiBaseUrl()
+        try {
+          // Attempt to notify the server about the cancellation
+          const response = await fetch(`${apiBaseUrl}/api/datapuur/cancel-chunked-upload`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${localStorage.getItem("token")}`,
+            },
+            body: JSON.stringify({ uploadId: uploadIdRef.current }),
+          })
+          
+          if (response.ok) {
+            console.log("Server notified about upload cancellation")
+            // Set a flag to indicate this upload ID is cancelled
+            localStorage.setItem(`cancelled_upload_${uploadIdRef.current}`, "true")
+          }
+        } catch (error) {
+          console.error("Error notifying server about upload cancellation:", error)
+        }
+        uploadIdRef.current = null
+      }
+      
+      // Cancel any active jobs
+      const activeJobs = jobs.filter((job: Job) => 
+        (job.status === "running" || job.status === "queued") && 
+        !job.id.startsWith("temp-")
+      )
+      
+      for (const job of activeJobs) {
+        try {
+          const apiBaseUrl = getApiBaseUrl()
+          const response = await fetch(`${apiBaseUrl}/api/datapuur/cancel-job/${job.id}`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem("token")}`,
+            },
+          })
+          
+          if (response.ok) {
+            const updatedJob = await response.json()
+            // Update the job in the global context
+            updateJob(updatedJob)
+            
+            // Also update any profile jobs associated with this job
+            const profileJobs = jobs.filter((pJob: Job) => 
+              pJob.type === "profile" && 
+              pJob.details && 
+              pJob.details.includes(job.name)
+            )
+            
+            for (const profileJob of profileJobs) {
+              // Mark profile jobs as cancelled instead of failed
+              updateJob({
+                ...profileJob,
+                status: "cancelled",
+                details: `Profile generation cancelled: ${profileJob.name.replace('Profile: ', '')}`,
+                endTime: new Date().toISOString(),
+              })
+            }
+          }
+        } catch (error) {
+          console.error(`Error cancelling job ${job.id}:`, error)
+        }
+      }
+      
+      // Reset state
+      setIsProcessing(false)
+      setUploadProgress({})
+      setFiles([]) // Clear the files array to prevent further processing
+      setProcessingStatus("Upload cancelled")
+      onStatusChange("Upload cancelled")
+    } catch (error) {
+      console.error("Error during cancellation:", error)
+      setError("Failed to cancel upload: " + (error instanceof Error ? error.message : String(error)))
+    } finally {
+      setIsCancelling(false)
+    }
   }
 
   // Function to preview file contents
@@ -886,6 +1080,39 @@ export function FileUpload({
               </span>
             )}
           </Button>
+          
+          {/* Add cancel button during processing */}
+          {isProcessing && (
+            <Button
+              className="w-full mt-2 bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+              onClick={cancelUpload}
+              disabled={isCancelling}
+            >
+              {isCancelling ? (
+                <span className="flex items-center">
+                  <svg
+                    className="animate-spin -ml-1 mr-3 h-4 w-4 text-white"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    ></path>
+                  </svg>
+                  Cancelling...
+                </span>
+              ) : (
+                <span className="flex items-center">
+                  <X className="mr-2 h-4 w-4" />
+                  Cancel Upload
+                </span>
+              )}
+            </Button>
+          )}
         </div>
       )}
 

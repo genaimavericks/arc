@@ -19,7 +19,7 @@ export function KGInsightsLayout({
     <ProtectedRoute requiredPermission={requiredPermission}>
       <main className="min-h-screen bg-background antialiased relative overflow-hidden">
         {/* Ambient background with moving particles */}
-        <div className="h-full w-full absolute inset-0 z-0">
+        <div className="h-full w-full absolute inset-0 z-[-1]">
           <SparklesCore
             id="tsparticlesfullpage"
             background="transparent"

@@ -306,7 +306,7 @@ function GenerateGraphContent() {
           transition={{ duration: 0.5 }}
           className="flex flex-col gap-4 mb-6"
         >
-          <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
+          <h1 className="text-3xl font-bold">
             Generate Knowledge Graph
           </h1>
           <p className="text-muted-foreground max-w-3xl">
@@ -421,7 +421,7 @@ function GenerateGraphContent() {
                 <div className="flex flex-col gap-2 mb-4">
                   <h2 className="text-xl font-semibold flex items-center gap-2">
                     <MessageSquare className="h-5 w-5 text-primary" />
-                    <span className="bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">GenAI Assistant</span>
+                    <span className="text-black">GenAI Assistant</span>
                   </h2>
                   <Separator className="bg-primary/10" />
                 </div>
@@ -466,7 +466,7 @@ function GenerateGraphContent() {
                     <div className="flex items-center justify-between mb-2">
                       <h2 className="text-xl font-semibold flex items-center gap-2">
                         <Save className="h-5 w-5 text-accent" />
-                        <span className="bg-clip-text text-transparent bg-gradient-to-r from-accent to-primary">Recommended Schema</span>
+                        <span>Recommended Schema</span>
                       </h2>
                     </div>
                     <Separator className="bg-accent/10 mb-4" />

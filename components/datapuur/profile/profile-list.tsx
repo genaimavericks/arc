@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Search, BarChart2, Calendar, Database, Trash2 } from "lucide-react"
+import { Search, BarChart2, Calendar, Database, Trash2, Eye } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import {
   Table,
@@ -25,6 +25,12 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { format } from "date-fns"
 import LoadingSpinner from "@/components/loading-spinner"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 interface Profile {
   id: string
@@ -275,10 +281,21 @@ export function ProfileList({ onProfileSelect, selectedProfileId, fileIdFilter }
         description: "Profile deleted successfully",
       });
       
+      // Create a new array without the deleted profile
+      const updatedProfiles = profiles.filter(profile => profile.id !== profileId);
+      
       // If the deleted profile was selected, reset selection
       if (selectedProfileId === profileId) {
-        onProfileSelect("");
+        // If there are other profiles available, select the first one
+        if (updatedProfiles.length > 0) {
+          onProfileSelect(updatedProfiles[0].id);
+        } else {
+          onProfileSelect("");
+        }
       }
+      
+      // Update the profiles state immediately to prevent UI flicker
+      setProfiles(updatedProfiles);
       
       // Check if this was the last item on the current page
       const isLastItemOnPage = profiles.length === 1;
@@ -289,8 +306,11 @@ export function ProfileList({ onProfileSelect, selectedProfileId, fileIdFilter }
         setPage(page - 1);
         // The page change will trigger fetchProfiles via the useEffect
       } else {
-        // Otherwise just refresh the current page
-        fetchProfiles();
+        // Fetch updated list from the server to ensure data consistency
+        // Use a small delay to allow the DELETE operation to complete on the server
+        setTimeout(() => {
+          fetchProfiles();
+        }, 300);
       }
       
     } catch (error) {
@@ -396,13 +416,22 @@ export function ProfileList({ onProfileSelect, selectedProfileId, fileIdFilter }
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end space-x-2">
-                            <Button
-                              variant={selectedProfileId === profile.id ? "default" : "ghost"}
-                              size="sm"
-                              onClick={() => onProfileSelect(profile.id)}
-                            >
-                              {selectedProfileId === profile.id ? "Selected" : "View"}
-                            </Button>
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant={selectedProfileId === profile.id ? "default" : "ghost"}
+                                    size="sm"
+                                    onClick={() => onProfileSelect(profile.id)}
+                                  >
+                                    {selectedProfileId === profile.id ? "Selected" : <Eye className="h-4 w-4" />}
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>View</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
                             <Button
                               variant="destructive"
                               size="sm"
