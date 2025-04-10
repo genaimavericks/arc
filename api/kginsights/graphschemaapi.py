@@ -875,6 +875,18 @@ async def save_schema(
             schema_data['name'] = f"Schema_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             print(f"DEBUG: Using default name: {schema_data['name']}")
         
+        # Check if schema with the same name already exists
+        schema_name = schema_data.get('name')
+        existing_schema = db.query(Schema).filter(Schema.name == schema_name).first()
+        if existing_schema:
+            error_message = f"Schema with name '{schema_name}' already exists. Please use a different name."
+            print(f"ERROR: {error_message}")
+            # Return 409 Conflict with detailed error message
+            raise HTTPException(
+                status_code=409, 
+                detail=error_message
+            )
+        
         # Ensure schema has a source_id
         if not schema_data.get('source_id'):
             print(f"WARNING: No source_id provided in schema data")

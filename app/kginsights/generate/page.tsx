@@ -237,9 +237,18 @@ function GenerateGraphContent() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => null)
-        throw new Error(
-          errorData?.detail || `Failed to save schema: ${response.status}`
-        )
+        console.log('Error response:', response.status, errorData)
+        
+        // Handle specific error for duplicate schema name (409 Conflict)
+        if (response.status === 409) {
+          throw new Error(
+            `A schema with the name "${schemaName}" already exists. Please use a different name.`
+          )
+        }
+        
+        // Extract error message from response if available
+        const errorMessage = errorData?.detail || `Failed to save schema: ${response.status}`
+        throw new Error(errorMessage)
       }
 
       const data = await response.json()
@@ -264,10 +273,16 @@ function GenerateGraphContent() {
       // Set error status
       setSavingStatus('error')
       
+      // Get error message
+      const errorMessage = error instanceof Error ? error.message : "Failed to save schema. Please try again."
+      console.log('Displaying error toast with message:', errorMessage)
+      
+      // Show prominent error toast with longer duration
       toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to save schema. Please try again.",
+        title: "Schema Save Error",
+        description: errorMessage,
         variant: "destructive",
+        duration: 6000, // Show for 6 seconds for better visibility
       })
       
       // Reset error status after 3 seconds
