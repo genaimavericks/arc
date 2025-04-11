@@ -74,7 +74,8 @@ export function FloatingJobCard() {
   )
   
   // Only show the card if there are active jobs (running or queued) or there's a processing status
-  if ((!activeJobs.some(job => job.status === "running" || job.status === "queued") && !processingStatus) || !isVisible) {
+  // Also respect the isVisible state (for the close button functionality)
+  if ((activeJobs.length === 0 && !processingStatus) || !isVisible) {
     return null
   }
 

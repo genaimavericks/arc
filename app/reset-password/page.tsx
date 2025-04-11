@@ -323,38 +323,46 @@ export default function ResetPasswordPage() {
 
                     {/* Password Requirements */}
                     <div className="bg-white/5 dark:bg-white/5 rounded-lg p-3 border border-white/10 dark:border-white/10">
-                      <p className="text-sm font-medium mb-2 text-foreground">Password Requirements:</p>
+                      <p className="text-sm font-medium mb-2 text-foreground">Password must contain:</p>
                       <ul className="space-y-1 text-sm">
                         <li className="flex items-center">
-                          <span className={`mr-2 ${passwordValidation.length ? 'text-green-500' : 'text-muted-foreground'}`}>
-                            {passwordValidation.length ? <Check size={16} /> : <AlertTriangle size={16} />}
+                          <span className={`mr-2 ${passwordValidation.length ? 'text-green-500' : 'text-red-500'}`}>
+                            {passwordValidation.length ? <Check size={16} /> : <X size={16} />}
                           </span>
-                          <span className={passwordValidation.length ? 'text-foreground' : 'text-muted-foreground'}>
+                          <span className={passwordValidation.length ? 'text-green-500' : 'text-muted-foreground'}>
                             At least 8 characters
                           </span>
                         </li>
                         <li className="flex items-center">
-                          <span className={`mr-2 ${passwordValidation.hasUpperCase ? 'text-green-500' : 'text-muted-foreground'}`}>
-                            {passwordValidation.hasUpperCase ? <Check size={16} /> : <AlertTriangle size={16} />}
+                          <span className={`mr-2 ${passwordValidation.hasUpperCase ? 'text-green-500' : 'text-red-500'}`}>
+                            {passwordValidation.hasUpperCase ? <Check size={16} /> : <X size={16} />}
                           </span>
-                          <span className={passwordValidation.hasUpperCase ? 'text-foreground' : 'text-muted-foreground'}>
+                          <span className={passwordValidation.hasUpperCase ? 'text-green-500' : 'text-muted-foreground'}>
                             At least one uppercase letter
                           </span>
                         </li>
                         <li className="flex items-center">
-                          <span className={`mr-2 ${passwordValidation.hasLowerCase ? 'text-green-500' : 'text-muted-foreground'}`}>
-                            {passwordValidation.hasLowerCase ? <Check size={16} /> : <AlertTriangle size={16} />}
+                          <span className={`mr-2 ${passwordValidation.hasLowerCase ? 'text-green-500' : 'text-red-500'}`}>
+                            {passwordValidation.hasLowerCase ? <Check size={16} /> : <X size={16} />}
                           </span>
-                          <span className={passwordValidation.hasLowerCase ? 'text-foreground' : 'text-muted-foreground'}>
+                          <span className={passwordValidation.hasLowerCase ? 'text-green-500' : 'text-muted-foreground'}>
                             At least one lowercase letter
                           </span>
                         </li>
                         <li className="flex items-center">
-                          <span className={`mr-2 ${passwordValidation.hasNumber ? 'text-green-500' : 'text-muted-foreground'}`}>
-                            {passwordValidation.hasNumber ? <Check size={16} /> : <AlertTriangle size={16} />}
+                          <span className={`mr-2 ${passwordValidation.hasNumber ? 'text-green-500' : 'text-red-500'}`}>
+                            {passwordValidation.hasNumber ? <Check size={16} /> : <X size={16} />}
                           </span>
-                          <span className={passwordValidation.hasNumber ? 'text-foreground' : 'text-muted-foreground'}>
+                          <span className={passwordValidation.hasNumber ? 'text-green-500' : 'text-muted-foreground'}>
                             At least one number
+                          </span>
+                        </li>
+                        <li className="flex items-center">
+                          <span className={`mr-2 ${passwordValidation.hasSpecial ? 'text-green-500' : 'text-red-500'}`}>
+                            {passwordValidation.hasSpecial ? <Check size={16} /> : <X size={16} />}
+                          </span>
+                          <span className={passwordValidation.hasSpecial ? 'text-green-500' : 'text-muted-foreground'}>
+                            Special character (recommended)
                           </span>
                         </li>
                       </ul>

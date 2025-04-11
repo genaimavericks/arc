@@ -377,35 +377,7 @@ export function SchemaViewerModal({ isOpen, onClose, datasetId, datasetName }: S
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Schema: {datasetName}</DialogTitle>
-          {graphSchema && (
-            <div className="flex justify-end mt-2">
-              <Button 
-                variant="outline" 
-                onClick={handleCleanupSchemas}
-                disabled={isLoading || isCleaningUp}
-                className="flex items-center gap-2 mr-2"
-              >
-                {isCleaningUp ? (
-                  <>
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                    Cleaning...
-                  </>
-                ) : (
-                  <>Cleanup Schemas</>
-                )}
-              </Button>
-              <Button 
-                variant="outline" 
-                onClick={() => setIsLoadDataDialogOpen(true)}
-                disabled={isLoading}
-                className="flex items-center gap-2"
-                data-load-data-button
-              >
-                <Database className="h-4 w-4" />
-                Load Data into Neo4j
-              </Button>
-            </div>
-          )}
+          {/* Buttons removed as per user request */}
         </DialogHeader>
         {isLoading ? (
           <div className="flex justify-center items-center h-64">

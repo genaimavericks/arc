@@ -143,10 +143,18 @@ def delete_dataset(db, dataset_id):
         if data_path.exists():
             data_path.unlink()
         
+        # Delete associated profile records
+        from .profiler.models import ProfileResult
+        profile_results = db.query(ProfileResult).filter(ProfileResult.file_id == dataset_id).all()
+        
+        for profile in profile_results:
+            db.delete(profile)
+            logger.info(f"Deleted associated profile {profile.id} for dataset {dataset_id}")
+        
         # Commit the changes
         db.commit()
         
-        return True, "Dataset deleted successfully"
+        return True, "Dataset and associated profiles deleted successfully"
     except Exception as e:
         db.rollback()
         logger.error(f"Error deleting dataset: {str(e)}")

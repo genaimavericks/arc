@@ -609,15 +609,6 @@ function KGraphDashboardContent() {
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="text-blue-500 hover:text-blue-600 hover:bg-blue-500/10"
-                                    onClick={() => handleApplyToNeo4j(graph)}
-                                    title="Apply to Neo4j"
-                                  >
-                                    <Database className="w-5 h-5" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
                                     className="text-green-500 hover:text-green-600 hover:bg-green-500/10"
                                     onClick={() => handleLoadDataToNeo4j(graph.id, graph.name)}
                                     title="Load Data"
@@ -639,7 +630,7 @@ function KGraphDashboardContent() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="text-primary hover:text-primary/80 hover:bg-primary/10"
+                                className="text-purple-500 hover:text-purple-600 hover:bg-purple-500/10"
                                 onClick={() => handleInsights(graph.id)}
                                 title="Insights"
                               >

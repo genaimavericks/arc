@@ -164,17 +164,6 @@ export function DashboardTab({ onTabChange }: DashboardTabProps) {
                   {stats?.active_users || 0}
                 </motion.span>
               </div>
-              <div className="flex justify-between items-center">
-                <span className="text-muted-foreground body-text">New Users (30d):</span>
-                <motion.span 
-                  initial={{ opacity: 0, y: 5 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.5 }}
-                  className="body-text font-medium"
-                >
-                  {stats?.new_users || 0}
-                </motion.span>
-              </div>
               <motion.div 
                 initial={{ scaleX: 0 }}
                 animate={{ scaleX: 1 }}
