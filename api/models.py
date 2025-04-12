@@ -136,5 +136,28 @@ class Schema(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+class GraphIngestionJob(Base):
+    """
+    Dedicated model for tracking KGInsights graph processing jobs.
+    Separate from the DataPuur IngestionJob model to maintain component separation.
+    """
+    __tablename__ = "graph_ingestion_jobs"
+
+    id = Column(String, primary_key=True, index=True)
+    schema_id = Column(Integer, ForeignKey("schemas.id"), nullable=False, index=True)
+    job_type = Column(String, nullable=False)  # e.g., 'load', 'unload', 'update'
+    status = Column(String, nullable=False)  # 'pending', 'running', 'completed', 'failed'
+    progress = Column(Integer, default=0)
+    message = Column(Text, nullable=True)
+    error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    params = Column(Text, nullable=True)  # Store job parameters as JSON string
+
+    # Relationship to Schema
+    schema = relationship("Schema", backref="graph_jobs")
+
 # Create tables
 Base.metadata.create_all(bind=engine)
