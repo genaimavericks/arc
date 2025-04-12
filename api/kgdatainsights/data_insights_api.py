@@ -13,6 +13,8 @@ from ..models import User
 from ..auth import has_any_permission
 from neo4j.time import Date, Time, DateTime
 from pydantic.json import pydantic_encoder
+from ..db_config import SessionLocal
+from ..models import Schema
 
 router = APIRouter(prefix="/datainsights", tags=["Data Insights"])
 
@@ -86,7 +88,7 @@ class QueryRequest(BaseModel):
 
 class QueryResponse(BaseModel):
     """Response model for the query endpoint."""
-    source_id: str
+    schema_id: str
     query: str
     result: str
     intermediate_steps: Optional[Dict[str, Any]] = None
@@ -96,19 +98,19 @@ class QueryResponse(BaseModel):
 class HistoricalQuery(BaseModel):
     """Model for a historical query."""
     id: str
-    source_id: str
+    schema_id: str
     query: str
     result: str
     timestamp: datetime
 
 class QueryHistoryResponse(BaseModel):
     """Response model for the query history endpoint."""
-    source_id: str
+    schema_id: str
     queries: List[HistoricalQuery]
 
 class DeleteHistoryResponse(BaseModel):
     """Response model for delete history endpoints."""
-    source_id: str
+    schema_id: str
     message: str
     deleted_count: int
 
@@ -121,7 +123,7 @@ class PredefinedQuery(BaseModel):
 
 class PredefinedQueriesResponse(BaseModel):
     """Response model for the predefined queries endpoint."""
-    source_id: str
+    schema_id: str
     queries: List[PredefinedQuery]
 
 print('$$$$$$$$$$$$$$- Loading data insights')
@@ -132,9 +134,9 @@ async def get_status():
     return {"status": "OK"}
 
 
-@router.post("/{source_id}/visualize", response_model=GraphData)
+@router.post("/{schema_id}/visualize", response_model=GraphData)
 async def analyze_data_visualization(
-    source_id: str, 
+    schema_id: str, 
     data: Dict[str, Any],
     current_user: User = Depends(has_any_permission(["kginsights:read"]))
 ):
@@ -142,7 +144,7 @@ async def analyze_data_visualization(
     Analyze data and suggest appropriate visualization.
     
     Args:
-        source_id: The ID of the data source
+        schema_id: The ID of the schema to use
         data: The data to analyze
         
     Returns:
@@ -168,9 +170,9 @@ async def analyze_data_visualization(
         raise HTTPException(status_code=500, detail=f"Error analyzing data: {str(e)}")
 
 
-@router.post("/{source_id}/query", response_model=QueryResponse)
+@router.post("/{schema_id}/query", response_model=QueryResponse)
 async def process_query(
-    source_id: str, 
+    schema_id: str, 
     request: QueryRequest,
     use_schema_aware: bool = Query(True, description="Use the schema-aware agent instead of default agent"),
     current_user: User = Depends(has_any_permission(["kginsights:read"]))
@@ -179,7 +181,7 @@ async def process_query(
     Process a query against the knowledge graph and record it in the query history.
     
     Args:
-        source_id: The ID of the data source
+        schema_id: The ID of the schema to use
         request: The query request containing the query string
         use_schema_aware: Whether to use the schema-aware agent
         
@@ -187,11 +189,34 @@ async def process_query(
         QueryResponse: The response containing the query result
     """
     try:
+        # if schema id is zero or less then return result
+        if int(schema_id) <= 0:
+            return QueryResponse(
+                schema_id=schema_id,
+                query=request.query,
+                result="Knowledge graph is not created and loaded with data. Generate Graph with appropriate data to use Insights agen",
+                timestamp=datetime.now()
+            )
+
         print('Calling data insights api' + str(use_schema_aware))
         # If using schema-aware agent
         if use_schema_aware:
-            # Get or create the schema-aware assistant for this source
-            assistant = get_schema_aware_assistant(source_id)
+            # Get or create the schema-aware assistant for this schema_id
+            # fetch db_id from Schema table
+            db = SessionLocal()
+            result = db.query(Schema.db_id).filter(Schema.id == schema_id).first()
+            
+            # Extract db_id value from the result tuple
+            db_id = result.db_id if result else None
+            if not db_id:
+                return QueryResponse(
+                    schema_id=schema_id,
+                    query=request.query,
+                    result="Knowledge graph is not created and loaded with data. Generate Graph with appropriate data to use Insights agen",
+                    timestamp=datetime.now()
+                )
+            print('Fetching schema aware assistant')
+            assistant = get_schema_aware_assistant(db_id)
             
             # Get the answer from the schema-aware agent
             print('Calling query')
@@ -247,7 +272,7 @@ async def process_query(
         
         try:
             response = QueryResponse(
-                source_id=source_id,
+                schema_id=schema_id,
                 query=request.query,
                 result=answer,
                 intermediate_steps=sanitized_steps,
@@ -258,7 +283,7 @@ async def process_query(
             print(f"Error creating QueryResponse: {e}")
             # Fallback to creating response without intermediate steps
             response = QueryResponse(
-                source_id=source_id,
+                schema_id=schema_id,
                 query=request.query,
                 result=answer,
                 intermediate_steps=None,
@@ -266,76 +291,76 @@ async def process_query(
             )
         
         # Record the query in history
-        await record_query_history(source_id, response)
+        await record_query_history(schema_id, response)
         
         return response
     except Exception as e:
         print(f"Error processing query: {e}")
         raise HTTPException(status_code=500, detail=f"Error processing query: {str(e)}")
 
-async def record_query_history(source_id: str, response: QueryResponse):
+async def record_query_history(schema_id: str, response: QueryResponse):
     """
-    Record a query in the history for the given source_id.
+    Record a query in the history for the given schema_id.
     
     Args:
-        source_id: The ID of the data source
+        schema_id: The ID of the schema to use
         response: The query response to record
     """
     # Generate a unique ID for the query
-    query_id = f"{len(query_history.get(source_id, []))+1}_{int(datetime.now().timestamp())}"
+    query_id = f"{len(query_history.get(schema_id, []))+1}_{int(datetime.now().timestamp())}"
     
     # Create a historical query record
     historical_query = {
         "id": query_id,
-        "source_id": source_id,
+        "schema_id": schema_id,
         "query": response.query,
         "result": response.result,
         "timestamp": response.timestamp.isoformat()
     }
     
     # Add to in-memory storage
-    if source_id not in query_history:
-        query_history[source_id] = []
-    query_history[source_id].append(historical_query)
+    if schema_id not in query_history:
+        query_history[schema_id] = []
+    query_history[schema_id].append(historical_query)
     
     # Limit history size (keep last 100 queries)
-    if len(query_history[source_id]) > 100:
-        query_history[source_id] = query_history[source_id][-100:]
+    if len(query_history[schema_id]) > 100:
+        query_history[schema_id] = query_history[schema_id][-100:]
     
     # Save to disk
     try:
-        history_file = os.path.join(HISTORY_DIR, f"{source_id}_history.json")
+        history_file = os.path.join(HISTORY_DIR, f"{schema_id}_history.json")
         with open(history_file, 'w') as f:
-            json.dump(query_history[source_id], f, indent=2)
+            json.dump(query_history[schema_id], f, indent=2)
     except Exception as e:
         print(f"Error saving query history: {str(e)}")
 
-@router.get("/{source_id}/query/history", response_model=QueryHistoryResponse)
+@router.get("/{schema_id}/query/history", response_model=QueryHistoryResponse)
 async def get_query_history(
-    source_id: str, 
+    schema_id: str, 
     limit: int = Query(10, ge=1, le=100),
     current_user: User = Depends(has_any_permission(["kginsights:read"]))
 ):
     """
-    Get the query history for a specific source_id.
+    Get the query history for a specific schema_id.
     
     Args:
-        source_id: The ID of the data source
+        schema_id: The ID of the schema to use
         limit: Maximum number of queries to return (default: 10, max: 100)
         
     Returns:
-        QueryHistoryResponse: The query history for the source_id
+        QueryHistoryResponse: The query history for the schema_id
     """
     try:
         # Try to load history from disk if not in memory
-        if source_id not in query_history:
-            history_file = os.path.join(HISTORY_DIR, f"{source_id}_history.json")
+        if schema_id not in query_history:
+            history_file = os.path.join(HISTORY_DIR, f"{schema_id}_history.json")
             if os.path.exists(history_file):
                 with open(history_file, 'r') as f:
-                    query_history[source_id] = json.load(f)
+                    query_history[schema_id] = json.load(f)
         
-        # Get the history for the source_id (or empty list if none)
-        history = query_history.get(source_id, [])
+        # Get the history for the schema_id (or empty list if none)
+        history = query_history.get(schema_id, [])
         
         # Sort by timestamp (newest first) and limit
         sorted_history = sorted(history, key=lambda x: x["timestamp"], reverse=True)[:limit]
@@ -344,7 +369,7 @@ async def get_query_history(
         queries = [
             HistoricalQuery(
                 id=item["id"],
-                source_id=item["source_id"],
+                schema_id=item["schema_id"],
                 query=item["query"],
                 result=item["result"],
                 timestamp=datetime.fromisoformat(item["timestamp"])
@@ -352,13 +377,13 @@ async def get_query_history(
             for item in sorted_history
         ]
         
-        return QueryHistoryResponse(source_id=source_id, queries=queries)
+        return QueryHistoryResponse(schema_id=schema_id, queries=queries)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving query history: {str(e)}")
 
-@router.delete("/{source_id}/query/history/{history_id}", response_model=DeleteHistoryResponse)
+@router.delete("/{schema_id}/query/history/{history_id}", response_model=DeleteHistoryResponse)
 async def delete_history_item(
-    source_id: str,
+    schema_id: str,
     history_id: str,
     current_user: User = Depends(has_any_permission(["kginsights:write"]))
 ):
@@ -366,7 +391,7 @@ async def delete_history_item(
     Delete a specific history item by ID.
     
     Args:
-        source_id: The ID of the data source
+        schema_id: The ID of the schema to use
         history_id: The ID of the history item to delete
         
     Returns:
@@ -374,119 +399,119 @@ async def delete_history_item(
     """
     try:
         # Try to load history from disk if not in memory
-        if source_id not in query_history:
-            history_file = os.path.join(HISTORY_DIR, f"{source_id}_history.json")
+        if schema_id not in query_history:
+            history_file = os.path.join(HISTORY_DIR, f"{schema_id}_history.json")
             if os.path.exists(history_file):
                 with open(history_file, 'r') as f:
-                    query_history[source_id] = json.load(f)
+                    query_history[schema_id] = json.load(f)
             else:
                 # No history file exists
                 return DeleteHistoryResponse(
-                    source_id=source_id,
+                    schema_id=schema_id,
                     message=f"No history item found with ID {history_id}",
                     deleted_count=0
                 )
         
-        # Get the history for the source_id (or empty list if none)
-        history = query_history.get(source_id, [])
+        # Get the history for the schema_id (or empty list if none)
+        history = query_history.get(schema_id, [])
         
         # Check if history item exists
         original_length = len(history)
-        query_history[source_id] = [item for item in history if item["id"] != history_id]
-        deleted_count = original_length - len(query_history[source_id])
+        query_history[schema_id] = [item for item in history if item["id"] != history_id]
+        deleted_count = original_length - len(query_history[schema_id])
         
         if deleted_count == 0:
             return DeleteHistoryResponse(
-                source_id=source_id,
+                schema_id=schema_id,
                 message=f"No history item found with ID {history_id}",
                 deleted_count=0
             )
         
         # Save updated history back to disk
-        history_file = os.path.join(HISTORY_DIR, f"{source_id}_history.json")
+        history_file = os.path.join(HISTORY_DIR, f"{schema_id}_history.json")
         with open(history_file, 'w') as f:
-            json.dump(query_history[source_id], f, cls=Neo4jJsonEncoder)
+            json.dump(query_history[schema_id], f, cls=Neo4jJsonEncoder)
         
         return DeleteHistoryResponse(
-            source_id=source_id,
+            schema_id=schema_id,
             message=f"Successfully deleted history item {history_id}",
             deleted_count=deleted_count
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting history item: {str(e)}")
 
-@router.delete("/{source_id}/query/history", response_model=DeleteHistoryResponse)
+@router.delete("/{schema_id}/query/history", response_model=DeleteHistoryResponse)
 async def delete_all_history(
-    source_id: str,
+    schema_id: str,
     current_user: User = Depends(has_any_permission(["kginsights:write"]))
 ):
     """
-    Delete all history for a source ID.
+    Delete all history for a schema ID.
     
     Args:
-        source_id: The ID of the data source
+        schema_id: The ID of the schema to use
         
     Returns:
         DeleteHistoryResponse: Message confirming deletion with count of deleted items
     """
     try:
         # Try to load history from disk if not in memory
-        if source_id not in query_history:
-            history_file = os.path.join(HISTORY_DIR, f"{source_id}_history.json")
+        if schema_id not in query_history:
+            history_file = os.path.join(HISTORY_DIR, f"{schema_id}_history.json")
             if os.path.exists(history_file):
                 with open(history_file, 'r') as f:
-                    query_history[source_id] = json.load(f)
+                    query_history[schema_id] = json.load(f)
             else:
                 # No history file exists, nothing to delete
                 return DeleteHistoryResponse(
-                    source_id=source_id,
+                    schema_id=schema_id,
                     message="No history exists for this source",
                     deleted_count=0
                 )
         
-        # Get the history for the source_id (or empty list if none)
-        history = query_history.get(source_id, [])
+        # Get the history for the schema_id (or empty list if none)
+        history = query_history.get(schema_id, [])
         deleted_count = len(history)
         
         # Clear the history
-        query_history[source_id] = []
+        query_history[schema_id] = []
         
         # Save empty history back to disk
-        history_file = os.path.join(HISTORY_DIR, f"{source_id}_history.json")
+        history_file = os.path.join(HISTORY_DIR, f"{schema_id}_history.json")
         with open(history_file, 'w') as f:
             json.dump([], f)
         
         return DeleteHistoryResponse(
-            source_id=source_id,
+            schema_id=schema_id,
             message=f"Successfully deleted all history items",
             deleted_count=deleted_count
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting history: {str(e)}")
 
-@router.get("/{source_id}/query/canned", response_model=PredefinedQueriesResponse)
+@router.get("/{schema_id}/query/canned", response_model=PredefinedQueriesResponse)
 async def get_predefined_queries(
-    source_id: str, 
+    schema_id: str, 
     category: Optional[str] = None,
     current_user: User = Depends(has_any_permission(["kginsights:read"]))
 ):
     """
-    Get a list of predefined (canned) queries for a specific source_id.
+    Get a list of predefined (canned) queries for a specific schema_id.
     
     Args:
-        source_id: The ID of the data source
+        schema_id: The ID of the schema to use
         category: Optional category to filter queries by
         
     Returns:
         PredefinedQueriesResponse: The list of predefined queries
     """
     try:
-        # Check if there's a custom predefined queries file for this source_id
-        queries_file = os.path.join(QUERIES_DIR, f"{source_id}_queries.json")
+        # Check if there's a custom predefined queries file for this schema_id
+        queries_file = os.path.join(QUERIES_DIR, f"{schema_id}_queries.json")
         predefined_queries = {}
         
         if os.path.exists(queries_file):
-            # Load custom queries for this source_id
+            # Load custom queries for this schema_id
             with open(queries_file, 'r') as f:
                 predefined_queries = json.load(f)
         else:
@@ -520,6 +545,6 @@ async def get_predefined_queries(
                         )
                     )
         
-        return PredefinedQueriesResponse(source_id=source_id, queries=result_queries)
+        return PredefinedQueriesResponse(schema_id=schema_id, queries=result_queries)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving predefined queries: {str(e)}")

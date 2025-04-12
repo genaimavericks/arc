@@ -22,6 +22,141 @@ from .loaders.neo4j_loader import Neo4jLoader
 import traceback
 import re
 
+# Utility function to update schema status
+def update_schema_status(db=None, schema=None, db_id=None, schema_id=None, schema_generated=None, db_loaded=None):
+    """
+    Update schema status fields in the database.
+    
+    Args:
+        db: Database session. If None, a new session will be created
+        schema: Schema object to update. If None, will look up by schema_id or db_id
+        db_id: Database ID to set on schema
+        schema_id: Schema ID to look up if schema is None
+        schema_generated: Set schema_generated status ('yes' or 'no')
+        db_loaded: Set db_loaded status ('yes' or 'no')
+        
+    Returns:
+        Updated schema object or None if update failed
+    """
+    # Create a database session if none is provided
+    session_created = False
+    try:
+        if db is None:
+            db = SessionLocal()
+            session_created = True
+            print("DEBUG: Created new database session for schema status update")
+            
+        # If schema object is not provided, try to find it
+        if schema is None:
+            if schema_id is not None:
+                schema = db.query(Schema).filter(Schema.id == schema_id).first()
+            elif db_id is not None:
+                schema = db.query(Schema).filter(Schema.db_id == db_id).first()
+                
+            if schema is None:
+                print(f"WARNING: Cannot update schema status - schema not found with id={schema_id} or db_id={db_id}")
+                return None
+        
+        # Update status fields if provided
+        if db_id is not None:
+            schema.db_id = db_id
+            
+        if schema_generated is not None:
+            schema.schema_generated = schema_generated
+            
+        if db_loaded is not None:
+            schema.db_loaded = db_loaded
+            
+        # Always update the timestamp
+        schema.updated_at = datetime.now()
+        
+        # Commit changes
+        db.commit()
+        
+        print(f"DEBUG: Schema record updated: schema_id={schema.id}, db_id={schema.db_id}, schema_generated={schema.schema_generated}, db_loaded={schema.db_loaded}")
+        return schema
+        
+    except Exception as update_error:
+        print(f"WARNING: Failed to update schema record: {update_error}")
+        return None
+    finally:
+        # Close the session if we created it
+        if session_created and db is not None:
+            db.close()
+            print("DEBUG: Closed database session created for schema status update")
+
+# Utility function to reset all schemas with a specific db_id to default values
+def reset_schemas_for_db_id(target_db_id, db=None):
+    """
+    Reset all schemas associated with a specific db_id to default values.
+    
+    Args:
+        target_db_id: The database ID to search for and reset
+        db: Database session. If None, a new session will be created
+        
+    Returns:
+        dict: Result summary with count of schemas updated and any errors
+    """
+    # Create a database session if none is provided
+    session_created = False
+    updated_count = 0
+    errors = []
+    
+    try:
+        if db is None:
+            db = SessionLocal()
+            session_created = True
+            print(f"DEBUG: Created new database session for batch schema reset of db_id={target_db_id}")
+        
+        # Find all schemas with the target db_id
+        schemas = db.query(Schema).filter(Schema.db_id == target_db_id).all()
+        
+        if not schemas:
+            print(f"WARNING: No schemas found with db_id={target_db_id}")
+            return {"updated": 0, "errors": [f"No schemas found with db_id={target_db_id}"]}
+        
+        print(f"DEBUG: Found {len(schemas)} schemas with db_id={target_db_id}")
+        
+        # Update each schema with default values
+        for schema in schemas:
+            try:
+                schema.db_id = "na"
+                schema.schema_generated = "no"
+                schema.db_loaded = "no"
+                schema.updated_at = datetime.now()
+                updated_count += 1
+                print(f"DEBUG: Reset schema: id={schema.id}, name={schema.name} to default values")
+            except Exception as schema_error:
+                error_msg = f"Failed to reset schema id={schema.id}: {str(schema_error)}"
+                print(f"WARNING: {error_msg}")
+                errors.append(error_msg)
+        
+        # Commit all changes at once
+        db.commit()
+        print(f"DEBUG: Successfully reset {updated_count} schemas with db_id={target_db_id} to default values")
+        
+    except Exception as batch_error:
+        error_msg = f"Batch schema reset failed: {str(batch_error)}"
+        print(f"ERROR: {error_msg}")
+        errors.append(error_msg)
+        # Try to rollback if possible
+        if 'db' in locals() and db is not None:
+            try:
+                db.rollback()
+                print("DEBUG: Transaction rolled back")
+            except:
+                pass
+    finally:
+        # Close the session if we created it
+        if session_created and db is not None:
+            db.close()
+            print(f"DEBUG: Closed database session for batch schema reset of db_id={target_db_id}")
+    
+    return {
+        "updated": updated_count,
+        "errors": errors
+    }
+
 # Models
 class SchemaResult(BaseModel):
     schema: dict
@@ -823,6 +958,15 @@ async def apply_schema_to_neo4j(
                     }
                 }
             else:
+                # Update schema record to mark as generated and store the graph_name as db_id
+                update_schema_status(
+                    db=db,
+                    schema=schema,
+                    db_id=graph_name,
+                    schema_generated='yes',
+                    db_loaded='no'
+                )
+                    
                 print(f"DEBUG: Schema applied successfully. Activity log: {json.dumps(activity_log)}")
                 return {
                     "success": True,
@@ -1272,6 +1416,9 @@ async def clean_neo4j_database(
         # Clean the database
         result = await neo4j_loader.clean_database()
         
+        # Update schema record to mark database as cleaned
+        reset_schemas_for_db_id(graph_name)
+        
         # Close the connection
         neo4j_loader.close()
         
@@ -1414,6 +1561,15 @@ async def load_data_to_neo4j(
             if result["errors"]:
                 error_message = f"Data loading failed: {result['errors'][0]}"
             raise HTTPException(status_code=500, detail=error_message)
+        
+        # Update schema record to mark data as loaded
+        update_schema_status(
+            db=db,
+            schema=schema,
+            db_id=load_input.graph_name,
+            schema_id=load_input.schema_id,
+            db_loaded='yes'
+        )
             
         return {
             "message": "Data loaded successfully",
@@ -1484,6 +1640,15 @@ async def load_data_from_schema(
             if result["errors"]:
                 error_message = f"Data loading failed: {result['errors'][0]}"
             raise HTTPException(status_code=500, detail=error_message)
+        
+        # Update schema record to mark data as loaded
+        update_schema_status(
+            db=db,
+            schema=schema,
+            db_id=graph_name,
+            schema_generated='yes',
+            db_loaded='yes'
+        )
             
         return {
             "message": "Data loaded successfully",

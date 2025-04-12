@@ -44,15 +44,15 @@ class SchemaAwareGraphAssistant:
     Enhanced Graph Assistant that automatically manages schemas and prompts.
     Extends the functionality of Neo4jGraphChatAssistant by adding schema and prompt management.
     """
-    def __init__(self, source_id: str, session_id: str = None):
+    def __init__(self, db_id: str, session_id: str = None):
         """
         Initialize the Schema-Aware Graph Assistant.
         
         Args:
-            source_id: The ID of the graph source to query
+            db_id: The ID of the Neo4j database to query
             session_id: Optional session ID for chat history, generated if not provided
         """
-        self.source_id = source_id
+        self.db_id = db_id
         self.session_id = session_id or f"session_{uuid4()}"
 
         # Ensure we have the schema and prompt files
@@ -147,7 +147,7 @@ class SchemaAwareGraphAssistant:
     
     def _get_connection_params(self) -> dict:
         """
-        Get connection parameters for the specified source from the database API.
+        Get connection parameters for the specified database ID from the database API.
         
         Returns:
             dict: Connection parameters including uri, username, password, and database
@@ -157,23 +157,23 @@ class SchemaAwareGraphAssistant:
             config = get_database_config()
             
             # Get the specific graph configuration
-            graph_config = config.get(self.source_id, {})
+            graph_config = config.get(self.db_id, {})
             
             if not graph_config:
-                print(f"WARNING: No configuration found for source '{self.source_id}' in neo4j.databases.yaml")
+                print(f"WARNING: No configuration found for database '{self.db_id}' in neo4j.databases.yaml")
                 # Try to use default configuration if available
                 graph_config = config.get("default", {})
                 if graph_config:
-                    print(f"INFO: Using 'default' Neo4j configuration as fallback for '{self.source_id}'")
+                    print(f"INFO: Using 'default' Neo4j configuration as fallback for '{self.db_id}'")
                 else:
-                    print(f"ERROR: No fallback configuration found for '{self.source_id}'")
+                    print(f"ERROR: No fallback configuration found for '{self.db_id}'")
             
             # Parse the connection parameters
             params = parse_connection_params(graph_config)
             
             # Validate and log the parameters
             if not params:
-                print(f"ERROR: Failed to parse connection parameters for '{self.source_id}'")
+                print(f"ERROR: Failed to parse connection parameters for '{self.db_id}'")
                 return {
                     "uri": None,
                     "username": None,
@@ -188,16 +188,16 @@ class SchemaAwareGraphAssistant:
                 "database": params.get("database"),
                 "password": "*****" if params.get("password") else None
             }
-            print(f"DEBUG: Neo4j connection parameters for '{self.source_id}': {conn_debug}")
+            print(f"DEBUG: Neo4j connection parameters for '{self.db_id}': {conn_debug}")
             
             # Validate the essential parameters
             if not params.get("uri"):
-                print(f"ERROR: Missing Neo4j URI for source '{self.source_id}'")
+                print(f"ERROR: Missing Neo4j URI for database '{self.db_id}'")
             
             return params
             
         except Exception as e:
-            print(f"ERROR: Failed to get connection params for {self.source_id}: {str(e)}")
+            print(f"ERROR: Failed to get connection params for {self.db_id}: {str(e)}")
             print(f"DEBUG: Stack trace: {traceback.format_exc()}")
             return {
                 "uri": None,
@@ -210,7 +210,7 @@ class SchemaAwareGraphAssistant:
         """Check if schema exists, fetch and save if needed, deleting invalid existing files."""
         try:
             SCHEMA_DIR.mkdir(parents=True, exist_ok=True)
-            schema_file = SCHEMA_DIR / f"schema_{self.source_id}.json"
+            schema_file = SCHEMA_DIR / f"schema_{self.db_id}.json"
 
             # --- Check and delete existing invalid file ---
             if schema_file.exists():
@@ -230,7 +230,7 @@ class SchemaAwareGraphAssistant:
 
             # If schema file doesn't exist (or was just deleted), fetch and save it
             if not schema_file.exists():
-                print(f"Schema file for {self.source_id} not found or was invalid. Fetching schema...")
+                print(f"Schema file for {self.db_id} not found or was invalid. Fetching schema...")
                 # Fetch attempt (this should already raise ValueError if it can't get a dict)
                 schema = self._fetch_neo4j_schema()
 
@@ -247,9 +247,9 @@ class SchemaAwareGraphAssistant:
 
         except Exception as e:
             # Catch errors from fetching, saving, or other operations
-            print(f"ERROR: Failed to ensure schema: {str(e)}")
+            print(f"ERROR: Failed to ensure schema: {str(e)} for {self.db_id}")
             print(f"DEBUG: Stack trace: {traceback.format_exc()}")
-            raise ValueError(f"Could not initialize schema for {self.source_id}: {str(e)}")
+            raise ValueError(f"Could not initialize schema for {self.db_id}: {str(e)}")
     
     def _fetch_neo4j_schema(self) -> Dict[str, Any]:
         """Fetch the Neo4j schema using the connection parameters, ensuring a dictionary is returned."""
@@ -271,12 +271,12 @@ class SchemaAwareGraphAssistant:
         
         # Check if we have valid connection parameters
         if not params.get("uri"):
-            print(f"WARNING: No valid Neo4j URI for {self.source_id}. Using mock schema.")
+            print(f"WARNING: No valid Neo4j URI for {self.db_id}. Using mock schema.")
             return self._create_mock_schema()
 
         # --- Attempt 1: LangChain Enhanced Schema ---
         try:
-            print(f"DEBUG: Creating Neo4jGraph connection for {self.source_id} (Attempt 1: Enhanced)")
+            print(f"DEBUG: Creating Neo4jGraph connection for {self.db_id} (Attempt 1: Enhanced)")
             temp_graph = Neo4jGraph(
                 url=params.get("uri"),
                 username=params.get("username"),
@@ -333,7 +333,7 @@ class SchemaAwareGraphAssistant:
         import traceback
         from neo4j import GraphDatabase
         
-        print(f"DEBUG: Creating direct Neo4j driver connection for {self.source_id}")
+        print(f"DEBUG: Creating direct Neo4j driver connection for {self.db_id}")
         
         # Initialize driver to None for safe cleanup
         driver = None
@@ -342,7 +342,7 @@ class SchemaAwareGraphAssistant:
         uri = params.get("uri")
         if not uri:
             # If no URI is provided, create a mock schema for development/testing
-            print(f"WARNING: No Neo4j URI available for {self.source_id}. Creating mock schema.")
+            print(f"WARNING: No Neo4j URI available for {self.db_id}. Creating mock schema.")
             return self._create_mock_schema()
             
         username = params.get("username")
@@ -474,14 +474,14 @@ class SchemaAwareGraphAssistant:
         
     def _ensure_prompt(self) -> None:
         """Check if prompts exist, create and save if needed"""
-        prompt_file = PROMPT_DIR / f"prompt_{self.source_id}.json"
+        prompt_file = PROMPT_DIR / f"prompt_{self.db_id}.json"
         
         # If prompt file doesn't exist, create and save it
         if not prompt_file.exists():
-            print(f"Prompt file for {self.source_id} not found. Creating prompts...")
+            print(f"Prompt file for {self.db_id} not found. Creating prompts...")
             
             # Load the schema
-            schema_file = SCHEMA_DIR / f"schema_{self.source_id}.json"
+            schema_file = SCHEMA_DIR / f"schema_{self.db_id}.json"
             if not schema_file.exists():
                 self._ensure_schema()  # Make sure schema exists
             
@@ -601,7 +601,7 @@ class SchemaAwareGraphAssistant:
         
         try:
             # Generate Cypher prompt template
-            print(f"Generating Cypher prompt template for {self.source_id}...")
+            print(f"Generating Cypher prompt template for {self.db_id}...")
             cypher_messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Here is the Neo4j schema: {schema_json}\n\n{cypher_prompt_instruction}"}
@@ -614,7 +614,7 @@ class SchemaAwareGraphAssistant:
             print(f"DEBUG: Applied Neo4j property escaping to Cypher prompt template")
             
             # Generate QA prompt template
-            print(f"Generating QA prompt template for {self.source_id}...")
+            print(f"Generating QA prompt template for {self.db_id}...")
             qa_messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Here is the Neo4j schema: {schema_json}\n\n{qa_prompt_instruction}"}
@@ -627,7 +627,7 @@ class SchemaAwareGraphAssistant:
             print(f"DEBUG: Applied Neo4j property escaping to QA prompt template")
             
             # Generate sample queries
-            print(f"Generating sample queries for {self.source_id}...")
+            print(f"Generating sample queries for {self.db_id}...")
             sample_queries_messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Here is the Neo4j schema: {schema_json}\n\n{sample_queries_instruction}"}
@@ -671,7 +671,7 @@ class SchemaAwareGraphAssistant:
             
             # Create prompts dictionary
             prompts = {
-                "source_id": self.source_id,
+                "db_id": self.db_id,
                 "schema_summary": schema_json,
                 "cypher_prompt": cypher_prompt_template,
                 "qa_prompt": qa_prompt_template,
@@ -831,7 +831,7 @@ class SchemaAwareGraphAssistant:
     
     def _load_prompts(self) -> None:
         """Load custom prompts for this source"""
-        prompt_file = PROMPT_DIR / f"prompt_{self.source_id}.json"
+        prompt_file = PROMPT_DIR / f"prompt_{self.db_id}.json"
         
         try:
             # Default to None initially to detect loading issues
@@ -1182,36 +1182,36 @@ class SchemaAwareGraphAssistant:
         if hasattr(self, 'cache'):
             self.cache.close()
 
-# Singleton-like behavior with dict of assistants by source_id
+# Singleton-like behavior with dict of assistants by db_id
 _assistants = {}
 _lock = threading.Lock()
 
-def get_schema_aware_assistant(source_id: str, session_id: str = None) -> SchemaAwareGraphAssistant:
+def get_schema_aware_assistant(db_id: str, session_id: str = None) -> SchemaAwareGraphAssistant:
     """
-    Get a schema-aware assistant for the specified source_id.
+    Get a schema-aware assistant for the specified database ID.
     Creates a new assistant if one doesn't exist, otherwise returns the existing one.
     
     Args:
-        source_id: ID of the graph source to query
+        db_id: ID of the Neo4j database to query
         session_id: Optional session ID for chat history
         
     Returns:
-        SchemaAwareGraphAssistant: The assistant for the source
+        SchemaAwareGraphAssistant: The assistant for the database
     """
-    # Create a unique key combining source_id and session_id
-    key = f"{source_id}:{session_id}" if session_id else source_id
+    # Create a unique key combining db_id and session_id
+    key = f"{db_id}:{session_id}" if session_id else db_id
     
     try:
         with _lock:
             if key not in _assistants:
                 # Log connection attempt for debugging
-                print(f"DEBUG: Creating new schema-aware assistant for {source_id}")
-                _assistants[key] = SchemaAwareGraphAssistant(source_id, session_id)
-                print(f"DEBUG: Successfully created assistant for {source_id}")
+                print(f"DEBUG: Creating new schema-aware assistant for {db_id}")
+                _assistants[key] = SchemaAwareGraphAssistant(db_id, session_id)
+                print(f"DEBUG: Successfully created assistant for {db_id}")
             return _assistants[key]
     except Exception as e:
         # Log the error with detailed information
-        error_message = f"Error creating schema-aware assistant for {source_id}: {str(e)}"
+        error_message = f"Error creating schema-aware assistant for {db_id}: {str(e)}"
         print(f"ERROR: {error_message}")
         
         # Check for specific error types to provide better feedback
