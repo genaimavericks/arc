@@ -132,7 +132,7 @@ def cacheable(cache_attr='cache'):
             
             # Get cache instance and bypass flag
             cache = getattr(instance, cache_attr)
-            bypass_cache = False
+            bypass_cache = True
             
             # Try cache if not bypassing
             if not bypass_cache:

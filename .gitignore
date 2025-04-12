@@ -57,8 +57,14 @@ playwright-report
 cache.db
 api/db.logs
 api/database.db
-
 data/
 uploads/
 api/uploads/
 api/db.logs
+runtime-data**
+
+data/*
+api/data/*
+api/uploads/*
+.windsurfrules
+api/kginsights/saved_schemas/*

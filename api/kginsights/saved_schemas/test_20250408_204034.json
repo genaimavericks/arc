@@ -1,0 +1,106 @@
+{
+  "nodes": [
+    {
+      "label": "Factory",
+      "properties": {
+        "Factory": "string",
+        "Location": "string"
+      }
+    },
+    {
+      "label": "Machine",
+      "properties": {
+        "Machine Type": "string",
+        "Machine Utilization (%)": "integer",
+        "Machine Downtime (hours)": "float",
+        "Maintenance History": "string",
+        "Machine Age (years)": "float"
+      }
+    },
+    {
+      "label": "Batch",
+      "properties": {
+        "Batch": "string",
+        "Batch Quality (Pass %)": "float",
+        "Cycle Time (minutes)": "integer"
+      }
+    },
+    {
+      "label": "Shift",
+      "properties": {
+        "Shift": "string",
+        "Operator Experience (years)": "float",
+        "Team Size": "integer",
+        "Operator Training Level": "float",
+        "Absenteeism Rate (%)": "float"
+      }
+    },
+    {
+      "label": "Supplier",
+      "properties": {
+        "Supplier": "string",
+        "Supplier Delays (days)": "integer"
+      }
+    },
+    {
+      "label": "Product",
+      "properties": {
+        "Product Category": "string",
+        "Market Demand Index": "integer",
+        "Cost of Downtime ($)": "float",
+        "Revenue ($)": "float",
+        "Profit Margin (%)": "float"
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "type": "PRODUCED_IN",
+      "source": "Batch",
+      "target": "Factory",
+      "properties": {
+        "Date": "datetime"
+      },
+      "startNode": "Batch",
+      "endNode": "Factory"
+    },
+    {
+      "type": "USES",
+      "source": "Batch",
+      "target": "Machine",
+      "properties": {},
+      "startNode": "Batch",
+      "endNode": "Machine"
+    },
+    {
+      "type": "WORKED_ON",
+      "source": "Shift",
+      "target": "Batch",
+      "properties": {},
+      "startNode": "Shift",
+      "endNode": "Batch"
+    },
+    {
+      "type": "SUPPLIED_BY",
+      "source": "Product",
+      "target": "Supplier",
+      "properties": {},
+      "startNode": "Product",
+      "endNode": "Supplier"
+    }
+  ],
+  "indexes": [
+    "Factory(Factory)",
+    "Machine(Machine Type)",
+    "Batch(Batch)",
+    "Shift(Shift)",
+    "Supplier(Supplier)",
+    "Product(Product Category)"
+  ],
+  "csv_file_path": "C:\\development\\workspace\\rsw\\api\\uploads\\cdaaf7dd-3ed6-4f3a-9da8-048acc341ca5.csv",
+  "name": "Test",
+  "description": "",
+  "source_id": "4880df9e-98c8-4fd5-982e-c8c5638f8285",
+  "created_at": "2025-04-08T15:10:33.965Z",
+  "cypher": "CREATE (factory:Factory {id: 'example-factory-id', Factory: 'example-factory', Location: 'example-location'});\nCREATE (machine:Machine {id: 'example-machine-id', Machine Type: 'example-machine type', Machine Utilization (%): 'example-machine utilization (%)', Machine Downtime (hours): 'example-machine downtime (hours)'});\nCREATE (batch:Batch {id: 'example-batch-id', Batch: 'example-batch', Batch Quality (Pass %): 'example-batch quality (pass %)', Cycle Time (minutes): 'example-cycle time (minutes)'});\nCREATE (shift:Shift {id: 'example-shift-id', Shift: 'example-shift', Operator Experience (years): 'example-operator experience (years)', Team Size: 'example-team size'});\nCREATE (supplier:Supplier {id: 'example-supplier-id', Supplier: 'example-supplier', Supplier Delays (days): 'example-supplier delays (days)'});\nCREATE (product:Product {id: 'example-product-id', Product Category: 'example-product category', Market Demand Index: 'example-market demand index', Cost of Downtime ($): 'example-cost of downtime ($)'});\nMATCH (batch:Batch {id: 'example-batch-id'}), (factory:Factory {id: 'example-factory-id'}) CREATE (batch)-[r:PRODUCED_IN]->(factory);\nMATCH (batch:Batch {id: 'example-batch-id'}), (machine:Machine {id: 'example-machine-id'}) CREATE (batch)-[r:USES]->(machine);\nMATCH (shift:Shift {id: 'example-shift-id'}), (batch:Batch {id: 'example-batch-id'}) CREATE (shift)-[r:WORKED_ON]->(batch);\nMATCH (product:Product {id: 'example-product-id'}), (supplier:Supplier {id: 'example-supplier-id'}) CREATE (product)-[r:SUPPLIED_BY]->(supplier);"
+}

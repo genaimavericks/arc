@@ -3,12 +3,12 @@ from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 import random
 
-from .models import User, get_db
-from .auth import get_current_active_user, has_role, has_permission
-from .data_models import GraphNode, GraphEdge, GraphMetrics, KGraphDashboard
+from api.models import User, get_db
+from api.auth import get_current_active_user, has_role, has_permission
+from api.data_models import GraphNode, GraphEdge, GraphMetrics, KGraphDashboard
 
 # Router
-router = APIRouter(prefix="/api/kginsights", tags=["kginsights"])
+router = APIRouter(prefix="/kginsights", tags=["kginsights"])
 
 # Generate sample data
 def generate_graph_nodes():

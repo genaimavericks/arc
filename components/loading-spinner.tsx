@@ -3,10 +3,16 @@
 import { motion } from "framer-motion"
 
 interface LoadingSpinnerProps {
-  size?: "default" | "sm"
+  size?: "default" | "sm";
+  text?: string;
+  hideText?: boolean;
 }
 
-export default function LoadingSpinner({ size = "default" }: LoadingSpinnerProps) {
+export default function LoadingSpinner({ 
+  size = "default", 
+  text = "Loading data...",
+  hideText = false 
+}: LoadingSpinnerProps) {
   const spinnerSize = size === "sm" ? "w-8 h-8 border-2" : "w-16 h-16 border-4"
   const textSize = size === "sm" ? "text-sm mt-2" : "mt-4"
   
@@ -17,7 +23,9 @@ export default function LoadingSpinner({ size = "default" }: LoadingSpinnerProps
         animate={{ rotate: 360 }}
         transition={{ duration: 1, repeat: Number.POSITIVE_INFINITY, ease: "linear" }}
       />
-      <p className={`${textSize} text-foreground`}>Loading data...</p>
+      {!hideText && text && (
+        <p className={`${textSize} text-foreground`}>{text}</p>
+      )}
     </div>
   )
 }

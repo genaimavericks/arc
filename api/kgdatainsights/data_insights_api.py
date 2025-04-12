@@ -1,14 +1,18 @@
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Response, status
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 import asyncio
 from datetime import datetime
 import json
 import os
+from pathlib import Path
 from .agent.insights_data_agent import get_kg_answer, init_graph
+from .agent.schema_aware_agent import get_schema_aware_assistant
 from .visualization_analyzer import analyze_data_for_visualization, GraphData
 from ..models import User
 from ..auth import has_any_permission
+from neo4j.time import Date, Time, DateTime
+from pydantic.json import pydantic_encoder
 
 router = APIRouter(prefix="/datainsights", tags=["Data Insights"])
 
@@ -16,8 +20,10 @@ router = APIRouter(prefix="/datainsights", tags=["Data Insights"])
 query_history = {}
 
 # Directory to store query history and predefined queries as JSON files
-HISTORY_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "history")
-QUERIES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "queries")
+# Output directories
+OUTPUT_DIR = Path("runtime-data/output/kgdatainsights")
+HISTORY_DIR = OUTPUT_DIR / "history"
+QUERIES_DIR = OUTPUT_DIR / "queries"
 os.makedirs(HISTORY_DIR, exist_ok=True)
 os.makedirs(QUERIES_DIR, exist_ok=True)
 
@@ -36,6 +42,42 @@ DEFAULT_PREDEFINED_QUERIES = {
         {"id": "domain_2", "query": "What are the key patterns or trends in this data?", "description": "Pattern identification"}
     ]
 }
+
+# Custom JSON encoder for Neo4j types
+class Neo4jJsonEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles Neo4j temporal types"""
+    
+    def default(self, obj):
+        # Handle Neo4j date types
+        if isinstance(obj, Date):
+            return obj.iso_format()  # Convert to ISO format string
+        elif isinstance(obj, Time):
+            return obj.iso_format()  # Convert to ISO format string
+        elif isinstance(obj, DateTime):
+            return obj.iso_format()  # Convert to ISO format string
+        # Handle other special types
+        try:
+            return pydantic_encoder(obj)
+        except TypeError:
+            pass
+        # Default handling
+        try:
+            return super().default(obj)
+        except TypeError:
+            return str(obj)  # Last resort: convert to string
+
+
+# Helper function to convert Neo4j objects in dictionaries
+def sanitize_neo4j_objects(data: Any) -> Any:
+    """Recursively sanitize Neo4j objects in data structures"""
+    if isinstance(data, dict):
+        return {k: sanitize_neo4j_objects(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [sanitize_neo4j_objects(item) for item in data]
+    elif isinstance(data, (Date, Time, DateTime)):
+        return data.iso_format()
+    else:
+        return data
 
 class QueryRequest(BaseModel):
     """Request model for the query endpoint."""
@@ -63,6 +105,12 @@ class QueryHistoryResponse(BaseModel):
     """Response model for the query history endpoint."""
     source_id: str
     queries: List[HistoricalQuery]
+
+class DeleteHistoryResponse(BaseModel):
+    """Response model for delete history endpoints."""
+    source_id: str
+    message: str
+    deleted_count: int
 
 class PredefinedQuery(BaseModel):
     """Model for a predefined query."""
@@ -124,6 +172,7 @@ async def analyze_data_visualization(
 async def process_query(
     source_id: str, 
     request: QueryRequest,
+    use_schema_aware: bool = Query(True, description="Use the schema-aware agent instead of default agent"),
     current_user: User = Depends(has_any_permission(["kginsights:read"]))
 ):
     """
@@ -132,18 +181,31 @@ async def process_query(
     Args:
         source_id: The ID of the data source
         request: The query request containing the query string
+        use_schema_aware: Whether to use the schema-aware agent
         
     Returns:
         QueryResponse: The response containing the query result
     """
     try:
-        # Initialize the graph if needed
-        await init_graph()
-        
-        # Get the answer from the knowledge graph
-        result = get_kg_answer(request.query)
+        print('Calling data insights api' + str(use_schema_aware))
+        # If using schema-aware agent
+        if use_schema_aware:
+            # Get or create the schema-aware assistant for this source
+            assistant = get_schema_aware_assistant(source_id)
+            
+            # Get the answer from the schema-aware agent
+            print('Calling query')
+            result = assistant.query(request.query)
+            print('Returned query result' + str(result))
+        else:
+            # Initialize the graph if needed
+            await init_graph()
+            
+            # Get the answer from the legacy knowledge graph agent
+            result = get_kg_answer(request.query)
         
         # Extract the result and intermediate steps
+        print('Returned query result' + str(result))
         answer = result.get("result", "No result found")
         # Handle intermediate_steps - ensure it's a dictionary or None
         intermediate_steps = result.get("intermediate_steps")
@@ -163,10 +225,12 @@ async def process_query(
         
         # Analyze data for visualization if intermediate_steps exists
         visualization = None
+        sanitized_steps = None
         if intermediate_steps:
             try:
-                print(f"Analyzing intermediate steps for visualization: {json.dumps(intermediate_steps, default=str)[:300]}...")
-                visualization = analyze_data_for_visualization(intermediate_steps)
+                sanitized_steps = sanitize_neo4j_objects(intermediate_steps)
+                print(f"Analyzing intermediate steps for visualization: {json.dumps(sanitized_steps, cls=Neo4jJsonEncoder)[:300]}...")
+                visualization = analyze_data_for_visualization(sanitized_steps)
                 
                 # Log visualization result
                 if visualization and visualization.type != "none":
@@ -186,7 +250,7 @@ async def process_query(
                 source_id=source_id,
                 query=request.query,
                 result=answer,
-                intermediate_steps=intermediate_steps,
+                intermediate_steps=sanitized_steps,
                 visualization=visualization,
                 timestamp=timestamp
             )
@@ -291,6 +355,114 @@ async def get_query_history(
         return QueryHistoryResponse(source_id=source_id, queries=queries)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving query history: {str(e)}")
+
+@router.delete("/{source_id}/query/history/{history_id}", response_model=DeleteHistoryResponse)
+async def delete_history_item(
+    source_id: str,
+    history_id: str,
+    current_user: User = Depends(has_any_permission(["kginsights:write"]))
+):
+    """
+    Delete a specific history item by ID.
+    
+    Args:
+        source_id: The ID of the data source
+        history_id: The ID of the history item to delete
+        
+    Returns:
+        DeleteHistoryResponse: Message confirming deletion
+    """
+    try:
+        # Try to load history from disk if not in memory
+        if source_id not in query_history:
+            history_file = os.path.join(HISTORY_DIR, f"{source_id}_history.json")
+            if os.path.exists(history_file):
+                with open(history_file, 'r') as f:
+                    query_history[source_id] = json.load(f)
+            else:
+                # No history file exists
+                return DeleteHistoryResponse(
+                    source_id=source_id,
+                    message=f"No history item found with ID {history_id}",
+                    deleted_count=0
+                )
+        
+        # Get the history for the source_id (or empty list if none)
+        history = query_history.get(source_id, [])
+        
+        # Check if history item exists
+        original_length = len(history)
+        query_history[source_id] = [item for item in history if item["id"] != history_id]
+        deleted_count = original_length - len(query_history[source_id])
+        
+        if deleted_count == 0:
+            return DeleteHistoryResponse(
+                source_id=source_id,
+                message=f"No history item found with ID {history_id}",
+                deleted_count=0
+            )
+        
+        # Save updated history back to disk
+        history_file = os.path.join(HISTORY_DIR, f"{source_id}_history.json")
+        with open(history_file, 'w') as f:
+            json.dump(query_history[source_id], f, cls=Neo4jJsonEncoder)
+        
+        return DeleteHistoryResponse(
+            source_id=source_id,
+            message=f"Successfully deleted history item {history_id}",
+            deleted_count=deleted_count
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting history item: {str(e)}")
+
+@router.delete("/{source_id}/query/history", response_model=DeleteHistoryResponse)
+async def delete_all_history(
+    source_id: str,
+    current_user: User = Depends(has_any_permission(["kginsights:write"]))
+):
+    """
+    Delete all history for a source ID.
+    
+    Args:
+        source_id: The ID of the data source
+        
+    Returns:
+        DeleteHistoryResponse: Message confirming deletion with count of deleted items
+    """
+    try:
+        # Try to load history from disk if not in memory
+        if source_id not in query_history:
+            history_file = os.path.join(HISTORY_DIR, f"{source_id}_history.json")
+            if os.path.exists(history_file):
+                with open(history_file, 'r') as f:
+                    query_history[source_id] = json.load(f)
+            else:
+                # No history file exists, nothing to delete
+                return DeleteHistoryResponse(
+                    source_id=source_id,
+                    message="No history exists for this source",
+                    deleted_count=0
+                )
+        
+        # Get the history for the source_id (or empty list if none)
+        history = query_history.get(source_id, [])
+        deleted_count = len(history)
+        
+        # Clear the history
+        query_history[source_id] = []
+        
+        # Save empty history back to disk
+        history_file = os.path.join(HISTORY_DIR, f"{source_id}_history.json")
+        with open(history_file, 'w') as f:
+            json.dump([], f)
+        
+        return DeleteHistoryResponse(
+            source_id=source_id,
+            message=f"Successfully deleted all history items",
+            deleted_count=deleted_count
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting history: {str(e)}")
 
 @router.get("/{source_id}/query/canned", response_model=PredefinedQueriesResponse)
 async def get_predefined_queries(

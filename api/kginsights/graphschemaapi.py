@@ -529,7 +529,7 @@ async def apply_schema_to_neo4j(
     try:
         print(f"DEBUG: Starting apply_schema_to_neo4j with input: {apply_input}")
         schema_id = apply_input.schema_id
-        graph_name = apply_input.graph_name
+        graph_name = 'default_graph'
         drop_existing = apply_input.drop_existing
         
         # Get the schema from the database
@@ -686,7 +686,7 @@ async def apply_schema_to_neo4j(
         print(f"DEBUG: Neo4j configuration loaded. Available graphs: {list(config.keys())}")
         
         # Get connection parameters for the specified graph
-        graph_name = apply_input.graph_name
+        graph_name = 'default_graph'
         print(f"DEBUG: Parsing connection parameters for graph: {graph_name}")
         
         connection_params = parse_connection_params(config.get(graph_name, {}))
@@ -860,7 +860,7 @@ async def save_schema(
 ):
     """Save the generated schema to the database and as a JSON file."""
     try:
-        print(f"DEBUG: save_schema called with schema data")
+        print(f"DEBUG: save_schema called with schema data :  {save_input} ")
         
         schema_data = save_input.schema
         csv_file_path = save_input.csv_file_path
@@ -874,6 +874,18 @@ async def save_schema(
         if not schema_data.get('name'):
             schema_data['name'] = f"Schema_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             print(f"DEBUG: Using default name: {schema_data['name']}")
+        
+        # Check if schema with the same name already exists
+        schema_name = schema_data.get('name')
+        existing_schema = db.query(Schema).filter(Schema.name == schema_name).first()
+        if existing_schema:
+            error_message = f"Schema with name '{schema_name}' already exists. Please use a different name."
+            print(f"ERROR: {error_message}")
+            # Return 409 Conflict with detailed error message
+            raise HTTPException(
+                status_code=409, 
+                detail=error_message
+            )
         
         # Ensure schema has a source_id
         if not schema_data.get('source_id'):
@@ -1024,15 +1036,17 @@ async def save_schema(
             )
             db.add(schema_record)
             db.commit()
-            print(f"DEBUG: Schema saved to database with ID: {schema_record.id}")
+            print(f"DEBUG: Schema record created: {schema_record}")
+            return {
+            'message': f'Schema "{schema_data.get("name")}" saved successfully',
+            'file_path': output_path
+            }
         except Exception as db_error:
             print(f"WARNING: Could not save schema to database: {db_error}")
             # Continue even if database save fails - we still have the file
+            raise HTTPException(status_code=500, detail=f"Failed to save schema:")
         
-        return {
-            'message': f'Schema "{schema_data.get("name")}" saved successfully',
-            'file_path': output_path
-        }
+
     except HTTPException:
         raise
     except Exception as e:
@@ -1048,7 +1062,10 @@ async def get_schemas(
     try:
         # Query all schemas from the database
         schemas = db.query(Schema).order_by(Schema.created_at.desc()).all()
-        
+        print("DEBUG: Fetched schemas:")
+        for schema in schemas:
+            print(f"DEBUG: Schema {schema.id}: {schema.name} (source_id={schema.source_id})")
+            
         # Format the schemas for the frontend
         result = []
         for schema in schemas:
@@ -1174,12 +1191,12 @@ async def delete_schema(
         db.commit()
         
         # Clean up files
-        for file_path in files_to_clean:
-            try:
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-            except Exception as e:
-                print(f"Warning: Could not delete file {file_path}: {str(e)}")
+#        for file_path in files_to_clean:
+#            try:
+#                if os.path.exists(file_path):
+#                    os.remove(file_path)
+#            except Exception as e:
+#                print(f"Warning: Could not delete file {file_path}: {str(e)}")
                 
         return {"message": f"Schema {schema_id} deleted successfully"}
         
@@ -1243,7 +1260,7 @@ async def cleanup_schemas(
 @router.post("/clean-neo4j-database")
 async def clean_neo4j_database(
     current_user: User = Depends(has_any_permission(["kginsights:manage"])),
-    graph_name: str = "default"
+    graph_name: str = "default_graph"
 ):
     """
     Clean the Neo4j database by removing all nodes, relationships, constraints, and indexes.
@@ -1315,7 +1332,7 @@ async def load_data_to_neo4j(
             # Create load_input from path and query parameters
             load_input = LoadDataInput(
                 schema_id=schema_id,
-                graph_name=graph_name or "default",
+                graph_name=graph_name or "default_graph",
                 drop_existing=drop_existing,
                 use_source_data=True,
                 data_path=''  # Empty string instead of None to avoid validation error

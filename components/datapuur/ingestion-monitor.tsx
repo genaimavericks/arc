@@ -8,32 +8,26 @@ import { Badge } from "@/components/ui/badge"
 import { AlertCircle, CheckCircle, Clock, RefreshCw, XCircle, FileText, Database, FolderOpen, BarChart } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import { getApiBaseUrl } from "@/lib/config"
-
-// Define job interface
-interface Job {
-  id: string
-  name: string
-  type: string
-  status: string
-  progress: number
-  startTime: string
-  endTime: string | null
-  details: string
-  error?: string
-  duration?: string
-}
+import { useIngestion, Job } from "@/lib/ingestion-context"
 
 // Define component props
 interface IngestionMonitorProps {
-  jobs: Job[]
+  jobs?: Job[]
   onJobUpdated?: (job: Job) => void
   errors?: string[]
   isPolling?: boolean
 }
 
-export function IngestionMonitor({ jobs, onJobUpdated, errors = [], isPolling = true }: IngestionMonitorProps) {
+export function IngestionMonitor({ jobs: propJobs, onJobUpdated, errors: propErrors = [], isPolling: propIsPolling }: IngestionMonitorProps) {
   const [activeTab, setActiveTab] = useState("active")
-  const [localIsPolling, setLocalIsPolling] = useState(isPolling)
+  
+  // Use the global ingestion context
+  const { jobs: contextJobs, errors: contextErrors, updateJob, isPolling: contextIsPolling, setIsPolling } = useIngestion()
+  
+  // Use either the props or the context values
+  const jobs = propJobs || contextJobs
+  const errors = propErrors.length > 0 ? propErrors : contextErrors
+  const localIsPolling = propIsPolling !== undefined ? propIsPolling : contextIsPolling
 
   // Helper function to get the group key for a job
   const getGroupKey = (job: Job) => {
@@ -79,6 +73,8 @@ export function IngestionMonitor({ jobs, onJobUpdated, errors = [], isPolling = 
             const updatedJob = await response.json()
             if (onJobUpdated) {
               onJobUpdated(updatedJob)
+            } else if (updateJob) {
+              updateJob(updatedJob)
             }
           }
         }
@@ -94,7 +90,7 @@ export function IngestionMonitor({ jobs, onJobUpdated, errors = [], isPolling = 
     const pollInterval = setInterval(checkJobs, 3000) // Poll every 3 seconds
 
     return () => clearInterval(pollInterval)
-  }, [jobs, localIsPolling, onJobUpdated])
+  }, [jobs, localIsPolling, onJobUpdated, updateJob])
 
   const getJobIcon = (type: string) => {
     switch (type) {
@@ -167,6 +163,8 @@ export function IngestionMonitor({ jobs, onJobUpdated, errors = [], isPolling = 
         const updatedJob = await response.json()
         if (onJobUpdated) {
           onJobUpdated(updatedJob)
+        } else if (updateJob) {
+          updateJob(updatedJob)
         }
       }
     } catch (error) {
@@ -205,7 +203,7 @@ export function IngestionMonitor({ jobs, onJobUpdated, errors = [], isPolling = 
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setLocalIsPolling(!localIsPolling)}
+            onClick={() => setIsPolling(!localIsPolling)}
             className={localIsPolling ? "border-primary text-primary" : ""}
           >
             <RefreshCw className={`h-4 w-4 mr-2 ${localIsPolling ? "animate-spin" : ""}`} />
@@ -228,7 +226,9 @@ export function IngestionMonitor({ jobs, onJobUpdated, errors = [], isPolling = 
 
         <TabsContent value="active" className="space-y-4 mt-4">
           {activeJobs.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">No active jobs</div>
+            activeTab === "active" ? (
+              <div className="text-center py-8 text-muted-foreground">No active jobs</div>
+            ) : null
           ) : (
             <>
               {/* Group jobs that were likely uploaded together */}

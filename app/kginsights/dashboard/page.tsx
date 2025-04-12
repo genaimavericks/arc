@@ -4,7 +4,7 @@ import Navbar from "@/components/navbar"
 import { SparklesCore } from "@/components/sparkles"
 import KGInsightsSidebar from "@/components/kginsights-sidebar"
 import { motion } from "framer-motion"
-import { Plus, Search, Eye, FileText, PlusCircle, RefreshCw, Trash2, Database } from "lucide-react"
+import { Plus, Search, Eye, FileText, PlusCircle, RefreshCw, Trash2, Database, Upload, Settings, LineChart } from "lucide-react"
 import { useEffect, useState } from "react"
 import { getKGraphDashboard } from "@/lib/api"
 import LoadingSpinner from "@/components/loading-spinner"
@@ -17,6 +17,7 @@ import { DatasetPreviewModal } from "@/components/kginsights/dataset-preview-mod
 import { SchemaViewerModal } from "@/components/kginsights/schema-viewer-modal"
 import { GenerateKGModal } from "@/components/kginsights/generate-kg-modal"
 import { KGInsightsLayout } from "@/components/kginsights/kginsights-layout"
+import { FloatingChart } from "@/components/floating-chart"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -88,11 +89,8 @@ function KGraphDashboardContent() {
   const [schemaModalOpen, setSchemaModalOpen] = useState(false)
   const [generateKGModalOpen, setGenerateKGModalOpen] = useState(false)
   const [selectedDataset, setSelectedDataset] = useState<{ id: string; name: string } | null>(null)
-  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
-  const [graphToDelete, setGraphToDelete] = useState<KnowledgeGraph | null>(null)
   const [applyToNeo4jModalOpen, setApplyToNeo4jModalOpen] = useState(false)
   const [graphToApply, setGraphToApply] = useState<KnowledgeGraph | null>(null)
-  const [cleanDatabaseModalOpen, setCleanDatabaseModalOpen] = useState(false)
 
   // Function to fetch available datasets from sources
   const fetchDataSources = async () => {
@@ -140,67 +138,6 @@ function KGraphDashboardContent() {
       })
     } finally {
       setLoadingDatasets(false)
-    }
-  }
-
-  // Function to handle cleaning Neo4j database
-  const handleCleanNeo4jDatabase = () => {
-    setCleanDatabaseModalOpen(true)
-  }
-
-  // Function to execute Neo4j database cleanup
-  const executeCleanNeo4jDatabase = async () => {
-    try {
-      setCleanDatabaseModalOpen(false)
-      
-      // First, clean up schemas with missing files
-      const schemaResponse = await fetch("/api/graphschema/cleanup-schemas", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-      })
-
-      if (!schemaResponse.ok) {
-        throw new Error(`Failed to clean up schemas: ${schemaResponse.status}`)
-      }
-
-      const schemaData = await schemaResponse.json()
-      
-      // Then, clean the Neo4j database
-      const neo4jResponse = await fetch("/api/graphschema/clean-neo4j-database", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-      })
-
-      if (!neo4jResponse.ok) {
-        throw new Error(`Failed to clean Neo4j database: ${neo4jResponse.status}`)
-      }
-
-      const neo4jData = await neo4jResponse.json()
-
-      // Show success message with details
-      toast({
-        title: "Success",
-        description: `Database cleaned successfully. Removed ${schemaData.removed} schemas and ${neo4jData.details.nodes_deleted} nodes.`,
-        variant: "default",
-      })
-
-      // Refresh knowledge graphs after cleanup
-      await fetchKnowledgeGraphs()
-    } catch (err) {
-      console.error("Error cleaning Neo4j database:", err)
-      toast({
-        title: "Error",
-        description: "Failed to clean Neo4j database.",
-        variant: "destructive",
-      })
-    } finally {
-      setCleanDatabaseModalOpen(false)
     }
   }
 
@@ -315,50 +252,6 @@ function KGraphDashboardContent() {
     setApplyToNeo4jModalOpen(true)
   }
 
-  // Function to handle load data to Neo4j
-  const handleLoadDataToNeo4j = async (id: string, name: string) => {
-    try {
-      // Show loading toast
-      toast({
-        title: "Loading Data",
-        description: `Loading data for schema "${name}"...`,
-        variant: "default",
-      })
-      
-      // Call the API to load data directly from the schema without specifying a graph
-      // The backend will handle graph selection based on available configurations
-      const response = await fetch(`/api/graphschema/schemas/${id}/load-data?drop_existing=false`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-          "Content-Type": "application/json",
-        },
-      })
-      
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.detail || `Failed to load data: ${response.status}`)
-      }
-      
-      const result = await response.json()
-      
-      // Show success toast
-      toast({
-        title: "Success",
-        description: `Data loaded successfully for schema "${name}"`,
-        variant: "default",
-      })
-      
-    } catch (error) {
-      console.error("Error loading data:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to load data",
-        variant: "destructive",
-      })
-    }
-  }
-
   // Function to handle dataset preview
   const handlePreview = (datasetId: string, datasetName: string) => {
     setSelectedDataset({ id: datasetId, name: datasetName })
@@ -383,58 +276,12 @@ function KGraphDashboardContent() {
 
   // Function to handle new knowledge graph
   const handleNewKnowledgeGraph = () => {
-    router.push("/kginsights/create")
+    router.push("/kginsights/generate")
   }
 
   // Function to handle search graphs
   const handleSearchGraphs = () => {
     router.push("/kginsights/search")
-  }
-
-  // Function to handle delete knowledge graph
-  const handleDeleteGraph = (graph: KnowledgeGraph) => {
-    setGraphToDelete(graph)
-    setDeleteModalOpen(true)
-  }
-
-  // Function to confirm delete knowledge graph
-  const confirmDeleteGraph = async () => {
-    if (graphToDelete) {
-      try {
-        // Use different endpoints based on the graph type
-        const endpoint = graphToDelete.type === "schema" 
-          ? `/api/graphschema/${graphToDelete.id}` 
-          : `/api/kginsights/graphs/${graphToDelete.id}`;
-          
-        const response = await fetch(endpoint, {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-        })
-
-        if (!response.ok) {
-          throw new Error(`Failed to delete ${graphToDelete.type}: ${response.status}`)
-        }
-
-        setKnowledgeGraphs(knowledgeGraphs.filter((graph) => graph.id !== graphToDelete.id))
-        toast({
-          title: "Success",
-          description: `${graphToDelete.type === "schema" ? "Schema" : "Knowledge graph"} deleted successfully.`,
-          variant: "default",
-        })
-      } catch (err) {
-        console.error(`Error deleting ${graphToDelete.type}:`, err)
-        toast({
-          title: "Error",
-          description: `Failed to delete ${graphToDelete.type === "schema" ? "schema" : "knowledge graph"}.`,
-          variant: "destructive",
-        })
-      } finally {
-        setDeleteModalOpen(false)
-        setGraphToDelete(null)
-      }
-    }
   }
 
   // Function to confirm apply to Neo4j
@@ -501,14 +348,18 @@ function KGraphDashboardContent() {
   }
 
   return (
-    <div className="flex-1 p-8">
+    <div className="flex-1 p-8 bg-gradient-to-b from-background to-background/95">
+      <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0 pointer-events-none">
+        <FloatingChart count={3} />
+      </div>
+
       {showErrorBanner && (
-        <div className="bg-yellow-500/20 border border-yellow-500 text-yellow-700 dark:text-yellow-200 px-4 py-2 rounded-md mb-4">
+        <div className="bg-yellow-500/20 border border-yellow-500 text-yellow-700 dark:text-yellow-200 px-4 py-2 rounded-md mb-4 relative z-10">
           <p>{error} - Using demo data instead.</p>
         </div>
       )}
 
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-6xl mx-auto relative z-10">
         <motion.h1
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -532,15 +383,6 @@ function KGraphDashboardContent() {
           >
             <Plus className="w-5 h-5" />
             New Knowledge Graph
-          </Button>
-
-          <Button
-            className="bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-2"
-            size="lg"
-            onClick={handleCleanNeo4jDatabase}
-          >
-            <Database className="w-5 h-5" />
-            Clean Neo4j Database
           </Button>
 
           <Button
@@ -570,7 +412,7 @@ function KGraphDashboardContent() {
                         <th className="px-6 py-3 text-left text-foreground font-medium">Name</th>
                         <th className="px-6 py-3 text-left text-foreground font-medium">Description</th>
                         <th className="px-6 py-3 text-left text-foreground font-medium">Created</th>
-                        <th className="px-6 py-3 text-left text-foreground font-medium">Actions</th>
+                        <th className="px-6 py-3 text-right text-foreground font-medium">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -589,65 +431,38 @@ function KGraphDashboardContent() {
                           <td className="px-6 py-4 text-muted-foreground">{graph.description}</td>
                           <td className="px-6 py-4 text-muted-foreground">{graph.created}</td>
                           <td className="px-6 py-4">
-                            <div className="flex gap-2">
+                            <div className="flex justify-end gap-2">
                               {graph.type === "schema" ? (
                                 <>
                                   <Button
-                                    variant="link"
+                                    variant="ghost"
+                                    size="icon"
                                     className="text-orange-500 hover:text-orange-600 hover:bg-orange-500/10"
                                     onClick={() => handleViewSchema(graph.id, graph.name)}
+                                    title="View Schema"
                                   >
-                                    View Schema
-                                  </Button>
-                                  <span className="text-muted-foreground">|</span>
-                                  <Button
-                                    variant="link"
-                                    className="text-blue-500 hover:text-blue-600 hover:bg-blue-500/10"
-                                    onClick={() => handleApplyToNeo4j(graph)}
-                                  >
-                                    Apply to Neo4j
-                                  </Button>
-                                  <span className="text-muted-foreground">|</span>
-                                  <Button
-                                    variant="link"
-                                    className="text-green-500 hover:text-green-600 hover:bg-green-500/10"
-                                    onClick={() => handleLoadDataToNeo4j(graph.id, graph.name)}
-                                  >
-                                    Load Data
+                                    <FileText className="w-5 h-5" />
                                   </Button>
                                 </>
                               ) : (
                                 <Button
-                                  variant="link"
-                                  className="text-primary hover:text-primary/80 p-0 h-auto"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="text-primary hover:text-primary/80 hover:bg-primary/10"
                                   onClick={() => handleManageSchema(graph.id)}
+                                  title="Manage Schema"
                                 >
-                                  Manage Schema
+                                  <Settings className="w-5 h-5" />
                                 </Button>
                               )}
-                              <span className="text-muted-foreground">|</span>
                               <Button
-                                variant="link"
-                                className="text-primary hover:text-primary/80 p-0 h-auto"
+                                variant="ghost"
+                                size="icon"
+                                className="text-purple-500 hover:text-purple-600 hover:bg-purple-500/10"
                                 onClick={() => handleInsights(graph.id)}
+                                title="Insights"
                               >
-                                Insights
-                              </Button>
-                              <span className="text-muted-foreground">|</span>
-                              <Button
-                                variant="link"
-                                className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
-                                onClick={() => handleDeleteGraph(graph)}
-                              >
-                                Delete
-                              </Button>
-                              <span className="text-muted-foreground">|</span>
-                              <Button
-                                variant="link"
-                                className="text-green-500 hover:text-green-600 hover:bg-green-500/10"
-                                onClick={() => handleApplyToNeo4j(graph)}
-                              >
-                                Apply to Neo4j
+                                <LineChart className="w-5 h-5" />
                               </Button>
                             </div>
                           </td>
@@ -687,9 +502,7 @@ function KGraphDashboardContent() {
                       <thead>
                         <tr className="border-t border-b border-border">
                           <th className="px-6 py-3 text-left text-foreground font-medium">Dataset</th>
-                          <th className="px-6 py-3 text-left text-foreground font-medium">Preview</th>
-                          <th className="px-6 py-3 text-left text-foreground font-medium">Schema</th>
-                          <th className="px-6 py-3 text-left text-foreground font-medium">Generate KG</th>
+                          <th className="px-6 py-3 text-right text-foreground font-medium">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -711,34 +524,35 @@ function KGraphDashboardContent() {
                               </div>
                             </td>
                             <td className="px-6 py-4">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="text-amber-500 hover:text-amber-600 hover:bg-amber-500/10"
-                                onClick={() => handlePreview(dataset.id, dataset.name)}
-                              >
-                                <Eye className="w-5 h-5" />
-                              </Button>
-                            </td>
-                            <td className="px-6 py-4">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="text-orange-500 hover:text-orange-600 hover:bg-orange-500/10"
-                                onClick={() => handleViewSchema(dataset.id, dataset.name)}
-                              >
-                                <FileText className="w-5 h-5" />
-                              </Button>
-                            </td>
-                            <td className="px-6 py-4">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="text-primary hover:text-primary/80 hover:bg-primary/10"
-                                onClick={() => handleGenerateKG(dataset.id, dataset.name)}
-                              >
-                                <PlusCircle className="w-5 h-5" />
-                              </Button>
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="text-amber-500 hover:text-amber-600 hover:bg-amber-500/10"
+                                  onClick={() => handlePreview(dataset.id, dataset.name)}
+                                  title="Preview"
+                                >
+                                  <Eye className="w-5 h-5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="text-orange-500 hover:text-orange-600 hover:bg-orange-500/10"
+                                  onClick={() => handleViewSchema(dataset.id, dataset.name)}
+                                  title="Schema"
+                                >
+                                  <FileText className="w-5 h-5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="text-primary hover:text-primary/80 hover:bg-primary/10"
+                                  onClick={() => handleGenerateKG(dataset.id, dataset.name)}
+                                  title="Generate KG"
+                                >
+                                  <PlusCircle className="w-5 h-5" />
+                                </Button>
+                              </div>
                             </td>
                           </motion.tr>
                         ))}
@@ -789,30 +603,7 @@ function KGraphDashboardContent() {
         </>
       )}
 
-      {deleteModalOpen && graphToDelete && (
-        <AlertDialog
-          open={deleteModalOpen}
-          onOpenChange={(open) => setDeleteModalOpen(open)}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Delete Knowledge Graph</AlertDialogTitle>
-            </AlertDialogHeader>
-            <AlertDialogDescription>
-              Are you sure you want to delete the knowledge graph "{graphToDelete.name}"?
-            </AlertDialogDescription>
-            <AlertDialogFooter>
-              <AlertDialogAction onClick={confirmDeleteGraph}>
-                Delete
-              </AlertDialogAction>
-              <AlertDialogCancel onClick={() => setDeleteModalOpen(false)}>
-                Cancel
-              </AlertDialogCancel>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      )}
-
+      {/* Apply to Neo4j Modal */}
       {applyToNeo4jModalOpen && graphToApply && (
         <AlertDialog
           open={applyToNeo4jModalOpen}
@@ -823,45 +614,13 @@ function KGraphDashboardContent() {
               <AlertDialogTitle>Apply Schema to Neo4j</AlertDialogTitle>
             </AlertDialogHeader>
             <AlertDialogDescription>
-              Are you sure you want to apply the schema "{graphToApply.name}" to the Neo4j database?
-              <p className="mt-2 text-sm text-muted-foreground">
-                This will create the necessary node labels, relationships, and constraints in the Neo4j database based on the schema definition.
-              </p>
+              Are you sure you want to apply the schema "{graphToApply.name}" to Neo4j?
             </AlertDialogDescription>
             <AlertDialogFooter>
               <AlertDialogAction onClick={confirmApplyToNeo4j}>
                 Apply
               </AlertDialogAction>
-              <AlertDialogCancel onClick={() => setApplyToNeo4jModalOpen(false)}>
-                Cancel
-              </AlertDialogCancel>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      )}
-
-      {cleanDatabaseModalOpen && (
-        <AlertDialog
-          open={cleanDatabaseModalOpen}
-          onOpenChange={(open) => setCleanDatabaseModalOpen(open)}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Clean Neo4j Database</AlertDialogTitle>
-            </AlertDialogHeader>
-            <AlertDialogDescription>
-              Are you sure you want to clean the Neo4j database?
-              <p className="mt-2 text-sm text-muted-foreground">
-                This will remove schemas where the associated CSV files don't exist and clean up the database.
-              </p>
-            </AlertDialogDescription>
-            <AlertDialogFooter>
-              <AlertDialogAction onClick={executeCleanNeo4jDatabase}>
-                Clean
-              </AlertDialogAction>
-              <AlertDialogCancel onClick={() => setCleanDatabaseModalOpen(false)}>
-                Cancel
-              </AlertDialogCancel>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

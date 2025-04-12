@@ -24,6 +24,7 @@ function ProfilePageContent() {
   const searchParams = useSearchParams()
   const { toast } = useToast()
   const fileId = searchParams.get("fileId")
+  const initialTab = searchParams.get("activeTab")
 
   useEffect(() => {
     // If fileId is provided in URL, we'll load the latest profile for that file
@@ -81,6 +82,13 @@ function ProfilePageContent() {
 
     fetchLatestProfileForFile()
   }, [fileId, router, toast])
+
+  useEffect(() => {
+    // Set initial active tab from URL if provided
+    if (initialTab && (initialTab === "list" || initialTab === "details")) {
+      setActiveTab(initialTab)
+    }
+  }, [initialTab])
 
   const handleRefresh = () => {
     setIsRefreshing(true)

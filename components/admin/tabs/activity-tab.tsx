@@ -122,13 +122,13 @@ export function ActivityTab() {
   }
 
   const handleClearLogs = async () => {
-    if (confirm("Are you sure you want to clear old activity logs? This cannot be undone.")) {
+    if (confirm("Are you sure you want to clear activity logs older than 2 hours? This cannot be undone.")) {
       setIsProcessing(true)
       try {
-        await clearActivityLogs(30)
+        await clearActivityLogs() // Use default 2 hours
         setNotification({
           type: "success",
-          message: "Activity logs older than 30 days have been cleared",
+          message: "Activity logs older than 2 hours have been cleared",
         })
         // Refresh data to show updated logs
         const data = await fetchAdminData()
@@ -312,7 +312,7 @@ export function ActivityTab() {
             disabled={isProcessing}
           >
             <Trash className="h-4 w-4 mr-2" />
-            Clear Old Logs
+            Clear Logs Older Than 2 Hours
           </Button>
         </div>
       </div>
@@ -461,4 +461,3 @@ export function ActivityTab() {
     </div>
   )
 }
-

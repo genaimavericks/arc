@@ -1,0 +1,223 @@
+/* Custom animations CSS */
+
+@keyframes float-slow {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes float-fast {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes scale-pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+@keyframes rotate-glow {
+  0% {
+    transform: rotate(0deg);
+    box-shadow: 0 0 5px rgba(var(--color-primary-rgb), 0.2);
+  }
+  50% {
+    transform: rotate(180deg);
+    box-shadow: 0 0 15px rgba(var(--color-primary-rgb), 0.4);
+  }
+  100% {
+    transform: rotate(360deg);
+    box-shadow: 0 0 5px rgba(var(--color-primary-rgb), 0.2);
+  }
+}
+
+@keyframes border-glow {
+  0%, 100% {
+    border-color: rgba(var(--color-primary-rgb), 0.2);
+    box-shadow: 0 0 5px rgba(var(--color-primary-rgb), 0.1);
+  }
+  50% {
+    border-color: rgba(var(--color-primary-rgb), 0.8);
+    box-shadow: 0 0 15px rgba(var(--color-primary-rgb), 0.3);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes ripple {
+  0% {
+    transform: scale(0);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+/* Animation classes */
+.animate-float-slow {
+  animation: float-slow 3s ease-in-out infinite;
+}
+
+.animate-float-fast {
+  animation: float-fast 2s ease-in-out infinite;
+}
+
+.animate-scale-pulse {
+  animation: scale-pulse 2s ease-in-out infinite;
+}
+
+.animate-rotate-glow {
+  animation: rotate-glow 8s linear infinite;
+}
+
+.animate-border-glow {
+  animation: border-glow 2s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  background: linear-gradient(110deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 2.5s infinite;
+}
+
+.animate-ripple {
+  position: relative;
+}
+
+.animate-ripple::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 100%;
+  transform: translate(-50%, -50%) scale(0);
+  border-radius: inherit;
+  background: rgba(255, 255, 255, 0.3);
+  animation: ripple 0.8s ease-out;
+}
+
+/* Interactive element states */
+.hover-scale {
+  transition: transform 0.3s ease;
+}
+
+.hover-scale:hover {
+  transform: scale(1.05);
+}
+
+.hover-float {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.hover-float:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
+
+.hover-glow {
+  transition: box-shadow 0.3s ease;
+}
+
+.hover-glow:hover {
+  box-shadow: 0 0 15px rgba(var(--color-primary-rgb), 0.4);
+}
+
+/* Button interaction animations */
+.btn-pop {
+  transition: transform 0.2s ease;
+}
+
+.btn-pop:active {
+  transform: scale(0.95);
+}
+
+.btn-slide-bg {
+  position: relative;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.btn-slide-bg::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.2);
+  transition: left 0.3s ease;
+  z-index: -1;
+}
+
+.btn-slide-bg:hover::before {
+  left: 0;
+}
+
+/* Card hover effects */
+.card-hover {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card-hover:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+}
+
+/* Text animation effects */
+.text-gradient {
+  background: linear-gradient(90deg, var(--primary), var(--secondary));
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+.text-shimmer {
+  background: linear-gradient(90deg, var(--primary), var(--secondary), var(--primary));
+  background-size: 200% auto;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: shimmer 3s linear infinite;
+}
+
+/* Page transition effects */
+.page-enter {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+.page-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.5s, transform 0.5s;
+}
+
+.page-exit {
+  opacity: 1;
+}
+
+.page-exit-active {
+  opacity: 0;
+  transition: opacity 0.5s;
+}
