@@ -66,3 +66,5 @@ runtime-data**
 data/*
 api/data/*
 api/uploads/*
+.windsurfrules
+api/kginsights/saved_schemas/*
