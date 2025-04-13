@@ -581,16 +581,33 @@ Notes:
                 # Remove any BOM or invisible characters at the beginning
                 while cleaned_json and not cleaned_json[0] in '{["':
                     cleaned_json = cleaned_json[1:]
+                
+                # Fix common JSON issues (trailing commas, etc.)
+                # 1. Fix trailing commas in arrays/objects
+                cleaned_json = re.sub(r',\s*([\]\}])', r'\1', cleaned_json)
+                # 2. Fix empty property arrays with trailing commas
+                cleaned_json = re.sub(r'\{\s*"name":\s*"[^"]+"\s*,\s*"type":\s*"[^"]+"\s*,\s*\}', r'{"name": "Supplier", "type": "string"}', cleaned_json)
+                
                 print(f"\nCleaned JSON:\n{cleaned_json}")
                 try:
                     schema = json.loads(cleaned_json)
                 except json.JSONDecodeError as e2:
                     print(f"Still failed to parse JSON after cleaning: {e2}")
-                    state["error"] = f"Failed to parse schema: {e2}"
-                    state["messages"] = state.get("messages", []) + [
-                        AIMessage(content=f"Error: Failed to parse schema - {e2}")
-                    ]
-                    return state
+                    # Last resort: try to manually fix the JSON structure
+                    try:
+                        # Use a more permissive JSON parser or manually fix known issues
+                        import re
+                        # Remove trailing commas in lists and objects
+                        fixed_json = re.sub(r',\s*([\]\}])', r'\1', cleaned_json)
+                        schema = json.loads(fixed_json)
+                        print("Successfully parsed JSON after additional fixing")
+                    except Exception as e3:
+                        print(f"All JSON parsing attempts failed: {e3}")
+                        state["error"] = f"Failed to parse schema: {e2}"
+                        state["messages"] = state.get("messages", []) + [
+                            AIMessage(content=f"Error: Failed to parse schema - {e2}")
+                        ]
+                        return state
             # Validate schema structure
             required_keys = ["nodes", "relationships", "indexes"]
             for key in required_keys:

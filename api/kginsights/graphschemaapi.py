@@ -21,6 +21,7 @@ from .loaders.data_loader import DataLoader
 from .loaders.neo4j_loader import Neo4jLoader
 import traceback
 import re
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 # Models
 class SchemaResult(BaseModel):
@@ -70,22 +71,22 @@ router = APIRouter(prefix="/graphschema", tags=["graphschema"])
 
 # Initialize LLM
 try:
-    api_key = os.getenv('OPENAI_API_KEY')
+    api_key = os.getenv('GOOGLE_API_KEY')
     if not api_key:
-        raise ValueError("OPENAI_API_KEY environment variable is not set")
+        raise ValueError("GOOGLE_API_KEY environment variable is not set")
     
-    llm = ChatOpenAI(
-        model='gpt-4',
-        api_key=api_key,
+    llm = ChatGoogleGenerativeAI(
+        model='gemini-1.5-pro',
+        google_api_key=api_key,
         temperature=0
     )
-    print("Successfully initialized OpenAI LLM")
+    print("Successfully initialized Google Gemini LLM")
 except Exception as e:
-    print(f"Warning: Could not initialize OpenAI LLM: {e}")
+    print(f"Warning: Could not initialize Google Gemini LLM: {e}")
     # Create a placeholder LLM for development/testing
     from unittest.mock import MagicMock
     llm = MagicMock()
-    llm.invoke.return_value = {"content": "This is a mock response as OpenAI API key is not configured."}
+    llm.invoke.return_value = {"content": "This is a mock response as Google API key is not configured."}
 
 # Helper Functions
 def read_domain_data(domain_name):
