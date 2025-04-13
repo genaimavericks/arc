@@ -64,17 +64,26 @@ const getJobsFromStorage = (): Job[] => {
 
 // Provider component
 export function IngestionProvider({ children }: { children: ReactNode }) {
-  // Initialize state from localStorage if available
-  const [jobs, setJobs] = useState<Job[]>(() => getJobsFromStorage())
+  // Initialize state with empty array, load from storage client-side
+  const [jobs, setJobs] = useState<Job[]>([])
   const [errors, setErrors] = useState<string[]>([])
   const [processingStatus, setProcessingStatus] = useState<string>("")
   const [isPolling, setIsPolling] = useState(true)
+
+  // Load initial jobs from localStorage on client-side mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setJobs(getJobsFromStorage());
+    }
+  }, []);
 
   // Add a new job
   const addJob = (job: Job) => {
     setJobs((prevJobs) => {
       const newJobs = [job, ...prevJobs]
-      saveJobsToStorage(newJobs)
+      if (typeof window !== 'undefined') {
+        saveJobsToStorage(newJobs)
+      }
       return newJobs
     })
   }
@@ -93,13 +102,17 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
         setTimeout(() => {
           setJobs(currentJobs => {
             const filteredJobs = currentJobs.filter(job => job.id !== updatedJob.id)
-            saveJobsToStorage(filteredJobs)
+            if (typeof window !== 'undefined') {
+              saveJobsToStorage(filteredJobs)
+            }
             return filteredJobs
           })
         }, 30000)
       }
       
-      saveJobsToStorage(updatedJobs)
+      if (typeof window !== 'undefined') {
+        saveJobsToStorage(updatedJobs)
+      }
       return updatedJobs
     })
   }
@@ -108,7 +121,9 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
   const removeJob = (jobId: string) => {
     setJobs((prevJobs) => {
       const filteredJobs = prevJobs.filter((job) => job.id !== jobId)
-      saveJobsToStorage(filteredJobs)
+      if (typeof window !== 'undefined') {
+        saveJobsToStorage(filteredJobs)
+      }
       return filteredJobs
     })
   }
@@ -125,6 +140,9 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
 
   // Check for active jobs on initial load or when user returns to the app
   useEffect(() => {
+    // Ensure this runs client-side only
+    if (typeof window === 'undefined') return;
+    
     const checkInitialJobStatus = async () => {
       // Get jobs from localStorage
       const storedJobs = getJobsFromStorage();
@@ -146,7 +164,8 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
           const apiBaseUrl = getApiBaseUrl();
           const response = await fetch(`${apiBaseUrl}/api/datapuur/job-status/${job.id}`, {
             headers: {
-              Authorization: `Bearer ${localStorage.getItem("token")}`,
+              // Ensure token is accessed client-side
+              Authorization: `Bearer ${typeof window !== 'undefined' ? localStorage.getItem("token") : ''}`,
             },
           });
           
@@ -161,12 +180,12 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
       }
     };
     
-    // Run the check when the component mounts
+    // Run the check when the component mounts (client-side)
     checkInitialJobStatus();
     
     // Also run the check when the user returns to the tab/window
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
+      if (typeof window !== 'undefined' && document.visibilityState === 'visible') {
         checkInitialJobStatus();
       }
     };
@@ -175,13 +194,17 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
     
     // Clean up the event listener
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (typeof window !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      }
     };
-  }, [updateJob]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [updateJob]); // updateJob dependency might cause re-runs, consider if needed
 
   // Poll for job updates
   useEffect(() => {
-    if (!isPolling) return
+    // Ensure this runs client-side only
+    if (typeof window === 'undefined' || !isPolling) return
 
     // Initial check immediately when a new job is added
     const checkJobs = async () => {
@@ -200,8 +223,10 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
         for (const job of jobsToUpdate) {
           const apiBaseUrl = getApiBaseUrl()
           const response = await fetch(`${apiBaseUrl}/api/datapuur/job-status/${job.id}`, {
+            method: "GET",
             headers: {
-              Authorization: `Bearer ${localStorage.getItem("token")}`,
+              // Ensure token is accessed client-side
+              Authorization: `Bearer ${typeof window !== 'undefined' ? localStorage.getItem("token") : ''}`,
             },
           })
 

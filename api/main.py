@@ -31,6 +31,7 @@ from api.profiler import router as profiler_router
 from api.admin import router as admin_router
 from api.middleware import ActivityLoggerMiddleware
 
+
 # # Run database migrations
 # try:
 #     migrate_database()
@@ -68,7 +69,10 @@ app.add_middleware(ActivityLoggerMiddleware)
 app.include_router(auth_router)
 #app.include_router(ingestion_router)
 app.include_router(datapuur_router)
+print("DEBUG: Including kginsights_router in main app with prefix /api")
 app.include_router(kginsights_router, prefix="/api")
+print(f"DEBUG: kginsights_router routes: {[route.path for route in kginsights_router.routes]}")
+print(f"DEBUG: Full application routes: {[route.path for route in app.routes]}")
 # The graphschema router should be included with just /api prefix since it already has /graphschema in its routes
 app.include_router(graphschema_router, prefix="/api")
 app.include_router(kgdatainsights_router, prefix="/api")

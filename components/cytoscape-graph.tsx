@@ -50,8 +50,10 @@ export default function CytoscapeGraph({
       elements.push({
         data: { 
           id: node.label, 
-          label: node.label,
+          // Use displayLabel property if available, otherwise fall back to label
+          label: node.properties.displayLabel || node.label,
           properties: Object.entries(node.properties || {})
+            .filter(([key]) => key !== 'displayLabel') // Don't show displayLabel in properties list
             .map(([key, type]) => `${key}: ${type}`)
             .join(", ")
         }

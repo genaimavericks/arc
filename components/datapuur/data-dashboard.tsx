@@ -404,7 +404,7 @@ export function DataDashboard() {
           ) : (
             <Table>
               <TableHeader>
-                <TableRow>
+                <TableRow className="border-t border-b border-border">
                   <TableHead 
                     className="cursor-pointer hover:text-primary transition-colors"
                     onClick={() => handleSort("name")}

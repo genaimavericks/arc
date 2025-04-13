@@ -89,11 +89,8 @@ function KGraphDashboardContent() {
   const [schemaModalOpen, setSchemaModalOpen] = useState(false)
   const [generateKGModalOpen, setGenerateKGModalOpen] = useState(false)
   const [selectedDataset, setSelectedDataset] = useState<{ id: string; name: string } | null>(null)
-  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
-  const [graphToDelete, setGraphToDelete] = useState<KnowledgeGraph | null>(null)
   const [applyToNeo4jModalOpen, setApplyToNeo4jModalOpen] = useState(false)
   const [graphToApply, setGraphToApply] = useState<KnowledgeGraph | null>(null)
-  const [cleanDatabaseModalOpen, setCleanDatabaseModalOpen] = useState(false)
 
   // Function to fetch available datasets from sources
   const fetchDataSources = async () => {
@@ -141,67 +138,6 @@ function KGraphDashboardContent() {
       })
     } finally {
       setLoadingDatasets(false)
-    }
-  }
-
-  // Function to handle cleaning Neo4j database
-  const handleCleanNeo4jDatabase = () => {
-    setCleanDatabaseModalOpen(true)
-  }
-
-  // Function to execute Neo4j database cleanup
-  const executeCleanNeo4jDatabase = async () => {
-    try {
-      setCleanDatabaseModalOpen(false)
-      
-      // First, clean up schemas with missing files
-      const schemaResponse = await fetch("/api/graphschema/cleanup-schemas", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-      })
-
-      if (!schemaResponse.ok) {
-        throw new Error(`Failed to clean up schemas: ${schemaResponse.status}`)
-      }
-
-      const schemaData = await schemaResponse.json()
-      
-      // Then, clean the Neo4j database
-      const neo4jResponse = await fetch("/api/graphschema/clean-neo4j-database", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-      })
-
-      if (!neo4jResponse.ok) {
-        throw new Error(`Failed to clean Neo4j database: ${neo4jResponse.status}`)
-      }
-
-      const neo4jData = await neo4jResponse.json()
-
-      // Show success message with details
-      toast({
-        title: "Success",
-        description: `Database cleaned successfully. Removed ${schemaData.removed} schemas and ${neo4jData.details.nodes_deleted} nodes.`,
-        variant: "default",
-      })
-
-      // Refresh knowledge graphs after cleanup
-      await fetchKnowledgeGraphs()
-    } catch (err) {
-      console.error("Error cleaning Neo4j database:", err)
-      toast({
-        title: "Error",
-        description: "Failed to clean Neo4j database.",
-        variant: "destructive",
-      })
-    } finally {
-      setCleanDatabaseModalOpen(false)
     }
   }
 
@@ -316,50 +252,6 @@ function KGraphDashboardContent() {
     setApplyToNeo4jModalOpen(true)
   }
 
-  // Function to handle load data to Neo4j
-  const handleLoadDataToNeo4j = async (id: string, name: string) => {
-    try {
-      // Show loading toast
-      toast({
-        title: "Loading Data",
-        description: `Loading data for schema "${name}"...`,
-        variant: "default",
-      })
-      
-      // Call the API to load data directly from the schema without specifying a graph
-      // The backend will handle graph selection based on available configurations
-      const response = await fetch(`/api/graphschema/schemas/${id}/load-data?drop_existing=false`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-          "Content-Type": "application/json",
-        },
-      })
-      
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.detail || `Failed to load data: ${response.status}`)
-      }
-      
-      const result = await response.json()
-      
-      // Show success toast
-      toast({
-        title: "Success",
-        description: `Data loaded successfully for schema "${name}"`,
-        variant: "default",
-      })
-      
-    } catch (error) {
-      console.error("Error loading data:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to load data",
-        variant: "destructive",
-      })
-    }
-  }
-
   // Function to handle dataset preview
   const handlePreview = (datasetId: string, datasetName: string) => {
     setSelectedDataset({ id: datasetId, name: datasetName })
@@ -390,52 +282,6 @@ function KGraphDashboardContent() {
   // Function to handle search graphs
   const handleSearchGraphs = () => {
     router.push("/kginsights/search")
-  }
-
-  // Function to handle delete knowledge graph
-  const handleDeleteGraph = (graph: KnowledgeGraph) => {
-    setGraphToDelete(graph)
-    setDeleteModalOpen(true)
-  }
-
-  // Function to confirm delete knowledge graph
-  const confirmDeleteGraph = async () => {
-    if (graphToDelete) {
-      try {
-        // Use different endpoints based on the graph type
-        const endpoint = graphToDelete.type === "schema" 
-          ? `/api/graphschema/${graphToDelete.id}` 
-          : `/api/kginsights/graphs/${graphToDelete.id}`;
-          
-        const response = await fetch(endpoint, {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-        })
-
-        if (!response.ok) {
-          throw new Error(`Failed to delete ${graphToDelete.type}: ${response.status}`)
-        }
-
-        setKnowledgeGraphs(knowledgeGraphs.filter((graph) => graph.id !== graphToDelete.id))
-        toast({
-          title: "Success",
-          description: `${graphToDelete.type === "schema" ? "Schema" : "Knowledge graph"} deleted successfully.`,
-          variant: "default",
-        })
-      } catch (err) {
-        console.error(`Error deleting ${graphToDelete.type}:`, err)
-        toast({
-          title: "Error",
-          description: `Failed to delete ${graphToDelete.type === "schema" ? "schema" : "knowledge graph"}.`,
-          variant: "destructive",
-        })
-      } finally {
-        setDeleteModalOpen(false)
-        setGraphToDelete(null)
-      }
-    }
   }
 
   // Function to confirm apply to Neo4j
@@ -540,15 +386,6 @@ function KGraphDashboardContent() {
           </Button>
 
           <Button
-            className="bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-2"
-            size="lg"
-            onClick={handleCleanNeo4jDatabase}
-          >
-            <Database className="w-5 h-5" />
-            Clean Neo4j Database
-          </Button>
-
-          <Button
             variant="outline"
             className="border-primary/30 text-foreground flex items-center gap-2"
             size="lg"
@@ -606,15 +443,6 @@ function KGraphDashboardContent() {
                                   >
                                     <FileText className="w-5 h-5" />
                                   </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="text-green-500 hover:text-green-600 hover:bg-green-500/10"
-                                    onClick={() => handleLoadDataToNeo4j(graph.id, graph.name)}
-                                    title="Load Data"
-                                  >
-                                    <Upload className="w-5 h-5" />
-                                  </Button>
                                 </>
                               ) : (
                                 <Button
@@ -635,15 +463,6 @@ function KGraphDashboardContent() {
                                 title="Insights"
                               >
                                 <LineChart className="w-5 h-5" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
-                                onClick={() => handleDeleteGraph(graph)}
-                                title="Delete"
-                              >
-                                <Trash2 className="w-5 h-5" />
                               </Button>
                             </div>
                           </td>
@@ -784,30 +603,7 @@ function KGraphDashboardContent() {
         </>
       )}
 
-      {deleteModalOpen && graphToDelete && (
-        <AlertDialog
-          open={deleteModalOpen}
-          onOpenChange={(open) => setDeleteModalOpen(open)}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Delete Knowledge Graph</AlertDialogTitle>
-            </AlertDialogHeader>
-            <AlertDialogDescription>
-              Are you sure you want to delete the knowledge graph "{graphToDelete.name}"?
-            </AlertDialogDescription>
-            <AlertDialogFooter>
-              <AlertDialogAction onClick={confirmDeleteGraph}>
-                Delete
-              </AlertDialogAction>
-              <AlertDialogCancel onClick={() => setDeleteModalOpen(false)}>
-                Cancel
-              </AlertDialogCancel>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      )}
-
+      {/* Apply to Neo4j Modal */}
       {applyToNeo4jModalOpen && graphToApply && (
         <AlertDialog
           open={applyToNeo4jModalOpen}
@@ -818,45 +614,13 @@ function KGraphDashboardContent() {
               <AlertDialogTitle>Apply Schema to Neo4j</AlertDialogTitle>
             </AlertDialogHeader>
             <AlertDialogDescription>
-              Are you sure you want to apply the schema "{graphToApply.name}" to the Neo4j database?
-              <p className="mt-2 text-sm text-muted-foreground">
-                This will create the necessary node labels, relationships, and constraints in the Neo4j database based on the schema definition.
-              </p>
+              Are you sure you want to apply the schema "{graphToApply.name}" to Neo4j?
             </AlertDialogDescription>
             <AlertDialogFooter>
               <AlertDialogAction onClick={confirmApplyToNeo4j}>
                 Apply
               </AlertDialogAction>
-              <AlertDialogCancel onClick={() => setApplyToNeo4jModalOpen(false)}>
-                Cancel
-              </AlertDialogCancel>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      )}
-
-      {cleanDatabaseModalOpen && (
-        <AlertDialog
-          open={cleanDatabaseModalOpen}
-          onOpenChange={(open) => setCleanDatabaseModalOpen(open)}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Clean Neo4j Database</AlertDialogTitle>
-            </AlertDialogHeader>
-            <AlertDialogDescription>
-              Are you sure you want to clean the Neo4j database?
-              <p className="mt-2 text-sm text-muted-foreground">
-                This will remove schemas where the associated CSV files don't exist and clean up the database.
-              </p>
-            </AlertDialogDescription>
-            <AlertDialogFooter>
-              <AlertDialogAction onClick={executeCleanNeo4jDatabase}>
-                Clean
-              </AlertDialogAction>
-              <AlertDialogCancel onClick={() => setCleanDatabaseModalOpen(false)}>
-                Cancel
-              </AlertDialogCancel>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

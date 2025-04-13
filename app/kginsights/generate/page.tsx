@@ -12,22 +12,28 @@ import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/use-toast"
 import LoadingSpinner from "@/components/loading-spinner"
 import { motion } from "framer-motion"
-import { Save, Loader2, MessageSquare } from "lucide-react"
+import { Save, Loader2, MessageSquare, CheckCircle, AlertTriangle } from "lucide-react"
 import { Separator } from "@/components/ui/separator"
 import Image from "next/image"
 import dynamic from 'next/dynamic'
 import { KGInsightsLayout } from "@/components/kginsights/kginsights-layout"
 import KGInsightsSidebar from "@/components/kginsights-sidebar"
 import { FloatingChart } from "@/components/floating-chart"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { SchemaChat } from "@/components/kginsights/generate/schema-chat"
 
 // Import Cytoscape as a client component to avoid SSR issues
 const CytoscapeGraph = dynamic(
   () => import('@/components/cytoscape-graph'),
   { ssr: false }
 );
-
-// Import SchemaChat component
-import { SchemaChat } from "@/components/kginsights/generate/schema-chat"
 
 // Define interfaces for our data
 interface DataSource {
@@ -82,6 +88,11 @@ function GenerateGraphContent() {
   const [metadata, setMetadata] = useState<string>("")
   const [showChat, setShowChat] = useState(true)
   const [savingStatus, setSavingStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
+  const [showSuccessMessage, setShowSuccessMessage] = useState(false)
+  const [savedSchemaInfo, setSavedSchemaInfo] = useState<{name: string, path: string}>({name: "", path: ""})
+  const [showErrorDialog, setShowErrorDialog] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
+  const successMessageTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const { toast } = useToast()
 
   // Fetch data sources on component mount
@@ -237,9 +248,32 @@ function GenerateGraphContent() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => null)
-        throw new Error(
-          errorData?.detail || `Failed to save schema: ${response.status}`
-        )
+        console.log('Error response:', response.status, errorData)
+        
+        // Handle specific error for duplicate schema name (409 Conflict)
+        if (response.status === 409) {
+          const errorMsg = `A schema with the name "${schemaName}" already exists. Please use a different name.`;
+          
+          // Set error message and show error dialog
+          setErrorMessage(errorMsg);
+          setShowErrorDialog(true);
+          
+          throw new Error(errorMsg);
+        }
+        else {
+          const errorMsg = `Error occured while saving schema. Please try after some time.`;
+          
+          // Set error message and show error dialog
+          setErrorMessage(errorMsg);
+          setShowErrorDialog(true);
+          
+          throw new Error(errorMsg);
+
+        }
+        
+        // Extract error message from response if available
+        const errorMessage = errorData?.detail || `Failed to save schema: ${response.status}`
+        throw new Error(errorMessage)
       }
 
       const data = await response.json()
@@ -247,6 +281,23 @@ function GenerateGraphContent() {
       
       // Set success status
       setSavingStatus('success')
+      
+      // Set saved schema info for the success message
+      const schemaInfo = {
+        name: schemaName,
+        path: data.file_path || ""
+      };
+      console.log("Setting saved schema info:", schemaInfo);
+      setSavedSchemaInfo(schemaInfo);
+      
+      // Show success message
+      console.log("Opening success message");
+      setShowSuccessMessage(true);
+      
+      // Clear any existing timeout
+      if (successMessageTimeoutRef.current) {
+        clearTimeout(successMessageTimeoutRef.current);
+      }
       
       toast({
         title: "Success",
@@ -264,10 +315,16 @@ function GenerateGraphContent() {
       // Set error status
       setSavingStatus('error')
       
+      // Get error message
+      const errorMessage = error instanceof Error ? error.message : "Failed to save schema. Please try again."
+      console.log('Displaying error toast with message:', errorMessage)
+      
+      // Show prominent error toast with longer duration
       toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to save schema. Please try again.",
+        title: "Schema Save Error",
+        description: errorMessage,
         variant: "destructive",
+        duration: 6000, // Show for 6 seconds for better visibility
       })
       
       // Reset error status after 3 seconds
@@ -646,6 +703,56 @@ function GenerateGraphContent() {
           </motion.div>
         </div>
       </div>
+      
+      {/* Error Dialog for duplicate schema name */}
+      <Dialog open={showErrorDialog} onOpenChange={setShowErrorDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Schema Save Error
+            </DialogTitle>
+            <DialogDescription>
+              {errorMessage}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <DialogFooter className="sm:justify-center mt-4">
+            <Button
+              variant="default"
+              onClick={() => setShowErrorDialog(false)}
+              className="w-full sm:w-auto"
+            >
+              OK
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Success Dialog for schema save */}
+      <Dialog open={showSuccessMessage} onOpenChange={setShowSuccessMessage}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-primary">
+              <CheckCircle className="h-5 w-5 text-primary" />
+              Schema Saved Successfully
+            </DialogTitle>
+            <DialogDescription>
+              Your schema "{savedSchemaInfo.name}" has been saved successfully.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <DialogFooter className="sm:justify-center mt-4">
+            <Button
+              variant="default"
+              onClick={() => setShowSuccessMessage(false)}
+              className="w-full sm:w-auto"
+            >
+              OK
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
