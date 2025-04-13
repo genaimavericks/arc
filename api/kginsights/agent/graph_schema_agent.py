@@ -21,6 +21,7 @@ class AgentState(TypedDict):
     schema: Optional[Dict]
     cypher: Optional[str]
     error: Optional[str]
+    domain: Optional[str]  # Domain information for schema generation
 
 class GraphSchemaAgent:
     """
@@ -44,7 +45,8 @@ class GraphSchemaAgent:
         human_in_the_loop: bool = False,
         log: bool = False,
         log_path: str = None,
-        checkpointer = None
+        checkpointer = None,
+        domain: str = None
     ):
         self._params = {
             "model": model,
@@ -54,7 +56,8 @@ class GraphSchemaAgent:
             "human_in_the_loop": human_in_the_loop,
             "log": log,
             "log_path": log_path,
-            "checkpointer": checkpointer
+            "checkpointer": checkpointer,
+            "domain": domain
         }
         self._compiled_graph = self._make_compiled_graph()
         self.response = None
@@ -360,8 +363,11 @@ class GraphSchemaAgent:
             prompt = PromptTemplate(
                 template="""You are a Neo4j database expert. Analyze this CSV data and refine the existing graph schema based on user feedback.
 
-Metadata:
+User feedback:
 {metadata_section}
+
+Domain Metadata:
+{domain_section}
 
 Current Schema:
 {current_schema_section}
@@ -378,6 +384,7 @@ Instructions:
 3. Ensure the modified schema still accurately represents the data
 4. Maintain appropriate relationships between entities
 5. Keep any useful elements from the original schema that weren't mentioned in the feedback
+6. Use the information provided in the domain metadata to guide the schema generation. This will be used to generate graphs and gather insights from the data.
 
 Return ONLY a valid JSON object with this exact structure (no explanation, just the JSON):
 {{
@@ -416,7 +423,7 @@ Notes:
 - IMPORTANT: Always use the exact CSV column names as property names to ensure compatibility with the data loader
 - DO NOT rename properties from their original CSV column names
 - Include a "changes" array that describes what modifications were made based on the feedback""",
-                input_variables=["data_info", "metadata_section", "current_schema_section"]
+                input_variables=["data_info", "metadata_section", "domain_section", "current_schema_section"]
             )
             
             # Prepare metadata section
@@ -425,16 +432,29 @@ Notes:
             if metadata:
                 metadata_section = f"User Feedback:\n{metadata}\n"
             
+            # Prepare domain section
+            domain_section = ""
+            # Use domain data directly from the params (which now contains the file content)
+            domain_data = self._params.get("domain", "")
+            if domain_data:
+                domain_section = domain_data
+            # Fallback to state domain if no domain data is available
+            elif state.get("domain", ""):
+                domain = state.get("domain", "")
+                domain_section = f"Domain: {domain}"
+            
             # Prepare current schema section
             current_schema_section = json.dumps(current_schema, indent=2)
             
             print("\nSending refinement request to LLM...")
             print(f"Current schema being sent: {current_schema_section[:200]}...")
             print(f"User feedback being sent: {metadata_section}")
+            print(f"Domain information being sent: {domain_section}")
             
             formatted_prompt = prompt.format(
                 data_info=data_info, 
                 metadata_section=metadata_section,
+                domain_section=domain_section,
                 current_schema_section=current_schema_section
             )
         else:
@@ -442,8 +462,11 @@ Notes:
             prompt = PromptTemplate(
                 template="""You are a Neo4j database expert. Analyze this CSV data and generate an optimal graph schema.
 
-Metadata:
+User Inputs:
 {metadata_section}
+
+Domain Metadata:
+{domain_section}
 
 CSV Analysis:
 - Columns: {data_info[columns]}
@@ -457,6 +480,7 @@ Instructions:
 3. Determine meaningful relationships between the entities
 4. Consider appropriate data types and constraints for properties
 5. Recommend indexes for frequently queried properties
+6. Use the information provided in the domain metadata to guide the schema generation. This will be used to generate graphs and gather insights from the data.
 
 Return ONLY a valid JSON object with this exact structure (no explanation, just the JSON):
 {{
@@ -500,8 +524,19 @@ Notes:
             if metadata:
                 metadata_section = f"Metadata about the data:\n{metadata}\n"
             
+            # Prepare domain section
+            domain_section = ""
+            # Use domain data directly from the params (which now contains the file content)
+            domain_data = self._params.get("domain", "")
+            if domain_data:
+                domain_section = domain_data
+            # Fallback to state domain if no domain data is available
+            elif state.get("domain", ""):
+                domain = state.get("domain", "")
+                domain_section = f"Domain: {domain}"
+            
             print("\nSending request to LLM...")
-            formatted_prompt = prompt.format(data_info=data_info, metadata_section=metadata_section)
+            formatted_prompt = prompt.format(data_info=data_info, metadata_section=metadata_section, domain_section=domain_section)
         
         print("\nFormatted prompt:")
         print(formatted_prompt)

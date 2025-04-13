@@ -85,6 +85,7 @@ function GenerateGraphContent() {
   const [cypher, setCypher] = useState<string>("")
   const [kgName, setKgName] = useState<string>("")
   const [kgDescription, setKgDescription] = useState<string>("")
+  const [domain, setDomain] = useState<string>("")
   const [metadata, setMetadata] = useState<string>("")
   const [showChat, setShowChat] = useState(true)
   const [savingStatus, setSavingStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
@@ -420,6 +421,23 @@ function GenerateGraphContent() {
                 className="w-full bg-card/50 backdrop-blur-sm border-primary/20 shadow-sm"
               />
             </div>
+            
+            <div className="w-full md:w-64">
+              <Label htmlFor="domain-select" className="mb-2 block text-primary/80 font-medium">Data Domain:</Label>
+              <Select
+                value={domain}
+                onValueChange={setDomain}
+                disabled={loading}
+              >
+                <SelectTrigger id="domain-select" className="w-full bg-card/50 backdrop-blur-sm border-primary/20 shadow-sm">
+                  <SelectValue placeholder="Select domain" />
+                </SelectTrigger>
+                <SelectContent className="bg-card/95 backdrop-blur-md border-primary/20">
+                  <SelectItem value="telecom_churn">Telecom Churn</SelectItem>
+                  <SelectItem value="foam_factory">Foam Factory</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className="flex gap-2 self-end md:self-auto">
@@ -486,6 +504,7 @@ function GenerateGraphContent() {
                   <SchemaChat 
                     selectedSource={selectedSource}
                     selectedSourceName={selectedSourceName}
+                    domain={domain}
                     onSchemaGenerated={handleSchemaGenerated}
                     loading={loading}
                     setLoading={setLoading}

@@ -29,6 +29,7 @@ export interface ChatMessage {
 interface SchemaChatProps {
   selectedSource: string
   selectedSourceName: string
+  domain: string
   onSchemaGenerated: (schema: any, cypher: string) => void
   loading: boolean
   setLoading: (loading: boolean) => void
@@ -37,6 +38,7 @@ interface SchemaChatProps {
 export function SchemaChat({ 
   selectedSource, 
   selectedSourceName,
+  domain,
   onSchemaGenerated,
   loading,
   setLoading
@@ -150,6 +152,7 @@ export function SchemaChat({
         fileType: fileType,
         sourceId: selectedSource,
         sourceName: selectedSourceName,
+        domain: domain,
         existingSchema: fileMetadata
       };
       
@@ -166,7 +169,8 @@ export function SchemaChat({
         body: JSON.stringify({
           source_id: selectedSource,
           metadata: JSON.stringify(enhancedMetadata),
-          file_path: filePath
+          file_path: filePath,
+          domain: domain
         }),
       })
       
@@ -281,7 +285,8 @@ export function SchemaChat({
           source_id: selectedSource,
           current_schema: currentSchema,
           feedback: message,
-          file_path: filePath // Reuse stored file path
+          file_path: filePath, // Reuse stored file path
+          domain: domain // Include domain information
         }),
       })
       
