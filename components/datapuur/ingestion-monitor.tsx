@@ -9,6 +9,7 @@ import { AlertCircle, CheckCircle, Clock, RefreshCw, XCircle, FileText, Database
 import { formatDistanceToNow } from "date-fns"
 import { getApiBaseUrl } from "@/lib/config"
 import { useIngestion, Job } from "@/lib/ingestion-context"
+import { motion } from "framer-motion"
 
 // Define component props
 interface IngestionMonitorProps {
@@ -16,9 +17,10 @@ interface IngestionMonitorProps {
   onJobUpdated?: (job: Job) => void
   errors?: string[]
   isPolling?: boolean
+  processingStatus?: string
 }
 
-export function IngestionMonitor({ jobs: propJobs, onJobUpdated, errors: propErrors = [], isPolling: propIsPolling }: IngestionMonitorProps) {
+export function IngestionMonitor({ jobs: propJobs, onJobUpdated, errors: propErrors = [], isPolling: propIsPolling, processingStatus }: IngestionMonitorProps) {
   const [activeTab, setActiveTab] = useState("active")
   
   // Use the global ingestion context
@@ -92,6 +94,8 @@ export function IngestionMonitor({ jobs: propJobs, onJobUpdated, errors: propErr
     return () => clearInterval(pollInterval)
   }, [jobs, localIsPolling, onJobUpdated, updateJob])
 
+  const [cancellingJobs, setCancellingJobs] = useState<string[]>([])
+
   const getJobIcon = (type: string) => {
     switch (type) {
       case "file":
@@ -135,6 +139,13 @@ export function IngestionMonitor({ jobs: propJobs, onJobUpdated, errors: propErr
             Failed
           </Badge>
         )
+      case "cancelled":
+        return (
+          <Badge className="bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300 flex items-center gap-1">
+            <XCircle className="h-3 w-3" />
+            Cancelled
+          </Badge>
+        )
       default:
         return <Badge className="bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">{status}</Badge>
     }
@@ -151,6 +162,24 @@ export function IngestionMonitor({ jobs: propJobs, onJobUpdated, errors: propErr
 
   const cancelJob = async (jobId: string) => {
     try {
+      // Add job to cancelling list to show loading state
+      setCancellingJobs(prev => [...prev, jobId])
+      
+      // Immediately update UI to show job is being cancelled
+      const jobToUpdate = jobs.find(job => job.id === jobId)
+      if (jobToUpdate && (onJobUpdated || updateJob)) {
+        const updatingJob = {
+          ...jobToUpdate,
+          status: "cancelling", // Temporary status for UI feedback
+        }
+        
+        if (onJobUpdated) {
+          onJobUpdated(updatingJob)
+        } else if (updateJob) {
+          updateJob(updatingJob)
+        }
+      }
+      
       const apiBaseUrl = getApiBaseUrl();
       const response = await fetch(`${apiBaseUrl}/api/datapuur/cancel-job/${jobId}`, {
         method: "POST",
@@ -169,6 +198,9 @@ export function IngestionMonitor({ jobs: propJobs, onJobUpdated, errors: propErr
       }
     } catch (error) {
       console.error("Error canceling job:", error)
+    } finally {
+      // Remove job from cancelling list
+      setCancellingJobs(prev => prev.filter(id => id !== jobId))
     }
   }
 
@@ -225,12 +257,31 @@ export function IngestionMonitor({ jobs: propJobs, onJobUpdated, errors: propErr
         </TabsList>
 
         <TabsContent value="active" className="space-y-4 mt-4">
-          {activeJobs.length === 0 ? (
+          {activeJobs.length === 0 && !processingStatus ? (
             activeTab === "active" ? (
               <div className="text-center py-8 text-muted-foreground">No active jobs</div>
             ) : null
           ) : (
             <>
+              {/* Display processing status if available */}
+              {processingStatus && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-card border border-primary/20 rounded-lg p-4 mb-4"
+                >
+                  <div className="flex items-center">
+                    <div className="mr-2 p-1 rounded-full bg-background">
+                      <FileText className="h-4 w-4 text-blue-500" />
+                    </div>
+                    <div>
+                      <h4 className="font-medium text-foreground">File Processing</h4>
+                      <p className="text-sm text-muted-foreground">{processingStatus}</p>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+              
               {/* Group jobs that were likely uploaded together */}
               {groupJobs(activeJobs).map(({ key, jobs }) => (
                 <div key={key} className="mb-6">
@@ -258,9 +309,17 @@ export function IngestionMonitor({ jobs: propJobs, onJobUpdated, errors: propErr
                               variant="ghost"
                               size="sm"
                               onClick={() => cancelJob(job.id)}
+                              disabled={cancellingJobs.includes(job.id)}
                               className="h-7 px-2 text-destructive hover:bg-destructive/10"
                             >
-                              Cancel
+                              {cancellingJobs.includes(job.id) ? (
+                                <>
+                                  <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+                                  Cancelling...
+                                </>
+                              ) : (
+                                "Cancel"
+                              )}
                             </Button>
                           </div>
                         </div>

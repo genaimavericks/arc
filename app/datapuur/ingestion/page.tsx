@@ -124,21 +124,11 @@ export default function IngestionPage() {
                       Ingestion Jobs
                     </h3>
                     
-                    {/* Pre-ingestion progress - moved into the Ingestion Jobs card */}
-                    {processingStatus && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="bg-primary/10 border border-primary rounded-lg p-4 text-primary mb-4"
-                      >
-                        {processingStatus}
-                      </motion.div>
-                    )}
-                    
                     <IngestionMonitor
                       jobs={ingestionJobs}
                       onJobUpdated={handleJobUpdated}
                       errors={contextErrors}
+                      processingStatus={processingStatus}
                     />
                   </motion.div>
                 )}

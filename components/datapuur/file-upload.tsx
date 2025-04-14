@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { FileUp, X, FileText, Upload, AlertCircle, Eye, BarChart } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
@@ -149,8 +149,9 @@ export function FileUpload({
       const file = files[i]
       try {
         // Update status for current file
-        onStatusChange(`Uploading file ${i + 1} of ${files.length}: ${file.name}...`)
-        setProcessingStatus(`Uploading file ${i + 1} of ${files.length}: ${file.name}...`)
+        const statusMessage = `Uploading file ${i + 1} of ${files.length}: ${file.name}...`
+        onStatusChange(statusMessage)
+        setProcessingStatus(statusMessage)
 
         // Create a job object immediately to show in the UI, even before the upload completes
         // This ensures the job card appears right away for large files
@@ -355,7 +356,7 @@ export function FileUpload({
           setUploadProgress((prev) => ({ ...prev, [i]: 90 }))
           
           // If profile generation is enabled, request a profile for this file
-          if (generateProfile && !isCancelling && localStorage.getItem(`cancelled_upload_${uploadId}`) !== "true") {
+          if (generateProfile && !isCancelling && localStorage.getItem(`cancelled_upload_${uploadIdRef.current}`) !== "true") {
             try {
               // First, get file details to get the file path
               const fileDetailsResponse = await fetch(`${apiBaseUrl}/api/datapuur/ingestion-preview/${ingestData.job_id}`, {
@@ -747,191 +748,125 @@ export function FileUpload({
     onStatusChange("")
   }
 
-  // Add function to cancel ongoing upload
-  const cancelUpload = async () => {
+  // Cancel the upload process
+  const cancelUpload = () => {
+    console.log("Cancelling upload...")
     setIsCancelling(true)
     
-    try {
-      // Cancel XHR request if it exists
-      if (xhrRef.current) {
-        xhrRef.current.abort()
-        xhrRef.current = null
-      }
-      
-      // Cancel chunked upload if it exists
-      if (uploadIdRef.current) {
-        const apiBaseUrl = getApiBaseUrl()
-        try {
-          // Attempt to notify the server about the cancellation
-          const response = await fetch(`${apiBaseUrl}/api/datapuur/cancel-chunked-upload`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${localStorage.getItem("token")}`,
-            },
-            body: JSON.stringify({ uploadId: uploadIdRef.current }),
-          })
-          
-          if (response.ok) {
-            console.log("Server notified about upload cancellation")
-            // Set a flag to indicate this upload ID is cancelled
-            localStorage.setItem(`cancelled_upload_${uploadIdRef.current}`, "true")
-          }
-        } catch (error) {
-          console.error("Error notifying server about upload cancellation:", error)
-        }
-        uploadIdRef.current = null
-      }
-      
-      // Cancel any active jobs
-      const activeJobs = jobs.filter((job: Job) => 
-        (job.status === "running" || job.status === "queued") && 
-        !job.id.startsWith("temp-")
-      )
-      
-      for (const job of activeJobs) {
-        try {
-          const apiBaseUrl = getApiBaseUrl()
-          const response = await fetch(`${apiBaseUrl}/api/datapuur/cancel-job/${job.id}`, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${localStorage.getItem("token")}`,
-            },
-          })
-          
-          if (response.ok) {
-            const updatedJob = await response.json()
-            // Update the job in the global context
-            updateJob(updatedJob)
-            
-            // Also update any profile jobs associated with this job
-            const profileJobs = jobs.filter((pJob: Job) => 
-              pJob.type === "profile" && 
-              pJob.details && 
-              pJob.details.includes(job.name)
-            )
-            
-            for (const profileJob of profileJobs) {
-              // Mark profile jobs as cancelled instead of failed
-              updateJob({
-                ...profileJob,
-                status: "cancelled",
-                details: `Profile generation cancelled: ${profileJob.name.replace('Profile: ', '')}`,
-                endTime: new Date().toISOString(),
-              })
-            }
-          }
-        } catch (error) {
-          console.error(`Error cancelling job ${job.id}:`, error)
-        }
-      }
-      
-      // Reset state
-      setIsProcessing(false)
-      setUploadProgress({})
-      setFiles([]) // Clear the files array to prevent further processing
-      setProcessingStatus("Upload cancelled")
-      onStatusChange("Upload cancelled")
-    } catch (error) {
-      console.error("Error during cancellation:", error)
-      setError("Failed to cancel upload: " + (error instanceof Error ? error.message : String(error)))
-    } finally {
-      setIsCancelling(false)
+    // If there's an active XHR request, abort it
+    if (xhrRef.current) {
+      xhrRef.current.abort()
+      xhrRef.current = null
     }
+    
+    // If there's an upload ID, mark it as cancelled in localStorage
+    if (uploadIdRef.current) {
+      localStorage.setItem(`cancelled_upload_${uploadIdRef.current}`, "true")
+    }
+    
+    // Cancel any active ingestion jobs
+    const activeJobs = jobs.filter(job => 
+      (job.status === "running" || job.status === "queued") && 
+      !job.id.startsWith("temp-")
+    )
+    
+    // Cancel each active job via the API
+    activeJobs.forEach(async (job) => {
+      try {
+        const apiBaseUrl = getApiBaseUrl()
+        const response = await fetch(`${apiBaseUrl}/api/datapuur/cancel-job/${job.id}`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        })
+        
+        if (response.ok) {
+          console.log(`Successfully cancelled job ${job.id}`)
+          // Update the job status in the UI immediately
+          updateJob({
+            ...job,
+            status: "cancelled",
+            endTime: new Date().toISOString(),
+            details: `${job.details} (Cancelled by user)`,
+          })
+        }
+      } catch (error) {
+        console.error(`Error cancelling job ${job.id}:`, error)
+      }
+    })
+    
+    // Reset state
+    setFiles([])
+    setUploadProgress({})
+    setIsProcessing(false)
+    setError("")
+    onStatusChange("")
+    setProcessingStatus("")
+    
+    // Reset cancellation flag after a short delay
+    setTimeout(() => {
+      setIsCancelling(false)
+    }, 500)
   }
 
   // Function to preview file contents
-  const previewFile = async (file: File, index: number) => {
-    setIsPreviewLoading(true);
-    setPreviewData(null);
-    setError("");
+  const handlePreview = async (fileIndex: number) => {
+    if (!files[fileIndex]) return
+    
+    setIsPreviewLoading(true)
+    setError("")
     
     try {
-      const fileType = file.name.split(".").pop()?.toLowerCase() || "";
+      const file = files[fileIndex]
+      const fileType = file.name.split(".").pop()?.toLowerCase()
       
-      if (fileType === "csv") {
-        // For CSV files
-        const text = await file.text();
-        const lines = text.split("\n");
-        const headers = lines[0].split(",").map(header => header.trim().replace(/^"|"$/g, ""));
-        
-        const rows = [];
-        // Get up to 100 rows (excluding header)
-        for (let i = 1; i < Math.min(lines.length, 101); i++) {
-          if (lines[i].trim()) {
-            const row = lines[i].split(",").map(cell => cell.trim().replace(/^"|"$/g, ""));
-            rows.push(row);
-          }
-        }
-        
-        setPreviewData({
-          headers,
-          rows,
-          fileName: file.name
-        });
-      } else if (fileType === "json") {
-        // For JSON files
-        const text = await file.text();
-        const data = JSON.parse(text);
-        
-        if (Array.isArray(data)) {
-          // If it's an array of objects
-          if (data.length > 0) {
-            if (typeof data[0] === 'object' && data[0] !== null) {
-              // Get headers from the first object
-              const headers = Object.keys(data[0]);
-              
-              // Get up to 100 rows
-              const rows = data.slice(0, 100).map(item => {
-                return headers.map(header => item[header]);
-              });
-              
-              setPreviewData({
-                headers,
-                rows,
-                fileName: file.name
-              });
-            } else {
-              // Simple array of values
-              const rows = data.slice(0, 100).map(item => [item]);
-              setPreviewData({
-                headers: ["Value"],
-                rows,
-                fileName: file.name
-              });
-            }
-          } else {
-            setPreviewData({
-              headers: [],
-              rows: [],
-              fileName: file.name
-            });
-          }
-        } else if (typeof data === 'object' && data !== null) {
-          // Single object
-          const headers = Object.keys(data);
-          const rows = [headers.map(header => data[header])];
-          
-          setPreviewData({
-            headers,
-            rows,
-            fileName: file.name
-          });
-        } else {
-          // Simple value
-          setPreviewData({
-            headers: ["Value"],
-            rows: [[data]],
-            fileName: file.name
-          });
-        }
+      // Update status
+      const previewStatus = `Generating preview for ${file.name}...`
+      onStatusChange(previewStatus)
+      setProcessingStatus(previewStatus)
+      
+      // Create a FormData object
+      const formData = new FormData()
+      formData.append("file", file)
+      
+      // Send the file to the API for preview
+      const apiBaseUrl = getApiBaseUrl()
+      const response = await fetch(`${apiBaseUrl}/api/datapuur/preview-file`, {
+        method: "POST",
+        body: formData,
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+      })
+      
+      if (!response.ok) {
+        throw new Error(`Failed to generate preview: ${response.statusText}`)
       }
-    } catch (err) {
-      console.error("Error previewing file:", err);
-      const errorMessage = err instanceof Error ? err.message : "Unknown error";
-      setError(`Error previewing file ${file.name}: ${errorMessage}`);
+      
+      const data = await response.json()
+      
+      // Update the preview data state
+      setPreviewData({
+        headers: data.headers,
+        rows: data.rows,
+        fileName: file.name,
+      })
+      
+      // Clear status after preview is generated
+      onStatusChange("")
+      setProcessingStatus("")
+      
+    } catch (error) {
+      console.error("Preview error:", error)
+      setError(error instanceof Error ? error.message : "Failed to generate preview")
+      addError(error instanceof Error ? error.message : "Failed to generate preview")
+      
+      // Clear status on error
+      onStatusChange("")
+      setProcessingStatus("")
     } finally {
-      setIsPreviewLoading(false);
+      setIsPreviewLoading(false)
     }
   }
 
@@ -940,6 +875,79 @@ export function FileUpload({
       fileInputRef.current.click()
     }
   }
+
+  // Handle successful upload completion
+  const handleUploadSuccess = (file: File, response: any, jobId: string) => {
+    console.log("Upload completed successfully:", file.name)
+    
+    // Clear the processing status since the job is now visible in the jobs list
+    setProcessingStatus("")
+    onStatusChange("")
+    
+    // Update the job with the real ID from the server and mark as running
+    if (response.job) {
+      updateJob({
+        ...response.job,
+        status: "running",
+        progress: 0,
+      })
+    }
+    
+    // If schema was detected, notify the parent component
+    if (response.schema) {
+      onSchemaDetected(response.schema)
+    }
+    
+    // Remove the file from the list after successful upload
+    setFiles((prevFiles) => prevFiles.filter((f) => f !== file))
+    
+    // If all files are processed, reset the processing state
+    if (files.length <= 1) {
+      setIsProcessing(false)
+    }
+  }
+  
+  // Handle upload error
+  const handleUploadError = (file: File, error: any, jobId: string) => {
+    console.error("Upload error:", error)
+    
+    // Clear the processing status
+    setProcessingStatus("")
+    onStatusChange("")
+    
+    // Set the error message
+    const errorMessage = error instanceof Error ? error.message : "Upload failed"
+    setError(errorMessage)
+    addError(errorMessage)
+    
+    // Update the job status to failed
+    updateJob({
+      id: jobId,
+      name: file.name,
+      type: "file",
+      status: "failed",
+      progress: 0,
+      startTime: new Date().toISOString(),
+      endTime: new Date().toISOString(),
+      details: `Failed to upload ${file.name}`,
+      error: errorMessage,
+    })
+    
+    // Reset the processing state
+    setIsProcessing(false)
+  }
+
+  useEffect(() => {
+    // If processing status is cleared and we were processing, it might be due to cancellation
+    if (isProcessing) {
+      // Check if we should cancel the upload (e.g., if the cancel button was clicked in the floating job card)
+      const anyJobCancelled = jobs.some(job => job.status === "cancelled");
+      if (anyJobCancelled) {
+        console.log("Detected job cancellation from floating job card, cancelling upload");
+        cancelUpload();
+      }
+    }
+  }, [isProcessing, jobs]);
 
   return (
     <div className="space-y-4">
@@ -1025,7 +1033,7 @@ export function FileUpload({
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => previewFile(file, index)}
+                    onClick={() => handlePreview(index)}
                     disabled={isProcessing || isPreviewLoading}
                     className="text-muted-foreground hover:text-foreground mr-1"
                     title="Preview file"

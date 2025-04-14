@@ -15,6 +15,7 @@ export interface Job {
   details: string
   error?: string
   duration?: string
+  markedForRemoval?: boolean
 }
 
 // Define context type
@@ -28,6 +29,7 @@ interface IngestionContextType {
   addError: (error: string) => void
   clearErrors: () => void
   setProcessingStatus: (status: string) => void
+  cancelAllActiveJobs: () => void
   isPolling: boolean
   setIsPolling: (isPolling: boolean) => void
 }
@@ -88,32 +90,47 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
     })
   }
 
-  // Update an existing job
+  // Update a job in the jobs array
   const updateJob = (updatedJob: Job) => {
     setJobs((prevJobs) => {
-      // First update the job in the state
-      const updatedJobs = prevJobs.map((job) => (job.id === updatedJob.id ? updatedJob : job))
+      // Find the job to update
+      const index = prevJobs.findIndex((job) => job.id === updatedJob.id)
       
-      // If the job has just completed or failed, set a timeout to remove it
-      if ((updatedJob.status === "completed" || updatedJob.status === "failed") && 
-          updatedJobs.find(job => job.id === updatedJob.id)?.status !== updatedJob.status) {
+      // If job not found, return unchanged array
+      if (index === -1) return prevJobs
+      
+      // Create a new array with the updated job
+      const newJobs = [...prevJobs]
+      newJobs[index] = updatedJob
+      
+      // If the job is now completed, failed, or cancelled, mark it for removal after a delay
+      if (
+        (updatedJob.status === "completed" || 
+         updatedJob.status === "failed" || 
+         updatedJob.status === "cancelled") && 
+        !newJobs[index].markedForRemoval
+      ) {
+        // Mark the job for removal
+        newJobs[index] = {
+          ...newJobs[index],
+          markedForRemoval: true,
+        }
         
-        // Remove the job after 30 seconds (30000ms) to give user time to see the completion
+        // Clear processing status if this was a cancelled job
+        if (updatedJob.status === "cancelled") {
+          setProcessingStatus("");
+        }
+        
+        // Remove the job after a delay
+        const removalDelay = updatedJob.status === "cancelled" ? 3000 : 5000;
         setTimeout(() => {
-          setJobs(currentJobs => {
-            const filteredJobs = currentJobs.filter(job => job.id !== updatedJob.id)
-            if (typeof window !== 'undefined') {
-              saveJobsToStorage(filteredJobs)
-            }
-            return filteredJobs
-          })
-        }, 30000)
+          setJobs((currentJobs) =>
+            currentJobs.filter((job) => job.id !== updatedJob.id)
+          )
+        }, removalDelay) // Remove after delay (shorter for cancelled jobs)
       }
       
-      if (typeof window !== 'undefined') {
-        saveJobsToStorage(updatedJobs)
-      }
-      return updatedJobs
+      return newJobs
     })
   }
 
@@ -137,6 +154,43 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
   const clearErrors = () => {
     setErrors([])
   }
+
+  // Cancel all active jobs
+  const cancelAllActiveJobs = async () => {
+    // Find all active jobs
+    const activeJobs = jobs.filter(
+      job => job.status === "running" || job.status === "queued"
+    );
+    
+    // Cancel each job
+    for (const job of activeJobs) {
+      try {
+        const apiBaseUrl = getApiBaseUrl();
+        const response = await fetch(`${apiBaseUrl}/api/datapuur/cancel-job/${job.id}`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${typeof window !== 'undefined' ? localStorage.getItem("token") : ''}`,
+          },
+        });
+        
+        if (response.ok) {
+          // Update the job in the UI
+          updateJob({
+            ...job,
+            status: "cancelled",
+            endTime: new Date().toISOString(),
+            details: `${job.details} (Cancelled by user)`,
+          });
+        }
+      } catch (error) {
+        console.error(`Error cancelling job ${job.id}:`, error);
+        addError(`Failed to cancel job ${job.id}: ${error}`);
+      }
+    }
+    
+    // Clear processing status
+    setProcessingStatus("");
+  };
 
   // Check for active jobs on initial load or when user returns to the app
   useEffect(() => {
@@ -260,6 +314,7 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
     addError,
     clearErrors,
     setProcessingStatus,
+    cancelAllActiveJobs,
     isPolling,
     setIsPolling,
   }

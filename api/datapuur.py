@@ -541,9 +541,23 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
             # Refresh job from database to get latest status
             nonlocal job
             db_session.refresh(job)
-            if job.status == "failed":
-                logger.info(f"Job {job_id} has been cancelled, stopping processing")
+            
+            # Check if job has been marked as cancelled in the database
+            if job.status == "cancelled":
+                logger.info(f"Job {job_id} has been cancelled in the database, stopping processing")
                 return True
+                
+            # Check for cancellation marker file
+            cancel_marker_path = DATA_DIR / f"cancel_{job_id}"
+            if cancel_marker_path.exists():
+                logger.info(f"Cancellation marker found for job {job_id}, stopping processing")
+                # Update job status to cancelled since we found a marker
+                job.status = "cancelled"
+                job.end_time = datetime.now()
+                job.details = f"{job.details} (Cancelled by user)"
+                db_session.commit()
+                return True
+                
             return False
         
         # Process file based on type
@@ -559,6 +573,11 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                     job.details = f"Processing large file ({file_size / (1024 * 1024):.2f} MB) with optimized engine"
                     db_session.commit()
                     
+                    # Check for cancellation before starting large file processing
+                    if check_job_cancelled():
+                        logger.info(f"Job {job_id} was cancelled before starting large file processing, stopping")
+                        return
+                        
                     # Use pyarrow for better performance with large files
                     import pyarrow as pa
                     import pyarrow.csv as csv
@@ -586,6 +605,11 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                             
                             # Update progress every few batches
                             if batch_number % 5 == 0:
+                                # Check for cancellation during batch processing
+                                if check_job_cancelled():
+                                    logger.info(f"Job {job_id} was cancelled during batch processing, stopping")
+                                    return
+                                    
                                 # Estimate progress based on batches processed
                                 progress = min(int((batch_number * 10 * 1024 * 1024 / file_size) * 100), 99)
                                 job.progress = progress
@@ -604,6 +628,11 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                         job.progress = 99
                         job.details = f"Finalizing file processing..."
                         db_session.commit()
+                        
+                        # Check for cancellation after finalizing
+                        if check_job_cancelled():
+                            logger.info(f"Job {job_id} was cancelled after finalizing, stopping")
+                            return
                 else:
                     # For smaller files, use pandas with optimized settings
                     # Read CSV in chunks with all columns as string type initially
@@ -653,6 +682,11 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                     
                     # Process remaining chunks more efficiently
                     for chunk in chunk_iterator:
+                        # Check for cancellation before processing each chunk
+                        if check_job_cancelled():
+                            logger.info(f"Job {job_id} was cancelled during processing, stopping")
+                            return
+                                
                         # Try to convert numeric columns safely
                         for col in chunk.columns:
                             if col in ['MonthlyCharges', 'TotalCharges']:
@@ -690,7 +724,10 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                         job.details = f"Processed {processed_rows} of {total_rows} rows ({job.progress}%)"
                         db_session.commit()
                         
-                        # Remove sleep to speed up processing
+                        # Check for cancellation after updating progress
+                        if check_job_cancelled():
+                            logger.info(f"Job {job_id} was cancelled after updating progress, stopping")
+                            return
             except Exception as e:
                 logger.error(f"Error processing CSV file: {str(e)}")
                 raise ValueError(f"Error processing CSV file: {str(e)}")
@@ -699,8 +736,9 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
             try:
                 # Check if job has been cancelled before starting
                 if check_job_cancelled():
+                    logger.info(f"Job {job_id} has been cancelled before starting JSON processing, stopping")
                     return
-                
+                    
                 # Get file size to determine processing approach
                 file_size = os.path.getsize(file_path)
                 
@@ -764,12 +802,14 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                                 
                                 # Check for cancellation periodically
                                 if processed_items % 1000 == 0 and check_job_cancelled():
+                                    logger.info(f"Job {job_id} was cancelled during JSON processing, stopping")
                                     return
                                 
                                 # Process in batches for better performance
                                 if len(batch) >= batch_size:
                                     # Check for cancellation before processing batch
                                     if check_job_cancelled():
+                                        logger.info(f"Job {job_id} was cancelled before processing JSON batch, stopping")
                                         return
                                     
                                     batch_df = pd.DataFrame(batch)
@@ -811,6 +851,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                             if batch:
                                 # Check for cancellation before processing remaining batch
                                 if check_job_cancelled():
+                                    logger.info(f"Job {job_id} was cancelled before processing remaining JSON batch, stopping")
                                     return
                                         
                                 batch_df = pd.DataFrame(batch)
@@ -844,6 +885,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                             # It's a single object, process it directly
                             # Check for cancellation before processing single object
                             if check_job_cancelled():
+                                logger.info(f"Job {job_id} was cancelled before processing single JSON object, stopping")
                                 return
                                 
                             f.seek(0)  # Reset file position
@@ -861,6 +903,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                     # Update progress
                     # Check for cancellation before finalizing
                     if check_job_cancelled():
+                        logger.info(f"Job {job_id} was cancelled before finalizing JSON processing, stopping")
                         return
                         
                     job.progress = 99
@@ -870,6 +913,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                     # For smaller files, use the standard approach but with optimizations
                     # Check for cancellation before processing small file
                     if check_job_cancelled():
+                        logger.info(f"Job {job_id} was cancelled before processing small JSON file, stopping")
                         return
                         
                     with open(file_path, 'r', encoding='utf-8') as f:
@@ -962,6 +1006,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
         # Mark job as completed
         # Final check for cancellation before marking as completed
         if check_job_cancelled():
+            logger.info(f"Job {job_id} was cancelled before marking as completed, stopping")
             return
             
         job.status = "completed"
@@ -1490,6 +1535,15 @@ async def cancel_job(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot cancel job with status: {job.status}"
         )
+    
+    # Create a cancellation marker file to signal to any ongoing processes that they should stop
+    try:
+        cancel_marker_path = DATA_DIR / f"cancel_{job_id}"
+        with open(cancel_marker_path, 'w') as f:
+            f.write('cancelled')
+        logger.info(f"Created cancellation marker for job {job_id}")
+    except Exception as e:
+        logger.error(f"Error creating cancellation marker: {str(e)}")
     
     # Update job status
     job.status = "cancelled"  # Changed from "failed" to "cancelled"
