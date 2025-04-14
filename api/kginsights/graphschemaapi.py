@@ -69,7 +69,9 @@ def update_schema_status(db=None, schema=None, db_id=None, schema_id=None, schem
             
         # Always update the timestamp
         schema.updated_at = datetime.now()
-        
+
+        # Generate a new generation ID
+        schema.generation_id = str(uuid.uuid4())
         # Commit changes
         db.commit()
         
