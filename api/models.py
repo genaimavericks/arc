@@ -136,6 +136,7 @@ class Schema(Base):
     schema_generated = Column(Text, nullable=True, default='no')
     db_loaded = Column(Text, nullable=True, default='no')
     db_id = Column(String, nullable=True, default='invalid')
+    generation_id = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -161,6 +162,35 @@ class GraphIngestionJob(Base):
 
     # Relationship to Schema
     schema = relationship("Schema", backref="graph_jobs")
+
+class SchemaGenerationCypher(Base):
+    __tablename__ = "schema_generation_cypher"
+
+    id = Column(Integer, primary_key=True, index=True)
+    schema_id = Column(String, nullable=False, index=True)
+    cypher = Column(Text, nullable=False)  # Store cypher as string
+    created_at = Column(DateTime, default=datetime.now(datetime.timezone.utc))
+    updated_at = Column(DateTime, default=datetime.now(datetime.timezone.utc), onupdate=datetime.now(datetime.timezone.utc))
+
+
+class SchemaLoadingNodeCypher(Base):
+    __tablename__ = "schema_loading_node_cypher"
+
+    id = Column(Integer, primary_key=True, index=True)
+    schema_id = Column(String, nullable=False, index=True)
+    cypher = Column(Text, nullable=False)  # Store  cypher as string
+    created_at = Column(DateTime, default=datetime.now(datetime.timezone.utc))
+    updated_at = Column(DateTime, default=datetime.now(datetime.timezone.utc), onupdate=datetime.now(datetime.timezone.utc))
+
+class SchemaLoadingRelationshipCypher(Base):
+    __tablename__ = "schema_loading_relationship_cypher"
+
+    id = Column(Integer, primary_key=True, index=True)
+    schema_id = Column(String, nullable=False, index=True)
+    cypher = Column(Text, nullable=False)  # Store  cypher as string
+    created_at = Column(DateTime, default=datetime.now(datetime.timezone.utc))
+    updated_at = Column(DateTime, default=datetime.now(datetime.timezone.utc), onupdate=datetime.now(datetime.timezone.utc))
+
 
 # Create tables
 Base.metadata.create_all(bind=engine)

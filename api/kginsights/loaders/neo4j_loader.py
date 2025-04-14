@@ -243,6 +243,7 @@ class Neo4jLoader:
         
         # Track unique nodes to avoid duplicates
         unique_nodes = {}
+        label_to_cypher_map = {}
         
         try:
             with self.driver.session() as session:
@@ -344,7 +345,9 @@ class Neo4jLoader:
                                     
                                     result_set = session.run(cypher, params)
                                     summary = result_set.consume()
-                                    
+                                    if node_label not in label_to_cypher_map:
+                                        label_to_cypher_map[node_label] = param_cypher
+
                                     # Check if node was created or matched
                                     if summary.counters.nodes_created > 0:
                                         print(f"Created new node {node_label} with ID {id_property}={unique_value}")
@@ -426,6 +429,16 @@ class Neo4jLoader:
                             session.run(cypher, params)
                             result["nodes_created"] += 1
                             
+                            if node_label not in label_to_cypher_map:
+                                param_cypher = cypher
+                                for param_name, param_value in params.items():
+                                    if isinstance(param_value, str):
+                                        param_cypher = param_cypher.replace(f"${param_name}", f"'{param_value}'")
+                                    else:
+                                        param_cypher = param_cypher.replace(f"${param_name}", str(param_value))
+                                    print(f"Executable Cypher: {param_cypher}")
+                                label_to_cypher_map[node_label] = param_cypher
+                            
                             # Store the node for relationship creation
                             if node_label not in unique_nodes:
                                 unique_nodes[node_label] = {}
@@ -435,7 +448,8 @@ class Neo4jLoader:
                             error_msg = f"Error creating node {node_label}: {str(e)}"
                             print(error_msg)
                             result["errors"].append(error_msg)
-                    
+                
+
                     # Skip the original per-record processing for this node type
                     continue
                     
@@ -502,6 +516,24 @@ class Neo4jLoader:
                             error_msg = f"Error creating node {node_label}: {str(e)}"
                             print(error_msg)
                             result["errors"].append(error_msg)
+            try:
+                print(f"Storing executable Cypher for node {node_label} in SchemaLoadingNodeCypher")
+                # Store the executable Cypher as a new line separated string in the SchemaLoadingNodeCypher model
+                node_generation_cypher_list_str = "\n".join(node_label_to_cypher_map.values())
+                existing_cypher = db.query(SchemaLoadingNodeCypher).filter(SchemaLoadingNodeCypher.schema_id == schema_id).first()
+                if existing_cypher:
+                    existing_cypher.cypher = node_generation_cypher_list_str
+                    db.commit()
+                else:
+                    new_cypher = SchemaLoadingNodeCypher(
+                        schema_id=schema_id,
+                        cypher=node_generation_cypher_list_str
+                    )
+                    db.add(new_cypher)
+                    db.commit()
+            except Exception as e:
+                error_msg = f"Error storing executable Cypher in SchemaLoadingNodeCypher: {str(e)}"
+                print(error_msg)
                             
         except Exception as e:
             error_msg = f"Error loading nodes: {str(e)}"
@@ -544,7 +576,7 @@ class Neo4jLoader:
         # Analyze the records to find potential relationship columns
         relationship_columns = self._analyze_relationship_columns(records, relationships)
         print(f"Relationship columns: {relationship_columns}")
-        
+        relationship_to_cypher_map = {}
         try:
             with self.driver.session() as session:
                 # Process each relationship type
@@ -798,10 +830,14 @@ class Neo4jLoader:
                                         print(f"Successfully created relationship {rel_type} from {source_id_str} to {target_id_str}")
                                         result["relationships_created"] += 1
                                         created_relationships.add(rel_signature)
+                                        if rel_type not in relationship_to_cypher_map:
+                                            relationship_to_cypher_map[rel_type] = param_cypher
                                     elif summary.counters.relationships_created == 0 and summary.counters.contains_updates:
                                         # Relationship might have been matched but not created (already exists)
                                         print(f"Relationship {rel_type} from {source_id_str} to {target_id_str} already exists")
                                         created_relationships.add(rel_signature)
+                                        if rel_type not in relationship_to_cypher_map:
+                                            relationship_to_cypher_map[rel_type] = param_cypher
                                     else:
                                         # Try a more direct approach with explicit node creation and relationship
                                         print(f"Initial relationship creation failed. Trying alternative approach...")
@@ -847,7 +883,8 @@ class Neo4jLoader:
                                         print(f"Alternative Cypher: {alt_cypher}")
                                         alt_result = session.run(alt_cypher)
                                         alt_summary = alt_result.consume()
-                                        
+                                        if rel_type not in relationship_to_cypher_map:
+                                            relationship_to_cypher_map[rel_type] = alt_cypher
                                         if alt_summary.counters.relationships_created > 0:
                                             print(f"Successfully created relationship with alternative approach")
                                             result["relationships_created"] += 1
@@ -863,7 +900,25 @@ class Neo4jLoader:
                             error_msg = f"Error creating relationship {rel_type}: {str(e)}"
                             print(error_msg)
                             result["errors"].append(error_msg)
-        
+            try:
+                print(f"Storing executable Cypher for relationship {rel_type} in SchemaLoadingRelationshipCypher")
+                # Store the executable Cypher as a new line separated string in the SchemaLoadingRelationshipCypher model
+                relationship_generation_cypher_list_str = "\n".join(relationship_to_cypher_map.values())
+                existing_cypher = db.query(SchemaLoadingRelationshipCypher).filter(SchemaLoadingRelationshipCypher.schema_id == schema_id).first()
+                if existing_cypher:
+                    existing_cypher.cypher = relationship_generation_cypher_list_str
+                    db.commit()
+                else:
+                    new_cypher = SchemaLoadingRelationshipCypher(
+                        schema_id=schema_id,
+                        cypher=relationship_generation_cypher_list_str
+                    )
+                    db.add(new_cypher)
+                    db.commit()
+            except Exception as e:
+                error_msg = f"Error storing executable Cypher in SchemaLoadingRelationshipCypher: {str(e)}"
+                print(error_msg)
+
         except Exception as e:
             error_msg = f"Error in relationship loading: {str(e)}"
             print(error_msg)

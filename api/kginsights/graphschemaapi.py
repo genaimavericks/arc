@@ -11,7 +11,7 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 from sqlalchemy.orm import Session
-from ..models import get_db, IngestionJob, UploadedFile, Schema
+from ..models import get_db, IngestionJob, UploadedFile, Schema, SchemaGenerationCypher, SchemaLoadingCypher
 from ..auth import has_any_permission
 from ..models import User
 from ..db_config import SessionLocal
@@ -919,6 +919,7 @@ async def apply_schema_to_neo4j(
             statements_executed = 0
             statements_succeeded = 0
             statements_failed = 0
+            successful_statements = []
             
             for i, stmt in enumerate(cypher_statements):
                 if not stmt:
@@ -930,9 +931,43 @@ async def apply_schema_to_neo4j(
                 try:
                     session.run(stmt)
                     statements_succeeded += 1
+                    successful_statements.append(stmt)
                 except Exception as e:
                     statements_failed += 1
                     print(f"ERROR: Error executing Cypher statement {i+1}: {str(e)}")
+                    
+            # Record successful Cypher statements in database
+            if successful_statements:
+                try:
+                    # Convert list of statements to a single text with newlines
+                    cypher_text = "\n".join(successful_statements)
+                    
+                    # Use SQLAlchemy session to check if a record exists
+                    db = SessionLocal()
+                    existing_record = db.query(SchemaGenerationCypher).filter(
+                        SchemaGenerationCypher.schema_id == apply_input.schema_id
+                    ).first()
+                    
+                    if existing_record:
+                        # Update existing record
+                        existing_record.cypher = cypher_text
+                        existing_record.updated_at = datetime.now(datetime.timezone.utc)
+                        print(f"DEBUG: Updated existing SchemaGenerationCypher record for schema_id {apply_input.schema_id}")
+                    else:
+                        # Create new record
+                        new_record = SchemaGenerationCypher(
+                            schema_id=apply_input.schema_id,
+                            cypher=cypher_text
+                        )
+                        db.add(new_record)
+                        print(f"DEBUG: Created new SchemaGenerationCypher record for schema_id {apply_input.schema_id}")
+                    
+                    db.commit()
+                except Exception as e:
+                    print(f"ERROR: Failed to store schema generation Cypher: {str(e)}")
+                    db.rollback()
+                finally:
+                    db.close()
             
             # Log the activity
             activity_log = {

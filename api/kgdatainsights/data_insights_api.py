@@ -224,8 +224,8 @@ async def process_query(
                     timestamp=datetime.now()
                 )
 
-            print('Fetching schema aware assistant aa')
-            assistant = get_schema_aware_assistant(db_id, schema=schema)
+            print('Fetching schema aware assistant for schema ID ' + schema_id)
+            assistant = get_schema_aware_assistant(db_id, schema_id, schema=schema)
             
             # Get the answer from the schema-aware agent
             print('Calling query')

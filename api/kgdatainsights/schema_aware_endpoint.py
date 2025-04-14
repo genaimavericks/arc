@@ -98,7 +98,8 @@ async def process_schema_aware_query(
                 timestamp=datetime.now()
             )
         
-        assistant = get_schema_aware_assistant(source_id, schema=result.schema)
+        # Use source_id as both db_id and schema_id since it's the same in this context
+        assistant = get_schema_aware_assistant(source_id, source_id, schema=result.schema)
         
         # Get the answer from the schema-aware agent
         result = assistant.query(request.query)

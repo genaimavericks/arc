@@ -26,6 +26,8 @@ from .cache import Cache
 from .cache import cacheable
 
 from ...kginsights.database_api import get_database_config, parse_connection_params
+from ...models import Schema
+from ...database import SessionLocal
 
 # Load environment variables
 load_dotenv()
@@ -44,15 +46,18 @@ class SchemaAwareGraphAssistant:
     Enhanced Graph Assistant that automatically manages schemas and prompts.
     Extends the functionality of Neo4jGraphChatAssistant by adding schema and prompt management.
     """
-    def __init__(self, db_id: str, schema: str, session_id: str = None):
+    def __init__(self, db_id: str, schema_id: str, schema: str, session_id: str = None):
         """
         Initialize the Schema-Aware Graph Assistant.
         
         Args:
             db_id: The ID of the Neo4j database to query
+            schema_id: The ID of the schema being used
+            schema: The schema content as a string or dict
             session_id: Optional session ID for chat history, generated if not provided
         """
         self.db_id = db_id
+        self.schema_id = schema_id
         self.schema = json.loads(schema) if isinstance(schema, str) else schema
         self.session_id = session_id or f"session_{uuid4()}"
         self.formatted_schema = None
@@ -209,21 +214,88 @@ class SchemaAwareGraphAssistant:
             }
         
     def _ensure_prompt(self) -> None:
-        """Check if prompts exist, create and save if needed"""
-        prompt_file = PROMPT_DIR / f"prompt_{self.db_id}.json"
-        
-        # If prompt file doesn't exist, create and save it
-        if not prompt_file.exists():
-            print(f"Prompt file for {self.db_id} not found. Creating prompts...")
-            # Generate prompts based on schema
-            prompts = self._generate_prompts()
-            
-            # Save the prompts to file
-            with open(prompt_file, "w") as f:
-                json.dump(prompts, f, indent=2)
+        """Check if prompts exist, validate generation_id, create and save if needed."""
+        prompt_file = PROMPT_DIR / f"prompt_{self.db_id}_{self.schema_id}.json"
+        regenerate_prompts = False
+        current_generation_id = None
+        existing_prompts = None
+
+        # 1. Fetch current generation_id from DB
+        db = None # Initialize db to None
+        try:
+            db = SessionLocal()
+            schema_record = db.query(Schema).filter(Schema.schema_id == self.schema_id).first()
+            if schema_record:
+                current_generation_id = schema_record.generation_id
+                if not current_generation_id:
+                     print(f"Warning: Schema record found for {self.schema_id}, but generation_id is missing. Will regenerate prompts.")
+                     regenerate_prompts = True
+            else:
+                print(f"Warning: Schema record not found for schema_id {self.schema_id}. Cannot verify prompt generation ID. Will regenerate prompts.")
+                regenerate_prompts = True # If schema record is missing, prompts might be invalid.
+        except Exception as e:
+            print(f"Error fetching schema generation_id: {e}. Proceeding, may regenerate prompts.")
+            # If DB access fails, we should probably regenerate prompts
+            regenerate_prompts = True
+        finally:
+            if db:
+                db.close()
+
+        # 2. Check prompt file and generation_id if regeneration not already decided
+        if not regenerate_prompts and prompt_file.exists():
+            try:
+                with open(prompt_file, "r") as f:
+                    existing_prompts = json.load(f)
                 
-            print(f"Prompts saved to {prompt_file}")
-    
+                file_generation_id = existing_prompts.get("generation_id")
+
+                if not current_generation_id: 
+                     # This case should be handled above by setting regenerate_prompts=True
+                     print(f"Error: Logic flaw - current_generation_id missing but regeneration wasn't triggered.")
+                     regenerate_prompts = True 
+                elif file_generation_id == current_generation_id:
+                    print(f"Prompt file {prompt_file} found and generation_id matches. Loading prompts.")
+                    # Load prompts later, set flag to false
+                    regenerate_prompts = False 
+                else:
+                    print(f"Prompt file {prompt_file} found, but generation_id mismatch (File: {file_generation_id}, DB: {current_generation_id}). Regenerating prompts.")
+                    regenerate_prompts = True
+            except (json.JSONDecodeError, KeyError, Exception) as e:
+                print(f"Error reading or parsing prompt file {prompt_file}: {e}. Regenerating prompts.")
+                regenerate_prompts = True
+        elif not prompt_file.exists():
+             print(f"Prompt file for db '{self.db_id}' and schema '{self.schema_id}' not found. Creating prompts...")
+             regenerate_prompts = True
+
+        # 3. Regenerate and save if needed
+        if regenerate_prompts:
+            print("Generating new prompts...")
+            # Generate prompts based on schema
+            prompts = self._generate_prompts() # Assumes this returns a dict
+            
+            # Add the current generation_id (if available and valid)
+            if current_generation_id:
+                prompts["generation_id"] = current_generation_id
+            else:
+                 print(f"Warning: Could not retrieve valid current generation_id for schema {self.schema_id}. Saving prompts without generation_id.")
+                 prompts.pop("generation_id", None) # Ensure it's not stale
+
+            # Save the prompts to file
+            try:
+                PROMPT_DIR.mkdir(parents=True, exist_ok=True) # Ensure directory exists
+                with open(prompt_file, "w") as f:
+                    json.dump(prompts, f, indent=2)
+                print(f"Prompts saved to {prompt_file}")
+
+            except Exception as e:
+                print(f"Error saving prompts to {prompt_file}: {e}")
+                print("Warning: Prompts generated but failed to save to file. Using in-memory prompts for this session.")
+        else:
+            # This case indicates a potential issue: file didn't exist or failed parsing, but regeneration wasn't triggered
+            # Or the file existed, matched, but 'existing_prompts' wasn't populated correctly. Log an error.
+            print(f"Error: Failed to load prompts for schema {self.schema_id}. File: {prompt_file}. Regeneration status: {regenerate_prompts}")
+            raise RuntimeError(f"Failed to load or generate prompts for schema {self.schema_id}.")
+
     def _generate_prompts(self) -> Dict[str, Any]:
         """Generate custom prompts using LLM based on the schema"""
         # Initialize an LLM for prompt generation
@@ -452,110 +524,106 @@ class SchemaAwareGraphAssistant:
     
     def _load_prompts(self) -> None:
         """Load custom prompts for this source"""
-        prompt_file = PROMPT_DIR / f"prompt_{self.db_id}.json"
+        # Use both db_id and schema_id in the prompt filename for better specificity
+        prompt_file = PROMPT_DIR / f"prompt_{self.db_id}_{self.schema_id}.json"
         
         try:
             # Default to None initially to detect loading issues
             self.cypher_prompt = None
             self.qa_prompt = None
             
-            print(f"DEBUG: Loading prompts from {prompt_file}")
+            print(f"DEBUG: Attempting to load prompts")
+            prompts = {}
             
+            # Try to load the specific prompt file first
             if prompt_file.exists():
                 with open(prompt_file, "r") as f:
                     prompts = json.load(f)
-                
-                print(f"DEBUG: Prompt file loaded successfully")
-                
-                # Convert string prompts to ChatPromptTemplate objects if needed
-                if "cypher_prompt" in prompts:
-                    cypher_prompt_text = prompts.get("cypher_prompt")
-                    # Check if it's already a structured object or a string
-                    if isinstance(cypher_prompt_text, str):
-                        print(f"DEBUG: Converting cypher_prompt string to ChatPromptTemplate")
-                        # Check if the prompt starts with "Prompt:" or "Prompt Template:" and clean it
-                        if cypher_prompt_text.startswith("Prompt:") or cypher_prompt_text.startswith("Prompt Template:"):
-                            lines = cypher_prompt_text.split('\n')
-                            # Skip the first line if it's just the "Prompt:" header
-                            template_text = '\n'.join(lines[1:]).strip()
-                            print(f"DEBUG: Cleaned prompt template from header")
-                        else:
-                            template_text = cypher_prompt_text
-                            
-                        # Fix all placeholder formats for compatibility with GraphCypherQAChain
-                        # The key parameter expected by the chain is 'query', not 'question'
-                        if "{{query}}" in template_text:
-                            template_text = template_text.replace("{{query}}", "{query}")
-                            print(f"DEBUG: Fixed {{query}} placeholder format")
-                        
-                        if "{{question}}" in template_text:
-                            # Replace 'question' with 'query' for compatibility
-                            template_text = template_text.replace("{{question}}", "{query}")
-                            print(f"DEBUG: Replaced {{question}} with {{query}} for compatibility")
-                        
-                        self.cypher_prompt = ChatPromptTemplate.from_template(template_text)
-                    else:
-                        self.cypher_prompt = cypher_prompt_text
-                else:
-                    print(f"DEBUG: Using default CYPHER_GENERATION_PROMPT")
-                    self.cypher_prompt = ChatPromptTemplate.from_template(CYPHER_GENERATION_PROMPT)
-                
-                if "qa_prompt" in prompts:
-                    qa_prompt_text = prompts.get("qa_prompt")
-                    # Check if it's already a structured object or a string
-                    if isinstance(qa_prompt_text, str):
-                        print(f"DEBUG: Converting qa_prompt string to ChatPromptTemplate")
-                        # Check if the prompt starts with "Prompt:" or "Prompt Template:" and clean it
-                        if qa_prompt_text.startswith("Prompt:") or qa_prompt_text.startswith("Prompt Template:"):
-                            lines = qa_prompt_text.split('\n')
-                            # Skip the first line if it's just the "Prompt:" header
-                            template_text = '\n'.join(lines[1:]).strip()
-                            print(f"DEBUG: Cleaned prompt template from header")
-                        else:
-                            template_text = qa_prompt_text
-                            
-                        # Fix all placeholder formats for compatibility with GraphCypherQAChain
-                        # QA prompt should use 'query' and 'context' parameters
-                        # LangChain specifically expects 'query' not 'question'
-                        if "{{question}}" in template_text:
-                            # Always replace 'question' with 'query' - this is critical
-                            template_text = template_text.replace("{{question}}", "{query}")
-                            print(f"DEBUG: Replaced {{question}} with {{query}} in QA prompt")
-                            
-                        if "{{query}}" in template_text:
-                            template_text = template_text.replace("{{query}}", "{query}")
-                            print(f"DEBUG: Fixed {{query}} format in QA prompt")
-                            
-                        if "{{context}}" in template_text:
-                            template_text = template_text.replace("{{context}}", "{context}")
-                            print(f"DEBUG: Fixed {{context}} format in QA prompt")
-                            
-                        if "{{response}}" in template_text:
-                            # Also replace 'response' with 'context' as needed
-                            template_text = template_text.replace("{{response}}", "{context}")
-                            print(f"DEBUG: Replaced {{response}} with {{context}} in QA prompt")
-                            
-                        print(f"DEBUG: Fixed placeholders in QA prompt")
-                        self.qa_prompt = ChatPromptTemplate.from_template(template_text)
-                    else:
-                        self.qa_prompt = qa_prompt_text
-                else:
-                    # Create a minimal QA prompt if none exists
-                    print(f"DEBUG: Using default QA prompt template")
-                    self.qa_prompt = ChatPromptTemplate.from_template(QA_PROMPT)
-                
-                # Load sample queries
-                self.sample_queries = prompts.get("sample_queries", [])
+                print(f"DEBUG: Loaded prompt file for db '{self.db_id}' and schema '{self.schema_id}'")
             else:
-                # Use defaults if no custom prompts available
-                print(f"DEBUG: No prompt file found. Using defaults.")
-                self.cypher_prompt = ChatPromptTemplate.from_template(CYPHER_GENERATION_PROMPT)
-                self.qa_prompt = ChatPromptTemplate.from_template(QA_PROMPT)
-                self.sample_queries = []
+                print(f"DEBUG: No prompt files found, will use default prompts")
+                
+            # Convert string prompts to ChatPromptTemplate objects if needed
+            if "cypher_prompt" in prompts:
+                cypher_prompt_text = prompts.get("cypher_prompt")
+                # Check if it's already a structured object or a string
+                if isinstance(cypher_prompt_text, str):
+                    print(f"DEBUG: Converting cypher_prompt string to ChatPromptTemplate")
+                    # Check if the prompt starts with "Prompt:" or "Prompt Template:" and clean it
+                    if cypher_prompt_text.startswith("Prompt:") or cypher_prompt_text.startswith("Prompt Template:"):
+                        lines = cypher_prompt_text.split('\n')
+                        # Skip the first line if it's just the "Prompt:" header
+                        template_text = '\n'.join(lines[1:]).strip()
+                        print(f"DEBUG: Cleaned prompt template from header")
+                    else:
+                        template_text = cypher_prompt_text
+                        
+                    # Fix all placeholder formats for compatibility with GraphCypherQAChain
+                    # The key parameter expected by the chain is 'query', not 'question'
+                    if "{{query}}" in template_text:
+                        template_text = template_text.replace("{{query}}", "{query}")
+                        print(f"DEBUG: Fixed {{query}} placeholder format")
+                    
+                    if "{{question}}" in template_text:
+                        # Replace 'question' with 'query' for compatibility
+                        template_text = template_text.replace("{{question}}", "{query}")
+                        print(f"DEBUG: Replaced {{question}} with {{query}} for compatibility")
+                    
+                    self.cypher_prompt = ChatPromptTemplate.from_template(template_text)
+                else:
+                    self.cypher_prompt = cypher_prompt_text
+            
+            if "qa_prompt" in prompts:
+                qa_prompt_text = prompts.get("qa_prompt")
+                # Check if it's already a structured object or a string
+                if isinstance(qa_prompt_text, str):
+                    print(f"DEBUG: Converting qa_prompt string to ChatPromptTemplate")
+                    # Check if the prompt starts with "Prompt:" or "Prompt Template:" and clean it
+                    if qa_prompt_text.startswith("Prompt:") or qa_prompt_text.startswith("Prompt Template:"):
+                        lines = qa_prompt_text.split('\n')
+                        # Skip the first line if it's just the "Prompt:" header
+                        template_text = '\n'.join(lines[1:]).strip()
+                        print(f"DEBUG: Cleaned prompt template from header")
+                    else:
+                        template_text = qa_prompt_text
+                        
+                    # Fix all placeholder formats for compatibility with GraphCypherQAChain
+                    # QA prompt should use 'query' and 'context' parameters
+                    # LangChain specifically expects 'query' not 'question'
+                    if "{{question}}" in template_text:
+                        # Always replace 'question' with 'query' - this is critical
+                        template_text = template_text.replace("{{question}}", "{query}")
+                        print(f"DEBUG: Replaced {{question}} with {{query}} in QA prompt")
+                        
+                    if "{{query}}" in template_text:
+                        template_text = template_text.replace("{{query}}", "{query}")
+                        print(f"DEBUG: Fixed {{query}} format in QA prompt")
+                        
+                    if "{{context}}" in template_text:
+                        template_text = template_text.replace("{{context}}", "{context}")
+                        print(f"DEBUG: Fixed {{context}} format in QA prompt")
+                        
+                    if "{{response}}" in template_text:
+                        # Also replace 'response' with 'context' as needed
+                        template_text = template_text.replace("{{response}}", "{context}")
+                        print(f"DEBUG: Replaced {{response}} with {{context}} in QA prompt")
+                            
+                    print(f"DEBUG: Fixed placeholders in QA prompt")
+                    self.qa_prompt = ChatPromptTemplate.from_template(template_text)
+                else:
+                    self.qa_prompt = qa_prompt_text
+                
+            # Load sample queries 
+            self.sample_queries = prompts.get("sample_queries", [])
+            
         except Exception as e:
+            # Handle any errors in loading prompts
             print(f"ERROR: Failed to load prompts: {str(e)}")
             print(f"DEBUG: {traceback.format_exc()}")
             
+            # Instead of using fallback prompts, raise the exception to fail explicitly
+            # This makes debugging easier by exposing the actual error
+            raise RuntimeError(f"Failed to load prompts for schema: {str(e)}") from e
             
     def _debug_print_prompts(self):
         """Print debug information about the loaded prompts"""
@@ -876,28 +944,29 @@ class SchemaAwareGraphAssistant:
 _assistants = {}
 _lock = threading.Lock()
 
-def get_schema_aware_assistant(db_id: str, schema: str, session_id: str = None) -> SchemaAwareGraphAssistant:
+def get_schema_aware_assistant(db_id: str, schema_id: str, schema: str, session_id: str = None) -> SchemaAwareGraphAssistant:
     """
     Get a schema-aware assistant for the specified database ID.
     Creates a new assistant if one doesn't exist, otherwise returns the existing one.
     
     Args:
         db_id: ID of the Neo4j database to query
+        schema_id: ID of the schema being used
         schema: JSON string containing the schema
         session_id: Optional session ID for chat history
     Returns:
         SchemaAwareGraphAssistant: The assistant for the database
     """
-    # Create a unique key combining db_id and session_id
-    key = f"{db_id}:{session_id}" if session_id else db_id
+    # Create a unique key combining db_id, schema_id and session_id
+    key = f"{db_id}:{schema_id}:{session_id}" if session_id else f"{db_id}:{schema_id}"
     
     try:
         with _lock:
             if key not in _assistants:
                 # Log connection attempt for debugging
-                print(f"DEBUG: Creating new schema-aware assistant for {db_id}")
+                print(f"DEBUG: Creating new schema-aware assistant for {db_id} with schema {schema_id}")
                 print(f"DEBUG: Schema: {schema}")
-                _assistants[key] = SchemaAwareGraphAssistant(db_id, schema, session_id)
+                _assistants[key] = SchemaAwareGraphAssistant(db_id, schema_id, schema, session_id)
                 print(f"DEBUG: Successfully created assistant for {db_id}")
             return _assistants[key]
     except Exception as e:
@@ -915,6 +984,3 @@ def get_schema_aware_assistant(db_id: str, schema: str, session_id: str = None) 
             
         # Re-raise with a more informative message
         raise RuntimeError(f"Failed to initialize schema-aware assistant: {error_message}") from e
-
-
-
