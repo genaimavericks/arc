@@ -273,7 +273,19 @@ export function FileUpload({
           });
           
           if (!completeResponse.ok) {
-            throw new Error("Failed to complete chunked upload");
+            const errorText = await completeResponse.text();
+            let errorMessage = "Failed to complete chunked upload";
+            try {
+              const errorData = JSON.parse(errorText);
+              errorMessage = errorData.detail || errorMessage;
+            } catch (e) {
+              // If JSON parsing fails, use the raw error text if available
+              if (errorText) {
+                errorMessage = errorText;
+              }
+            }
+            console.error("Chunked upload completion error:", errorMessage);
+            throw new Error(errorMessage);
           }
           
           const data = await completeResponse.json();

@@ -2818,16 +2818,50 @@ async def upload_chunk(
     db: Session = Depends(get_db)
 ):
     """Upload a chunk of a large file"""
+    logger.info(f"Received chunk {chunkIndex + 1} of {totalChunks} for upload ID: {uploadId}")
+    
     # Create a directory for this upload if it doesn't exist
     chunks_dir = UPLOAD_DIR / "chunks" / uploadId
-    chunks_dir.mkdir(parents=True, exist_ok=True)
     
-    # Save the chunk
-    chunk_path = chunks_dir / f"chunk_{chunkIndex}"
     try:
+        # Ensure the upload directory exists
+        if not UPLOAD_DIR.exists():
+            logger.info(f"Creating upload directory: {UPLOAD_DIR}")
+            UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        
+        # Ensure the chunks parent directory exists
+        chunks_parent = UPLOAD_DIR / "chunks"
+        if not chunks_parent.exists():
+            logger.info(f"Creating chunks parent directory: {chunks_parent}")
+            chunks_parent.mkdir(parents=True, exist_ok=True)
+        
+        # Create the specific chunks directory for this upload
+        if not chunks_dir.exists():
+            logger.info(f"Creating chunks directory for upload ID {uploadId}: {chunks_dir}")
+            chunks_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Log the directory structure
+        logger.info(f"Directory structure: UPLOAD_DIR={UPLOAD_DIR}, chunks_parent={chunks_parent}, chunks_dir={chunks_dir}")
+        
+        # Save the chunk
+        chunk_path = chunks_dir / f"chunk_{chunkIndex}"
+        logger.info(f"Saving chunk {chunkIndex + 1} to {chunk_path}")
+        
         with open(chunk_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
+        
+        # Verify the chunk was saved correctly
+        if not chunk_path.exists():
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to save chunk {chunkIndex + 1}: File not found after save"
+            )
+        
+        chunk_size = os.path.getsize(chunk_path)
+        logger.info(f"Chunk {chunkIndex + 1} saved successfully, size: {chunk_size} bytes")
+        
     except Exception as e:
+        logger.error(f"Error saving chunk {chunkIndex + 1}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error saving chunk: {str(e)}"
@@ -2845,122 +2879,205 @@ async def complete_chunked_upload(
 ):
     """Complete a chunked upload by combining all chunks into a single file"""
     # Parse request body
-    data = await request.json()
-    upload_id = data.get("uploadId")
-    file_name = data.get("fileName")
-    total_chunks = data.get("totalChunks")
-    chunk_size = data.get("chunkSize")
-    original_chunk_size = data.get("originalChunkSize", 1000)
-    
-    if not all([upload_id, file_name, total_chunks, chunk_size]):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing required parameters"
-        )
-    
-    # Check if this upload was cancelled
-    cancel_marker = UPLOAD_DIR / f"cancel_{upload_id}"
-    if cancel_marker.exists():
-        # The upload was cancelled, clean up any chunks and return appropriate response
-        chunks_dir = UPLOAD_DIR / f"chunks_{upload_id}"
-        if chunks_dir.exists():
-            try:
-                shutil.rmtree(chunks_dir)
-            except Exception as e:
-                logger.error(f"Error cleaning up chunks after cancellation: {str(e)}")
-        
-        # Remove the cancellation marker
-        try:
-            os.remove(cancel_marker)
-        except Exception as e:
-            logger.error(f"Error removing cancellation marker: {str(e)}")
-        
-        # Return a response indicating the upload was cancelled
-        return {"cancelled": True, "message": "Upload was cancelled by the user"}
-    
-    # Get file extension
-    file_ext = file_name.split('.')[-1].lower()
-    if file_ext not in ['csv', 'json']:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only CSV and JSON files are supported"
-        )
-    
-    # Generate a unique file ID
-    file_id = str(uuid.uuid4())
-    file_path = UPLOAD_DIR / f"{file_id}.{file_ext}"
-    
-    # Combine chunks into a single file
-    chunks_dir = UPLOAD_DIR / f"chunks_{upload_id}"
-    
     try:
+        data = await request.json()
+        upload_id = data.get("uploadId")
+        file_name = data.get("fileName")
+        total_chunks = data.get("totalChunks")
+        chunk_size = data.get("chunkSize")
+        original_chunk_size = data.get("originalChunkSize", 1000)
+        
+        logger.info(f"Starting chunked upload completion for {file_name}, ID: {upload_id}, chunks: {total_chunks}")
+        
+        if not all([upload_id, file_name, total_chunks, chunk_size]):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing required parameters"
+            )
+        
+        # Check if this upload was cancelled
+        cancel_marker = UPLOAD_DIR / f"cancel_{upload_id}"
+        if cancel_marker.exists():
+            # The upload was cancelled, clean up any chunks and return appropriate response
+            chunks_dir = UPLOAD_DIR / "chunks" / upload_id
+            if chunks_dir.exists():
+                try:
+                    shutil.rmtree(chunks_dir)
+                except Exception as e:
+                    logger.error(f"Error cleaning up chunks after cancellation: {str(e)}")
+            
+            # Remove the cancellation marker
+            try:
+                os.remove(cancel_marker)
+            except Exception as e:
+                logger.error(f"Error removing cancellation marker: {str(e)}")
+            
+            # Return a response indicating the upload was cancelled
+            return {"cancelled": True, "message": "Upload was cancelled by the user"}
+        
+        # Get file extension
+        file_ext = file_name.split('.')[-1].lower()
+        if file_ext not in ['csv', 'json']:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only CSV and JSON files are supported"
+            )
+        
+        # Generate a unique file ID
+        file_id = str(uuid.uuid4())
+        file_path = UPLOAD_DIR / f"{file_id}.{file_ext}"
+        
+        # Combine chunks into a single file
+        chunks_dir = UPLOAD_DIR / "chunks" / upload_id
+        
         # Check if chunks directory exists
         if not chunks_dir.exists():
-            # Check if this was a cancelled upload
-            if cancel_marker.exists():
-                try:
-                    os.remove(cancel_marker)
-                except Exception as e:
-                    logger.error(f"Error removing cancellation marker: {str(e)}")
-                return {"cancelled": True, "message": "Upload was cancelled by the user"}
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Chunks directory not found. Upload may have been cancelled or failed."
+            # Check all possible paths that might have been used
+            alternative_paths = [
+                UPLOAD_DIR / f"chunks_{upload_id}",  # Old format
+                UPLOAD_DIR / upload_id,              # Another possible format
+                UPLOAD_DIR / "chunks" / upload_id    # Current format
+            ]
+            
+            found_dir = None
+            for path in alternative_paths:
+                if path.exists():
+                    logger.info(f"Found chunks directory at alternative path: {path}")
+                    found_dir = path
+                    chunks_dir = path
+                    break
+            
+            if found_dir is None:
+                # Check if this was a cancelled upload
+                if cancel_marker.exists():
+                    try:
+                        os.remove(cancel_marker)
+                    except Exception as e:
+                        logger.error(f"Error removing cancellation marker: {str(e)}")
+                    return {"cancelled": True, "message": "Upload was cancelled by the user"}
+                else:
+                    # List all directories in UPLOAD_DIR to help debug
+                    try:
+                        upload_contents = list(UPLOAD_DIR.iterdir())
+                        chunks_parent = UPLOAD_DIR / "chunks"
+                        chunks_contents = list(chunks_parent.iterdir()) if chunks_parent.exists() else []
+                        
+                        logger.error(f"Chunks directory not found at {chunks_dir}")
+                        logger.error(f"UPLOAD_DIR contents: {upload_contents}")
+                        logger.error(f"Chunks parent directory exists: {chunks_parent.exists()}")
+                        if chunks_parent.exists():
+                            logger.error(f"Chunks parent directory contents: {chunks_contents}")
+                    except Exception as e:
+                        logger.error(f"Error listing directory contents: {str(e)}")
+                    
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Chunks directory not found. Upload may have been cancelled or failed."
+                    )
+        
+        logger.info(f"Found chunks directory for {upload_id}, combining {total_chunks} chunks")
+        
+        # Check if all chunks exist before starting to combine them
+        for i in range(total_chunks):
+            chunk_path = chunks_dir / f"chunk_{i}"
+            if not chunk_path.exists():
+                # Check if this was a cancelled upload
+                if cancel_marker.exists():
+                    try:
+                        os.remove(cancel_marker)
+                    except Exception as e:
+                        logger.error(f"Error removing cancellation marker: {str(e)}")
+                    return {"cancelled": True, "message": "Upload was cancelled by the user"}
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Chunk {i + 1} is missing"
+                    )
+        
+        # Now that we've verified all chunks exist, combine them
+        try:
+            # Use buffered I/O for better performance with large files
+            with open(file_path, "wb", buffering=8192) as outfile:
+                for i in range(total_chunks):
+                    chunk_path = chunks_dir / f"chunk_{i}"
+                    logger.info(f"Processing chunk {i+1}/{total_chunks} from {chunk_path}")
+                    
+                    # Use buffered reading for better performance
+                    with open(chunk_path, "rb", buffering=8192) as infile:
+                        # Copy in smaller chunks to avoid memory issues
+                        bytes_copied = 0
+                        while True:
+                            buffer = infile.read(1024 * 1024)  # Read 1MB at a time
+                            if not buffer:
+                                break
+                            outfile.write(buffer)
+                            bytes_copied += len(buffer)
+                        logger.info(f"Copied {bytes_copied} bytes from chunk {i+1}")
+            
+            logger.info(f"All chunks combined successfully into {file_path}")
+            
+            # Clean up chunks
+            try:
+                shutil.rmtree(chunks_dir)
+                logger.info(f"Cleaned up chunks directory {chunks_dir}")
+            except Exception as e:
+                logger.warning(f"Failed to clean up chunks directory: {str(e)}")
+            
+            # Get actual file size
+            actual_file_size = os.path.getsize(file_path)
+            logger.info(f"Final file size: {actual_file_size} bytes")
+            
+            # Store file info in database
+            file_data = {
+                "filename": file_name,
+                "path": str(file_path),
+                "type": file_ext,
+                "uploaded_by": current_user.username,
+                "uploaded_at": datetime.now(),
+                "chunk_size": original_chunk_size
+            }
+            
+            try:
+                save_uploaded_file(db, file_id, file_data)
+                logger.info(f"File information saved to database with ID {file_id}")
+            except Exception as db_error:
+                logger.error(f"Database error while saving file info: {str(db_error)}")
+                raise
+            
+            # Log activity
+            try:
+                log_activity(
+                    db=db,
+                    username=current_user.username,
+                    action="File upload (chunked)",
+                    details=f"Uploaded file: {file_name} ({file_ext.upper()}) using chunked upload"
                 )
-        
-        with open(file_path, "wb") as outfile:
-            for i in range(total_chunks):
-                chunk_path = chunks_dir / f"chunk_{i}"
-                if not chunk_path.exists():
-                    # Check if this was a cancelled upload
-                    if cancel_marker.exists():
-                        try:
-                            os.remove(cancel_marker)
-                        except Exception as e:
-                            logger.error(f"Error removing cancellation marker: {str(e)}")
-                        return {"cancelled": True, "message": "Upload was cancelled by the user"}
-                    else:
-                        raise HTTPException(
-                            status_code=status.HTTP_400_BAD_REQUEST,
-                            detail=f"Chunk {i + 1} is missing"
-                        )
-                
-                with open(chunk_path, "rb") as infile:
-                    shutil.copyfileobj(infile, outfile)
-        
-        # Clean up chunks
-        shutil.rmtree(chunks_dir)
-        
-        # Store file info in database
-        file_data = {
-            "filename": file_name,
-            "path": str(file_path),
-            "type": file_ext,
-            "uploaded_by": current_user.username,
-            "uploaded_at": datetime.now(),
-            "chunk_size": original_chunk_size
-        }
-        save_uploaded_file(db, file_id, file_data)
-        
-        # Log activity
-        log_activity(
-            db=db,
-            username=current_user.username,
-            action="File upload (chunked)",
-            details=f"Uploaded file: {file_name} ({file_ext.upper()}) using chunked upload"
-        )
-        
-        return {"file_id": file_id, "message": "File uploaded successfully"}
-    
+                logger.info(f"Activity logged for chunked upload of {file_name}")
+            except Exception as log_error:
+                logger.error(f"Error logging activity: {str(log_error)}")
+                # Don't raise here, as the file is already saved
+            
+            return {"file_id": file_id, "message": "File uploaded successfully"}
+            
+        except Exception as combine_error:
+            logger.error(f"Error while combining chunks: {str(combine_error)}")
+            # Re-raise to be caught by the outer exception handler
+            raise
+            
     except Exception as e:
+        error_msg = str(e) if str(e) else repr(e)
+        logger.error(f"Error completing chunked upload: {error_msg}", exc_info=True)
         # Clean up any partial files
-        if file_path.exists():
-            os.remove(file_path)
+        try:
+            if 'file_path' in locals() and file_path.exists():
+                os.remove(file_path)
+                logger.info(f"Cleaned up partial file {file_path}")
+        except Exception as cleanup_error:
+            logger.error(f"Error during cleanup after failure: {str(cleanup_error)}")
         
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error completing chunked upload: {str(e)}"
+            detail=f"Error completing chunked upload: {error_msg}"
         )
 
 # Add endpoint for cancelling chunked uploads
@@ -2982,7 +3099,7 @@ async def cancel_chunked_upload(
         )
     
     # Create the chunks directory path based on the upload ID
-    chunks_dir = UPLOAD_DIR / f"chunks_{upload_id}"
+    chunks_dir = UPLOAD_DIR / "chunks" / upload_id
     
     # Check if the chunks directory exists
     if chunks_dir.exists():
