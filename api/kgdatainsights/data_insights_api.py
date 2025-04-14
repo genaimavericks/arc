@@ -204,7 +204,7 @@ async def process_query(
             # Get or create the schema-aware assistant for this schema_id
             # fetch db_id from Schema table
             db = SessionLocal()
-            result = db.query(Schema.db_id).filter(Schema.id == schema_id).first()
+            result = db.query(Schema.db_id, Schema.schema).filter(Schema.id == schema_id).first()
             
             # Extract db_id value from the result tuple
             db_id = result.db_id if result else None
@@ -215,8 +215,17 @@ async def process_query(
                     result="Knowledge graph is not created and loaded with data. Generate Graph with appropriate data to use Insights agen",
                     timestamp=datetime.now()
                 )
-            print('Fetching schema aware assistant')
-            assistant = get_schema_aware_assistant(db_id)
+            schema = result.schema if result else None
+            if not schema:
+                return QueryResponse(
+                    schema_id=schema_id,
+                    query=request.query,
+                    result="Knowledge graph is not created and loaded with data. Generate Graph with appropriate data to use Insights agen",
+                    timestamp=datetime.now()
+                )
+
+            print('Fetching schema aware assistant aa')
+            assistant = get_schema_aware_assistant(db_id, schema=schema)
             
             # Get the answer from the schema-aware agent
             print('Calling query')

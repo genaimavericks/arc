@@ -20,8 +20,9 @@ from .data_insights_api import (
     analyze_data_for_visualization
 )
 from .agent.schema_aware_agent import get_schema_aware_assistant
-from ..models import User
+from ..models import User, Schema
 from ..auth import has_any_permission
+from ..database import SessionLocal
 
 # Custom JSON encoder for Neo4j types
 class Neo4jJsonEncoder(json.JSONEncoder):
@@ -85,7 +86,19 @@ async def process_schema_aware_query(
     """
     try:
         # Get or create the schema-aware assistant for this source
-        assistant = get_schema_aware_assistant(source_id)
+        # First fetch the schema for this source_id
+        db = SessionLocal()
+        result = db.query(Schema.db_id, Schema.schema).filter(Schema.db_id == source_id).first()
+        
+        if not result or not result.schema:
+            return QueryResponse(
+                schema_id=source_id,
+                query=request.query,
+                result="Knowledge graph schema is not available. Please ensure the schema is properly generated.",
+                timestamp=datetime.now()
+            )
+        
+        assistant = get_schema_aware_assistant(source_id, schema=result.schema)
         
         # Get the answer from the schema-aware agent
         result = assistant.query(request.query)
