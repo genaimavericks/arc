@@ -353,14 +353,11 @@ class DataLoader:
             self.status["message"] = "Storing loading Cypher statements..."
             try:
                 self._store_loading_cypher(self.schema_id, label_to_cypher_map, relationship_to_cypher_map)
-                self.status["message"] = "Successfully stored loading Cypher."
+                print("Successfully stored loading Cypher statements.")
             except Exception as e:
                 error_msg = f"Error storing loading Cypher statements: {str(e)}"
                 print(error_msg)
-                self.status["errors"].append(error_msg)
-                # Continue even if storing fails, but log the error
-                self.status["message"] = "Data loading completed, but failed to store Cypher statements."
-                
+                                
             # Close Neo4j connection
             if self.neo4j_loader:
                 self.neo4j_loader.close()
