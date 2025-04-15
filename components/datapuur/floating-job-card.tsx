@@ -46,6 +46,7 @@ export function FloatingJobCard() {
   const [recentlyCompletedJobs, setRecentlyCompletedJobs] = useState<string[]>([])
   const [activeTab, setActiveTab] = useState("active")
   const [cancellingJobs, setCancellingJobs] = useState<string[]>([])
+  const [isCancelling, setIsCancelling] = useState(false)
   
   // Save minimized state to localStorage when it changes
   useEffect(() => {
@@ -55,6 +56,14 @@ export function FloatingJobCard() {
       console.error('Error saving minimized state to localStorage:', error)
     }
   }, [isMinimized])
+  
+  // Reset isVisible when new jobs are added or processing status changes
+  useEffect(() => {
+    const hasActiveJobs = jobs.some(job => job.status === "running" || job.status === "queued");
+    if (hasActiveJobs || processingStatus) {
+      setIsVisible(true);
+    }
+  }, [jobs, processingStatus]);
   
   // Track when jobs complete to show them temporarily
   useEffect(() => {
@@ -306,13 +315,38 @@ export function FloatingJobCard() {
                           variant="ghost"
                           size="sm"
                           onClick={() => {
+                            // Set cancelling state
+                            setIsCancelling(true);
+                            
                             // Use the cancelAllActiveJobs function from context
-                            cancelAllActiveJobs();
+                            cancelAllActiveJobs()
+                              .then(() => {
+                                console.log("Successfully cancelled all jobs");
+                                // Clear processing status to ensure file processing stops
+                                setProcessingStatus("");
+                              })
+                              .catch((error: Error) => {
+                                console.error("Error cancelling jobs:", error);
+                              })
+                              .finally(() => {
+                                // Reset cancelling state after a short delay
+                                setTimeout(() => {
+                                  setIsCancelling(false);
+                                }, 1000);
+                              });
                           }}
-                          className="h-7 px-2 text-destructive hover:bg-destructive/10 text-xs"
+                          disabled={isCancelling}
+                          className={`h-7 px-2 ${isCancelling ? 'text-muted-foreground' : 'text-destructive hover:bg-destructive/10'} text-xs`}
                           title="Cancel processing"
                         >
-                          Cancel
+                          {isCancelling ? (
+                            <>
+                              <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+                              Cancelling...
+                            </>
+                          ) : (
+                            "Cancel"
+                          )}
                         </Button>
                       </div>
                     </div>

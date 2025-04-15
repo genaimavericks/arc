@@ -34,7 +34,15 @@ export function FileUpload({
   onError,
 }: FileUploadProps) {
   // Use the global ingestion context
-  const { addJob, updateJob, addError, setProcessingStatus, jobs } = useIngestion()
+  const { 
+    addJob, 
+    updateJob, 
+    addError, 
+    setProcessingStatus, 
+    processingStatus, 
+    jobs, 
+    removeJob 
+  } = useIngestion()
   
   // Add references for cancellation
   const [isCancelling, setIsCancelling] = useState(false)
@@ -44,11 +52,13 @@ export function FileUpload({
   // Update the component to handle multiple files
   // Change the file state from a single file to an array of files
   const [files, setFiles] = useState<File[]>([])
+  // Add state to track files that are currently being processed
+  const [processingFiles, setProcessingFiles] = useState<File[]>([])
   // Replace the single file state with files array
   // const [file, setFile] = useState(null)
   const [dragActive, setDragActive] = useState(false)
   // Update the uploadProgress state to track multiple files
-  const [uploadProgress, setUploadProgress] = useState<Record<number, number>>({})
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({})
   const [error, setError] = useState("")
   const [previewData, setPreviewData] = useState<{ headers: string[], rows: any[][], fileName: string } | null>(null)
   const [isPreviewLoading, setIsPreviewLoading] = useState(false)
@@ -131,28 +141,47 @@ export function FileUpload({
   // Update the handleUpload function to handle multiple files
   const handleUpload = async () => {
     if (files.length === 0) return
-
+    
+    // Instead of blocking the entire UI, just mark these files as processing
+    // and move them to the processingFiles array
+    const filesToProcess = [...files]
+    setProcessingFiles(prev => [...prev, ...filesToProcess])
+    
+    // Clear the main files array to allow new files to be added
+    setFiles([])
+    
     setIsProcessing(true)
-    setUploadProgress({})
     setError("")
-    onStatusChange(`Preparing to upload ${files.length} file${files.length > 1 ? "s" : ""}...`)
-    setProcessingStatus(`Preparing to upload ${files.length} file${files.length > 1 ? "s" : ""}...`)
-
+    setUploadProgress({})
+    onStatusChange("Starting upload...")
+    setProcessingStatus("Starting upload...")
+    
     // Process each file sequentially
-    for (let i = 0; i < files.length; i++) {
+    for (let i = 0; i < filesToProcess.length; i++) {
       // Check if we should stop processing (files array might have been cleared by cancelUpload)
-      if (files.length === 0 || isCancelling) {
+      if (isCancelling) {
         console.log("Upload cancelled, stopping file processing")
         break
       }
       
-      const file = files[i]
+      const file = filesToProcess[i]
+      const fileId = `${file.name}-${file.size}-${Date.now()}`
+      
       try {
-        // Update status for current file
-        const statusMessage = `Uploading file ${i + 1} of ${files.length}: ${file.name}...`
-        onStatusChange(statusMessage)
-        setProcessingStatus(statusMessage)
-
+        // Check file type
+        const fileExtension = file.name.split('.').pop()?.toLowerCase() || ''
+        const isCSV = fileExtension === 'csv'
+        const isJSON = fileExtension === 'json'
+        const isParquet = fileExtension === 'parquet'
+        
+        if (!isCSV && !isJSON && !isParquet) {
+          throw new Error(`Unsupported file type: ${fileExtension}. Only CSV, JSON, and Parquet files are supported.`)
+        }
+        
+        // Set processing status with file type information for better user feedback
+        onStatusChange(`Preparing to upload ${file.name} (${fileExtension.toUpperCase()} file)...`)
+        setProcessingStatus(`Preparing to upload ${file.name} (${fileExtension.toUpperCase()} file)...`)
+        
         // Create a job object immediately to show in the UI, even before the upload completes
         // This ensures the job card appears right away for large files
         const tempJobId = `temp-${Date.now()}-${i}`
@@ -241,8 +270,8 @@ export function FileUpload({
               updateJob(progressJob)
               
               // Update status
-              onStatusChange(`Uploading file ${i + 1} of ${files.length}: ${file.name} (${percentComplete}%)...`);
-              setProcessingStatus(`Uploading file ${i + 1} of ${files.length}: ${file.name} (${percentComplete}%)...`);
+              onStatusChange(`Uploading file ${i + 1} of ${filesToProcess.length}: ${file.name} (${percentComplete}%)...`)
+              setProcessingStatus(`Uploading file ${i + 1} of ${filesToProcess.length}: ${file.name} (${percentComplete}%)...`)
             } catch (error) {
               console.error("Error uploading chunk:", error);
               throw error;
@@ -297,8 +326,8 @@ export function FileUpload({
             throw new Error("Upload cancelled by user")
           }
           
-          onStatusChange(`File ${i + 1} uploaded successfully! Processing data...`);
-          setProcessingStatus(`File ${i + 1} uploaded successfully! Processing data...`);
+          onStatusChange(`File ${i + 1} uploaded successfully! Processing data...`)
+          setProcessingStatus(`File ${i + 1} uploaded successfully! Processing data...`)
           
           // Continue with ingestion as before
           const ingestResponse = await fetch(`${apiBaseUrl}/api/datapuur/ingest-file`, {
@@ -339,11 +368,10 @@ export function FileUpload({
             details: `File: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`,
           };
           
-          // Replace the temporary job with the real one - use both callbacks to ensure proper updating
+          // Replace the temporary job with the real one - use both local and global state
           if (onJobUpdated) {
             onJobUpdated(updatedJob)
           }
-          
           // Also notify about job creation to ensure it appears in the jobs list
           if (onJobCreated) {
             onJobCreated(updatedJob)
@@ -353,7 +381,7 @@ export function FileUpload({
           setProcessingStatus(`Ingestion job started for ${file.name} with ID: ${ingestData.job_id}`)
           
           // Update progress - ingestion started
-          setUploadProgress((prev) => ({ ...prev, [i]: 90 }))
+          setUploadProgress((prev) => ({ ...prev, [fileId]: 90 }))
           
           // If profile generation is enabled, request a profile for this file
           if (generateProfile && !isCancelling && localStorage.getItem(`cancelled_upload_${uploadIdRef.current}`) !== "true") {
@@ -366,12 +394,12 @@ export function FileUpload({
                 },
               });
 
-              // Check for cancellation again before proceeding
+              // Check for cancellation before proceeding
               if (isCancelling) {
                 console.log("Upload cancelled before profile generation, skipping profile")
                 throw new Error("Upload cancelled by user")
               }
-
+              
               if (!fileDetailsResponse.ok) {
                 console.error("Error fetching file details for profiling, but continuing with ingestion");
               } else {
@@ -461,7 +489,7 @@ export function FileUpload({
           }
           
           // Update progress - complete
-          setUploadProgress((prev) => ({ ...prev, [i]: 100 }))
+          setUploadProgress((prev) => ({ ...prev, [fileId]: 100 }))
         } else {
           // Use XMLHttpRequest for smaller files (existing code)
           const xhr = new XMLHttpRequest()
@@ -487,8 +515,8 @@ export function FileUpload({
               updateJob(progressJob)
               
               // Update status
-              onStatusChange(`Uploading file ${i + 1} of ${files.length}: ${file.name} (${percentComplete}%)...`)
-              setProcessingStatus(`Uploading file ${i + 1} of ${files.length}: ${file.name} (${percentComplete}%)...`)
+              onStatusChange(`Uploading file ${i + 1} of ${filesToProcess.length}: ${file.name} (${percentComplete}%)...`)
+              setProcessingStatus(`Uploading file ${i + 1} of ${filesToProcess.length}: ${file.name} (${percentComplete}%)...`)
             }
           })
           
@@ -580,11 +608,13 @@ export function FileUpload({
           // Update in global context - this will replace the temp job
           updateJob(updatedJob)
           
+          // Always set processing status regardless of file type
+          const fileType = file.name.split('.').pop()?.toUpperCase() || 'FILE';
           onStatusChange(`Ingestion job started for ${file.name} with ID: ${ingestData.job_id}`)
-          setProcessingStatus(`Ingestion job started for ${file.name} with ID: ${ingestData.job_id}`)
+          setProcessingStatus(`Ingestion job started for ${file.name} (${fileType}) with ID: ${ingestData.job_id}`)
           
           // Update progress - ingestion started
-          setUploadProgress((prev) => ({ ...prev, [i]: 90 }))
+          setUploadProgress((prev) => ({ ...prev, [fileId]: 90 }))
           
           // If profile generation is enabled, request a profile for this file
           if (generateProfile && !isCancelling) {
@@ -692,53 +722,37 @@ export function FileUpload({
           }
           
           // Update progress - complete
-          setUploadProgress((prev) => ({ ...prev, [i]: 100 }))
+          setUploadProgress((prev) => ({ ...prev, [fileId]: 100 }))
         }
-      } catch (error) {
-        console.error(`Error uploading file ${file.name}:`, error)
-        const errorMessage = error instanceof Error ? error.message : "Failed to upload file"
+      } catch (error: any) {
+        console.error(`Error processing file ${file.name}:`, error)
         
-        // Check if this was a cancellation
-        if (errorMessage.includes("cancelled") || isCancelling || localStorage.getItem(`cancelled_upload_${uploadIdRef.current}`) === "true") {
-          // This is a cancellation, not an error
-          console.log(`Upload of ${file.name} was cancelled`)
-          
-          // Get the job ID from the global context or create a temporary one
-          const jobId = jobs.find(j => j.name === file.name && (j.status === "running" || j.status === "queued"))?.id || `temp-${Date.now()}`
-          
-          const cancelledJob: Job = {
-            id: jobId,
-            name: file.name,
-            type: "file",
-            status: "cancelled", // Mark as cancelled instead of failed
-            progress: 0,
-            startTime: new Date().toISOString(),
-            endTime: new Date().toISOString(),
-            details: `Upload cancelled: ${file.name}`,
-          }
-          
-          // Update in the UI
-          if (onJobUpdated) onJobUpdated(cancelledJob)
-          
-          // Also update in the global context if available
-          if (typeof updateJob === 'function') {
-            updateJob(cancelledJob)
-          }
-          
-          // Don't show error message for cancellations
-          setError("")
-        } else {
-          // This is a genuine error
-          setError(`Error with file ${file.name}: ${errorMessage}`)
-          if (onError) onError({ message: errorMessage })
-        }
-        // Continue with next file regardless
+        // Update error state
+        const errorMessage = error.message || "Unknown error occurred during upload"
+        setError(errorMessage)
+        onError({ message: errorMessage })
+        
+        // Remove the temporary job if it exists
+        const tempJobId = `temp-${Date.now()}-${i}`
+        removeJob(tempJobId)
+        
+        // Add error to global context
+        addError(`Error uploading ${file.name}: ${errorMessage}`)
+        
+        // Break the loop on error
+        break
+      } finally {
+        // Remove this file from the processing files array
+        setProcessingFiles(prev => prev.filter(f => f !== file))
       }
     }
-
-    onStatusChange(`Completed processing ${files.length} file${files.length > 1 ? "s" : ""}`)
-    setProcessingStatus(`Completed processing ${files.length} file${files.length > 1 ? "s" : ""}`)
-    setIsProcessing(false)
+    
+    // Only reset processing state if there are no more files being processed
+    if (processingFiles.length === 0) {
+      setIsProcessing(false)
+      onStatusChange("")
+      setProcessingStatus("")
+    }
   }
 
   const removeAllFiles = () => {
@@ -796,6 +810,9 @@ export function FileUpload({
       }
     })
     
+    // Clear processing files
+    setProcessingFiles([])
+    
     // Reset state
     setFiles([])
     setUploadProgress({})
@@ -826,36 +843,166 @@ export function FileUpload({
       onStatusChange(previewStatus)
       setProcessingStatus(previewStatus)
       
-      // Create a FormData object
-      const formData = new FormData()
-      formData.append("file", file)
-      
-      // Send the file to the API for preview
-      const apiBaseUrl = getApiBaseUrl()
-      const response = await fetch(`${apiBaseUrl}/api/datapuur/preview-file`, {
-        method: "POST",
-        body: formData,
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-      })
-      
-      if (!response.ok) {
-        throw new Error(`Failed to generate preview: ${response.statusText}`)
+      // Process the file locally instead of uploading to the server
+      if (fileType === 'csv') {
+        // Read CSV file locally
+        const reader = new FileReader()
+        
+        reader.onload = (e) => {
+          try {
+            const text = e.target?.result as string
+            if (!text) {
+              throw new Error("Failed to read file content")
+            }
+            
+            // Parse CSV content
+            const lines = text.split('\n')
+            if (lines.length === 0) {
+              throw new Error("CSV file is empty")
+            }
+            
+            // Extract headers (first line)
+            const headers = lines[0].split(',').map(header => header.trim().replace(/^"|"$/g, ''))
+            
+            // Extract rows (up to 50 rows for preview)
+            const rows = []
+            const maxRows = Math.min(lines.length - 1, 50)
+            
+            for (let i = 1; i <= maxRows; i++) {
+              if (lines[i].trim() === '') continue
+              
+              // Handle quoted values correctly
+              const row = []
+              let currentValue = ''
+              let insideQuotes = false
+              
+              for (let char of lines[i]) {
+                if (char === '"') {
+                  insideQuotes = !insideQuotes
+                } else if (char === ',' && !insideQuotes) {
+                  row.push(currentValue.trim().replace(/^"|"$/g, ''))
+                  currentValue = ''
+                } else {
+                  currentValue += char
+                }
+              }
+              
+              // Add the last value
+              row.push(currentValue.trim().replace(/^"|"$/g, ''))
+              rows.push(row)
+            }
+            
+            // Update the preview data state
+            setPreviewData({
+              headers,
+              rows,
+              fileName: file.name,
+            })
+            
+            // Clear status after preview is generated
+            onStatusChange("")
+            setProcessingStatus("")
+            setIsPreviewLoading(false)
+          } catch (error) {
+            console.error("CSV parsing error:", error)
+            setError(error instanceof Error ? error.message : "Failed to parse CSV file")
+            addError(error instanceof Error ? error.message : "Failed to parse CSV file")
+            onStatusChange("")
+            setProcessingStatus("")
+            setIsPreviewLoading(false)
+          }
+        }
+        
+        reader.onerror = () => {
+          setError("Failed to read file")
+          addError("Failed to read file")
+          onStatusChange("")
+          setProcessingStatus("")
+          setIsPreviewLoading(false)
+        }
+        
+        // Start reading the file
+        reader.readAsText(file)
+      } else if (fileType === 'json') {
+        // Read JSON file locally
+        const reader = new FileReader()
+        
+        reader.onload = (e) => {
+          try {
+            const text = e.target?.result as string
+            if (!text) {
+              throw new Error("Failed to read file content")
+            }
+            
+            // Parse JSON content
+            const data = JSON.parse(text)
+            
+            // Ensure data is an array
+            if (!Array.isArray(data)) {
+              throw new Error("JSON file must contain an array of objects")
+            }
+            
+            if (data.length === 0) {
+              setPreviewData({
+                headers: [],
+                rows: [],
+                fileName: file.name,
+              })
+              onStatusChange("")
+              setProcessingStatus("")
+              setIsPreviewLoading(false)
+              return
+            }
+            
+            // Extract headers from the first object
+            const headers = Object.keys(data[0])
+            
+            // Extract rows (up to 50 rows for preview)
+            const rows = []
+            const maxRows = Math.min(data.length, 50)
+            
+            for (let i = 0; i < maxRows; i++) {
+              const row = []
+              for (const header of headers) {
+                row.push(data[i][header])
+              }
+              rows.push(row)
+            }
+            
+            // Update the preview data state
+            setPreviewData({
+              headers,
+              rows,
+              fileName: file.name,
+            })
+            
+            // Clear status after preview is generated
+            onStatusChange("")
+            setProcessingStatus("")
+            setIsPreviewLoading(false)
+          } catch (error) {
+            console.error("JSON parsing error:", error)
+            setError(error instanceof Error ? error.message : "Failed to parse JSON file")
+            addError(error instanceof Error ? error.message : "Failed to parse JSON file")
+            onStatusChange("")
+            setProcessingStatus("")
+            setIsPreviewLoading(false)
+          }
+        }
+        
+        reader.onerror = () => {
+          setError("Failed to read file")
+          addError("Failed to read file")
+          onStatusChange("")
+          setProcessingStatus("")
+          setIsPreviewLoading(false)
+        }
+        
+        // Start reading the file
+        reader.readAsText(file)
+      } else {
+        throw new Error(`Unsupported file type: ${fileType}. Only CSV and JSON files are supported.`)
       }
-      
-      const data = await response.json()
-      
-      // Update the preview data state
-      setPreviewData({
-        headers: data.headers,
-        rows: data.rows,
-        fileName: file.name,
-      })
-      
-      // Clear status after preview is generated
-      onStatusChange("")
-      setProcessingStatus("")
       
     } catch (error) {
       console.error("Preview error:", error)
@@ -865,7 +1012,6 @@ export function FileUpload({
       // Clear status on error
       onStatusChange("")
       setProcessingStatus("")
-    } finally {
       setIsPreviewLoading(false)
     }
   }
@@ -937,17 +1083,39 @@ export function FileUpload({
     setIsProcessing(false)
   }
 
+  // Add an effect to monitor processingStatus changes from the context
+  // This will help detect when a cancel is triggered from the floating job card
+  useEffect(() => {
+    // If processingStatus is cleared while we're still processing, it might be due to cancellation
+    if (isProcessing && !processingStatus) {
+      console.log("Processing status was cleared while still processing, likely due to cancellation");
+      cancelUpload();
+    }
+  }, [processingStatus, isProcessing]);
+
+  // Update the existing effect to also check for processingStatus changes
   useEffect(() => {
     // If processing status is cleared and we were processing, it might be due to cancellation
     if (isProcessing) {
       // Check if we should cancel the upload (e.g., if the cancel button was clicked in the floating job card)
       const anyJobCancelled = jobs.some(job => job.status === "cancelled");
-      if (anyJobCancelled) {
+      if (anyJobCancelled || !processingStatus) {
         console.log("Detected job cancellation from floating job card, cancelling upload");
         cancelUpload();
       }
     }
-  }, [isProcessing, jobs]);
+  }, [isProcessing, jobs, processingStatus]);
+
+  // Add an effect to automatically clear error messages after 5 seconds
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => {
+        setError("");
+      }, 5000); // 5 seconds
+      
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
 
   return (
     <div className="space-y-4">
@@ -1014,7 +1182,7 @@ export function FileUpload({
 
           <div className="space-y-3 max-h-60 overflow-y-auto mb-4">
             {files.map((file, index) => (
-              <div key={index} className="flex justify-between items-center p-3 border border-border rounded-lg">
+              <div key={`file-${index}`} className="flex justify-between items-center p-3 border border-border rounded-lg">
                 <div className="flex items-center">
                   <FileText className="h-5 w-5 text-primary mr-3" />
                   <div>
@@ -1023,9 +1191,9 @@ export function FileUpload({
                   </div>
                 </div>
 
-                {uploadProgress[index] !== undefined && (
+                {uploadProgress[`${file.name}-${file.size}-${Date.now()}`] !== undefined && (
                   <div className="w-24 mr-4">
-                    <Progress value={uploadProgress[index]} className="h-2" />
+                    <Progress value={uploadProgress[`${file.name}-${file.size}-${Date.now()}`]} className="h-2" />
                   </div>
                 )}
 
@@ -1034,7 +1202,7 @@ export function FileUpload({
                     variant="ghost"
                     size="icon"
                     onClick={() => handlePreview(index)}
-                    disabled={isProcessing || isPreviewLoading}
+                    disabled={isPreviewLoading}
                     className="text-muted-foreground hover:text-foreground mr-1"
                     title="Preview file"
                   >
@@ -1044,11 +1212,33 @@ export function FileUpload({
                     variant="ghost"
                     size="icon"
                     onClick={() => removeFile(index)}
-                    disabled={isProcessing}
                     className="text-muted-foreground hover:text-foreground"
                   >
                     <X className="h-4 w-4" />
                   </Button>
+                </div>
+              </div>
+            ))}
+            
+            {/* Show processing files with a different style */}
+            {processingFiles.map((file, index) => (
+              <div key={`processing-${index}`} className="flex justify-between items-center p-3 border border-primary/30 bg-primary/5 rounded-lg">
+                <div className="flex items-center">
+                  <FileText className="h-5 w-5 text-primary mr-3" />
+                  <div>
+                    <p className="font-medium text-foreground">{file.name}</p>
+                    <p className="text-sm text-muted-foreground">{(file.size / 1024 / 1024).toFixed(2)} MB (Processing)</p>
+                  </div>
+                </div>
+
+                {uploadProgress[`${file.name}-${file.size}-${Date.now()}`] !== undefined && (
+                  <div className="w-24 mr-4">
+                    <Progress value={uploadProgress[`${file.name}-${file.size}-${Date.now()}`]} className="h-2" />
+                  </div>
+                )}
+
+                <div className="flex items-center">
+                  <span className="text-xs text-muted-foreground">Processing...</span>
                 </div>
               </div>
             ))}
@@ -1074,9 +1264,14 @@ export function FileUpload({
           <Button
             className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
             onClick={handleUpload}
-            disabled={isProcessing}
+            disabled={files.length === 0}
           >
-            {isProcessing ? (
+            {files.length > 0 ? (
+              <span className="flex items-center">
+                <Upload className="mr-2 h-4 w-4" />
+                Upload {files.length} File{files.length !== 1 ? "s" : ""}
+              </span>
+            ) : processingFiles.length > 0 ? (
               <span className="flex items-center">
                 <svg
                   className="animate-spin -ml-1 mr-3 h-4 w-4 text-white"
@@ -1091,117 +1286,86 @@ export function FileUpload({
                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                   ></path>
                 </svg>
-                Processing...
+                Processing {processingFiles.length} file{processingFiles.length !== 1 ? "s" : ""}...
               </span>
             ) : (
               <span className="flex items-center">
                 <Upload className="mr-2 h-4 w-4" />
-                Upload {files.length} File{files.length !== 1 ? "s" : ""}
+                Select files to upload
               </span>
             )}
           </Button>
-          
-          {/* Add cancel button during processing */}
-          {isProcessing && (
-            <Button
-              className="w-full mt-2 bg-destructive hover:bg-destructive/90 text-destructive-foreground"
-              onClick={cancelUpload}
-              disabled={isCancelling}
-            >
-              {isCancelling ? (
-                <span className="flex items-center">
-                  <svg
-                    className="animate-spin -ml-1 mr-3 h-4 w-4 text-white"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
-                  </svg>
-                  Cancelling...
-                </span>
-              ) : (
-                <span className="flex items-center">
-                  <X className="mr-2 h-4 w-4" />
-                  Cancel Upload
-                </span>
-              )}
-            </Button>
-          )}
-        </div>
-      )}
 
-      {previewData && (
-        <div className="border rounded-lg p-4 mb-4 bg-card/50 overflow-x-auto">
-          <div className="flex justify-between items-center mb-3">
-            <h4 className="font-medium text-foreground">
-              Preview: {previewData.fileName} ({previewData.rows.length} rows)
-            </h4>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setPreviewData(null)}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-          
-          {previewData.headers.length > 0 ? (
-            <div className="max-h-[400px] overflow-auto">
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr className="bg-muted/50">
-                    {previewData.headers.map((header, i) => (
-                      <th key={i} className="p-2 text-left border text-sm font-medium text-foreground">
-                        {header}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {previewData.rows.map((row, i) => (
-                    <tr key={i} className={i % 2 === 0 ? "bg-background" : "bg-muted/20"}>
-                      {row.map((cell, j) => (
-                        <td key={j} className="p-2 border text-sm text-muted-foreground">
-                          {typeof cell === 'object' ? JSON.stringify(cell) : String(cell)}
-                        </td>
+          {/* Preview section restored */}
+          {previewData && (
+            <div className="border rounded-lg p-4 mb-4 bg-card/50 overflow-x-auto">
+              <div className="flex justify-between items-center mb-3">
+                <h4 className="font-medium text-foreground">
+                  Preview: {previewData.fileName} ({previewData.rows.length} rows)
+                </h4>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setPreviewData(null)}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              
+              {previewData.headers.length > 0 ? (
+                <div className="max-h-[400px] overflow-auto">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="bg-muted/50">
+                        {previewData.headers.map((header, i) => (
+                          <th key={i} className="p-2 text-left border text-sm font-medium text-foreground">
+                            {header}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewData.rows.map((row, i) => (
+                        <tr key={i} className={i % 2 === 0 ? "bg-background" : "bg-muted/20"}>
+                          {row.map((cell, j) => (
+                            <td key={j} className="p-2 border text-sm text-muted-foreground">
+                              {typeof cell === 'object' ? JSON.stringify(cell) : String(cell)}
+                            </td>
+                          ))}
+                        </tr>
                       ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-sm">No data available for preview</p>
+              )}
             </div>
-          ) : (
-            <p className="text-muted-foreground text-sm">No data available for preview</p>
+          )}
+
+          {isPreviewLoading && (
+            <div className="flex justify-center items-center p-4 mb-4">
+              <svg
+                className="animate-spin h-5 w-5 text-primary mr-3"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
+              </svg>
+              <span>Loading preview...</span>
+            </div>
           )}
         </div>
       )}
-
-      {isPreviewLoading && (
-        <div className="flex justify-center items-center p-4 mb-4">
-          <svg
-            className="animate-spin h-5 w-5 text-primary mr-3"
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-          >
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            ></path>
-          </svg>
-          <span>Loading preview...</span>
-        </div>
-      )}
-
+      
+      {/* Instructions section moved outside the conditional rendering to ensure it's always visible */}
       <div className="mt-4 p-4 bg-card/50 rounded-lg border border-border">
         <h4 className="font-medium text-foreground mb-2">Instructions:</h4>
         <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">

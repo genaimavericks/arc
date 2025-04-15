@@ -3285,3 +3285,127 @@ async def create_job(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create job: {str(e)}"
         )
+
+# Add endpoint for previewing files directly from the client
+@router.post("/preview-file")
+async def preview_file_direct(
+    file: UploadFile = File(...),
+    current_user: User = Depends(has_permission("datapuur:read")),
+    db: Session = Depends(get_db)
+):
+    """
+    Preview a file directly from the client without requiring the file to be uploaded first.
+    Returns headers and a sample of rows from the file.
+    """
+    try:
+        # Create a temporary file to store the uploaded content
+        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+            # Read the file content in chunks to handle large files
+            content = await file.read()
+            temp_file.write(content)
+            temp_path = temp_file.name
+        
+        file_extension = file.filename.split('.')[-1].lower()
+        
+        # Process based on file type
+        if file_extension == 'csv':
+            # Read CSV file
+            try:
+                df = pd.read_csv(temp_path)
+                # Handle empty values in the DataFrame
+                df = df.replace({np.nan: None})
+                
+                # Convert to list of lists for JSON serialization
+                headers = df.columns.tolist()
+                
+                # Get a sample of rows (first 50 rows)
+                sample_rows = []
+                for _, row in df.head(50).iterrows():
+                    # Convert each row to a list of values
+                    row_values = []
+                    for val in row:
+                        # Handle special types for JSON serialization
+                        if isinstance(val, (np.integer, np.floating)):
+                            val = val.item()  # Convert numpy types to native Python types
+                        row_values.append(val)
+                    sample_rows.append(row_values)
+                
+                # Clean up the temporary file
+                os.unlink(temp_path)
+                
+                return {
+                    "headers": headers,
+                    "rows": sample_rows
+                }
+            except Exception as e:
+                logger.error(f"Error processing CSV file: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Error processing CSV file: {str(e)}"
+                )
+        
+        elif file_extension == 'json':
+            # Read JSON file
+            try:
+                with open(temp_path, 'r') as f:
+                    data = json.load(f)
+                
+                # Ensure data is a list of objects
+                if not isinstance(data, list):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="JSON file must contain an array of objects"
+                    )
+                
+                if len(data) == 0:
+                    return {
+                        "headers": [],
+                        "rows": []
+                    }
+                
+                # Get headers from the first object
+                headers = list(data[0].keys())
+                
+                # Get a sample of rows (first 50 rows)
+                sample_rows = []
+                for item in data[:50]:
+                    row = []
+                    for header in headers:
+                        row.append(item.get(header, None))
+                    sample_rows.append(row)
+                
+                # Clean up the temporary file
+                os.unlink(temp_path)
+                
+                return {
+                    "headers": headers,
+                    "rows": sample_rows
+                }
+            except json.JSONDecodeError:
+                logger.error("Invalid JSON file")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid JSON file"
+                )
+            except Exception as e:
+                logger.error(f"Error processing JSON file: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Error processing JSON file: {str(e)}"
+                )
+        
+        else:
+            # Clean up the temporary file
+            os.unlink(temp_path)
+            
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported file type: {file_extension}. Only CSV and JSON files are supported."
+            )
+    
+    except Exception as e:
+        logger.error(f"Error previewing file: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error previewing file: {str(e)}"
+        )

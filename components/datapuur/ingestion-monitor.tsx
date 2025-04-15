@@ -15,7 +15,7 @@ import { motion } from "framer-motion"
 interface IngestionMonitorProps {
   jobs?: Job[]
   onJobUpdated?: (job: Job) => void
-  errors?: string[]
+  errors?: { id: string; message: string; timestamp: string }[]
   isPolling?: boolean
   processingStatus?: string
 }
@@ -24,7 +24,7 @@ export function IngestionMonitor({ jobs: propJobs, onJobUpdated, errors: propErr
   const [activeTab, setActiveTab] = useState("active")
   
   // Use the global ingestion context
-  const { jobs: contextJobs, errors: contextErrors, updateJob, isPolling: contextIsPolling, setIsPolling } = useIngestion()
+  const { jobs: contextJobs, errors: contextErrors, updateJob, isPolling: contextIsPolling, setIsPolling, cancelAllActiveJobs } = useIngestion()
   
   // Use either the props or the context values
   const jobs = propJobs || contextJobs
@@ -95,6 +95,7 @@ export function IngestionMonitor({ jobs: propJobs, onJobUpdated, errors: propErr
   }, [jobs, localIsPolling, onJobUpdated, updateJob])
 
   const [cancellingJobs, setCancellingJobs] = useState<string[]>([])
+  const [cancellingProcessing, setCancellingProcessing] = useState(false)
 
   const getJobIcon = (type: string) => {
     switch (type) {
@@ -270,14 +271,51 @@ export function IngestionMonitor({ jobs: propJobs, onJobUpdated, errors: propErr
                   animate={{ opacity: 1, y: 0 }}
                   className="bg-card border border-primary/20 rounded-lg p-4 mb-4"
                 >
-                  <div className="flex items-center">
-                    <div className="mr-2 p-1 rounded-full bg-background">
-                      <FileText className="h-4 w-4 text-blue-500" />
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center">
+                      <div className="mr-2 p-1 rounded-full bg-background">
+                        <FileText className="h-4 w-4 text-blue-500" />
+                      </div>
+                      <div>
+                        <h4 className="font-medium text-foreground">File Processing</h4>
+                        <p className="text-sm text-muted-foreground">{processingStatus}</p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="font-medium text-foreground">File Processing</h4>
-                      <p className="text-sm text-muted-foreground">{processingStatus}</p>
-                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        // Set cancelling state for this job
+                        setCancellingProcessing(true);
+                        
+                        // Use the context function to cancel all active jobs
+                        cancelAllActiveJobs()
+                          .then(() => {
+                            console.log("Successfully cancelled all jobs from ingestion monitor");
+                          })
+                          .catch((error: Error) => {
+                            console.error("Error cancelling jobs from ingestion monitor:", error);
+                          })
+                          .finally(() => {
+                            // Reset cancelling state after a short delay
+                            setTimeout(() => {
+                              setCancellingProcessing(false);
+                            }, 1000);
+                          });
+                      }}
+                      disabled={cancellingProcessing}
+                      className={`h-7 px-2 ${cancellingProcessing ? 'text-muted-foreground' : 'text-destructive hover:bg-destructive/10'} text-xs`}
+                      title="Cancel processing"
+                    >
+                      {cancellingProcessing ? (
+                        <>
+                          <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+                          Cancelling...
+                        </>
+                      ) : (
+                        "Cancel"
+                      )}
+                    </Button>
                   </div>
                 </motion.div>
               )}
@@ -396,10 +434,10 @@ export function IngestionMonitor({ jobs: propJobs, onJobUpdated, errors: propErr
             Error Log
           </h4>
           <div className="space-y-2 max-h-40 overflow-y-auto">
-            {errors.map((error, index) => (
-              <div key={index} className="bg-destructive/10 border border-destructive/20 rounded-md p-2 text-sm">
+            {errors.map((error) => (
+              <div key={error.id} className="bg-destructive/10 border border-destructive/20 rounded-md p-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-destructive font-medium">{error}</span>
+                  <span className="text-destructive font-medium">{error.message}</span>
                 </div>
               </div>
             ))}

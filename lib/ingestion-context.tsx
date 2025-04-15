@@ -21,7 +21,7 @@ export interface Job {
 // Define context type
 interface IngestionContextType {
   jobs: Job[]
-  errors: string[]
+  errors: { id: string; message: string; timestamp: string }[]
   processingStatus: string
   addJob: (job: Job) => void
   updateJob: (updatedJob: Job) => void
@@ -29,7 +29,7 @@ interface IngestionContextType {
   addError: (error: string) => void
   clearErrors: () => void
   setProcessingStatus: (status: string) => void
-  cancelAllActiveJobs: () => void
+  cancelAllActiveJobs: () => Promise<void>
   isPolling: boolean
   setIsPolling: (isPolling: boolean) => void
 }
@@ -68,7 +68,7 @@ const getJobsFromStorage = (): Job[] => {
 export function IngestionProvider({ children }: { children: ReactNode }) {
   // Initialize state with empty array, load from storage client-side
   const [jobs, setJobs] = useState<Job[]>([])
-  const [errors, setErrors] = useState<string[]>([])
+  const [errors, setErrors] = useState<{ id: string; message: string; timestamp: string }[]>([])
   const [processingStatus, setProcessingStatus] = useState<string>("")
   const [isPolling, setIsPolling] = useState(true)
 
@@ -147,25 +147,78 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
 
   // Add an error
   const addError = (error: string) => {
-    setErrors((prevErrors) => [error, ...prevErrors])
+    // Generate a unique ID for this error to track it for removal
+    const errorId = `error-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    
+    // Add the error with its ID to the errors array
+    setErrors((prevErrors) => [{
+      id: errorId,
+      message: error,
+      timestamp: new Date().toISOString()
+    }, ...prevErrors]);
+    
+    // Automatically remove the error after 5 seconds
+    setTimeout(() => {
+      setErrors((currentErrors) => 
+        currentErrors.filter((err) => err.id !== errorId)
+      );
+    }, 5000); // 5 seconds timeout
   }
 
   // Clear all errors
   const clearErrors = () => {
-    setErrors([])
+    setErrors([]);
   }
 
   // Cancel all active jobs
-  const cancelAllActiveJobs = async () => {
+  const cancelAllActiveJobs = async (): Promise<void> => {
+    console.log("Attempting to cancel all active jobs...");
+    
+    // First, clear the processing status immediately to stop file processing
+    // This ensures the notification is removed and signals to the FileUpload component
+    // that processing should stop
+    setProcessingStatus("");
+    
+    // If there's an active upload in progress, mark it as cancelled in localStorage
+    // Do this early in the function to ensure file processing is cancelled immediately
+    if (typeof window !== 'undefined') {
+      const activeUploads = Object.keys(localStorage)
+        .filter(key => key.startsWith('upload_'))
+        .map(key => key.replace('upload_', ''));
+      
+      for (const uploadId of activeUploads) {
+        console.log(`Marking upload ${uploadId} as cancelled in localStorage`);
+        localStorage.setItem(`cancelled_upload_${uploadId}`, "true");
+      }
+    }
+    
     // Find all active jobs
     const activeJobs = jobs.filter(
       job => job.status === "running" || job.status === "queued"
     );
     
+    console.log(`Found ${activeJobs.length} active jobs to cancel:`, activeJobs);
+    
+    if (activeJobs.length === 0) {
+      console.log("No active jobs found to cancel");
+      return;
+    }
+    
     // Cancel each job
     for (const job of activeJobs) {
       try {
+        console.log(`Attempting to cancel job ${job.id}...`);
+        
+        // Update the job status to "cancelling" immediately for better UX
+        updateJob({
+          ...job,
+          status: "cancelling",
+          details: `${job.details} (Cancelling...)`,
+        });
+        
         const apiBaseUrl = getApiBaseUrl();
+        console.log(`Making API call to ${apiBaseUrl}/api/datapuur/cancel-job/${job.id}`);
+        
         const response = await fetch(`${apiBaseUrl}/api/datapuur/cancel-job/${job.id}`, {
           method: "POST",
           headers: {
@@ -173,7 +226,11 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
           },
         });
         
+        console.log(`API response status: ${response.status}`);
+        
         if (response.ok) {
+          console.log(`Successfully cancelled job ${job.id}`);
+          
           // Update the job in the UI
           updateJob({
             ...job,
@@ -181,15 +238,34 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
             endTime: new Date().toISOString(),
             details: `${job.details} (Cancelled by user)`,
           });
+        } else {
+          console.error(`Failed to cancel job ${job.id}: ${response.statusText}`);
+          
+          // Even if the API call fails, update the UI to reflect cancellation
+          // This ensures the user gets feedback even if there's a backend issue
+          updateJob({
+            ...job,
+            status: "cancelled",
+            endTime: new Date().toISOString(),
+            details: `${job.details} (Cancellation attempted)`,
+          });
+          
+          addError(`Failed to cancel job ${job.id}: ${response.statusText}`);
         }
       } catch (error) {
         console.error(`Error cancelling job ${job.id}:`, error);
+        
+        // Update the UI even if there's an exception
+        updateJob({
+          ...job,
+          status: "cancelled",
+          endTime: new Date().toISOString(),
+          details: `${job.details} (Cancellation attempted)`,
+        });
+        
         addError(`Failed to cancel job ${job.id}: ${error}`);
       }
     }
-    
-    // Clear processing status
-    setProcessingStatus("");
   };
 
   // Check for active jobs on initial load or when user returns to the app
@@ -274,21 +350,36 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        for (const job of jobsToUpdate) {
-          const apiBaseUrl = getApiBaseUrl()
-          const response = await fetch(`${apiBaseUrl}/api/datapuur/job-status/${job.id}`, {
+        // Use Promise.all to fetch all job statuses concurrently instead of sequentially
+        // This ensures all jobs get updated at the same time
+        const apiBaseUrl = getApiBaseUrl()
+        const jobPromises = jobsToUpdate.map(job => 
+          fetch(`${apiBaseUrl}/api/datapuur/job-status/${job.id}`, {
             method: "GET",
             headers: {
-              // Ensure token is accessed client-side
               Authorization: `Bearer ${typeof window !== 'undefined' ? localStorage.getItem("token") : ''}`,
             },
           })
-
-          if (response.ok) {
-            const updatedJob = await response.json()
+          .then(response => {
+            if (response.ok) {
+              return response.json()
+            }
+            return null
+          })
+          .catch(error => {
+            console.error(`Error polling job status for job ${job.id}:`, error)
+            return null
+          })
+        )
+        
+        const updatedJobs = await Promise.all(jobPromises)
+        
+        // Update all jobs that returned valid data
+        updatedJobs.forEach(updatedJob => {
+          if (updatedJob) {
             updateJob(updatedJob)
           }
-        }
+        })
       } catch (error) {
         console.error("Error polling job status:", error)
       }

@@ -121,7 +121,10 @@ function KGraphDashboardContent() {
         status: "completed",
       }))
 
-      setDatasets(availableDatasets)
+      // Reverse the order so newest datasets appear first
+      const sortedDatasets = [...availableDatasets].reverse()
+
+      setDatasets(sortedDatasets)
       setDatasetsError(null)
     } catch (err) {
       console.error("Error fetching data sources:", err)
