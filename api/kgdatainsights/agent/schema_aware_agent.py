@@ -26,8 +26,8 @@ from .cache import Cache
 from .cache import cacheable
 
 from ...kginsights.database_api import get_database_config, parse_connection_params
-from ...models import Schema
-from ...database import SessionLocal
+from ...models import Schema, SchemaLoadingNodeCypher, SchemaLoadingRelationshipCypher
+from ...db_config import SessionLocal  
 
 # Load environment variables
 load_dotenv()
@@ -224,12 +224,14 @@ class SchemaAwareGraphAssistant:
         db = None # Initialize db to None
         try:
             db = SessionLocal()
-            schema_record = db.query(Schema).filter(Schema.schema_id == self.schema_id).first()
+            schema_record = db.query(Schema).filter(Schema.id == self.schema_id).first()
             if schema_record:
                 current_generation_id = schema_record.generation_id
                 if not current_generation_id:
-                     print(f"Warning: Schema record found for {self.schema_id}, but generation_id is missing. Will regenerate prompts.")
-                     regenerate_prompts = True
+                    print(f"Warning: Schema record found for {self.schema_id}, but generation_id is missing. Will regenerate prompts.")
+                    regenerate_prompts = True
+                else:
+                    print(f"DEBUG: Schema record found for {self.schema_id} with generation_id {current_generation_id}")    
             else:
                 print(f"Warning: Schema record not found for schema_id {self.schema_id}. Cannot verify prompt generation ID. Will regenerate prompts.")
                 regenerate_prompts = True # If schema record is missing, prompts might be invalid.
@@ -290,12 +292,7 @@ class SchemaAwareGraphAssistant:
             except Exception as e:
                 print(f"Error saving prompts to {prompt_file}: {e}")
                 print("Warning: Prompts generated but failed to save to file. Using in-memory prompts for this session.")
-        else:
-            # This case indicates a potential issue: file didn't exist or failed parsing, but regeneration wasn't triggered
-            # Or the file existed, matched, but 'existing_prompts' wasn't populated correctly. Log an error.
-            print(f"Error: Failed to load prompts for schema {self.schema_id}. File: {prompt_file}. Regeneration status: {regenerate_prompts}")
-            raise RuntimeError(f"Failed to load or generate prompts for schema {self.schema_id}.")
-
+        
     def _generate_prompts(self) -> Dict[str, Any]:
         """Generate custom prompts using LLM based on the schema"""
         # Initialize an LLM for prompt generation
@@ -399,10 +396,18 @@ class SchemaAwareGraphAssistant:
             cypher_response = prompt_generator_llm.invoke(cypher_messages)
             cypher_prompt_template = cypher_response.content.strip()
             
+            # Read SchemaLoadingNodeCypher and SchemaLoadingRelationshipCypher tables
+            node_cypher = self._get_cypher_from_table(SchemaLoadingNodeCypher)
+            relationship_cypher = self._get_cypher_from_table(SchemaLoadingRelationshipCypher)
+            import_notes = '\n\n Note: DO NOT return example question and cypher query. Return PROPER cypher query only. DO NOT include any explanation'
+            cypher_prompt_template = f"### Database Schema:\n\n*Create Nodes*\n\n{node_cypher}\n\n*Create Relationships*\n\n{relationship_cypher}\n\n{import_notes}\n\n{cypher_prompt_template}"
+
             # Apply Neo4j property syntax escaping to prevent template variable confusion
             cypher_prompt_template = self._escape_neo4j_properties(cypher_prompt_template)
+            
+            
             # Append formatted schema at the front of the template
-            cypher_prompt_template = f"{self.formatted_schema}\n\n{cypher_prompt_template}"
+            #cypher_prompt_template = f"{self.formatted_schema}\n\n{cypher_prompt_template}"
             print(f"DEBUG: Applied Neo4j property escaping to Cypher prompt template and appended formatted schema")
             
             # Generate QA prompt template
@@ -476,7 +481,47 @@ class SchemaAwareGraphAssistant:
             raise RuntimeError(f"Failed to generate prompts for schema: {str(e)}")
         
 
-    def _escape_neo4j_properties(self, prompt_text):
+    def _escape_neo4j_properties(self, prompt_text: str) -> str:
+        """
+        Escapes Neo4j property maps (e.g., {key: value}) within node patterns (...)
+        by wrapping them in double curly braces {{ {key: value} }} for LangChain compatibility.
+        It avoids wrapping already escaped maps {{...}}.
+        """
+        if not prompt_text:
+            return prompt_text
+
+        # Regex to find property maps {...} within node patterns (...)
+        # It avoids matching maps already wrapped in {{...}}
+        # Breakdown:
+        # (\([^)]*?)             : Group 1: Capture the opening parenthesis and any characters inside up to the property map (non-greedy)
+        # (?<!\{)\{(?!")       : Match a literal { that is NOT preceded by { and NOT followed by { (negative lookbehind/lookahead)
+        # ([^\{\}]*?)         : Group 2: Capture the content inside the braces (non-greedy)
+        # \}                    : Match the closing literal }
+        # ([^)]*\))             : Group 3: Capture characters from after the map up to and including the closing parenthesis
+        pattern = re.compile(r"(\([^)]*?)(?<!\{)\{(?!\{)([^\{\}]*?)\}([^)]*\))")
+
+        # Replacement function: Takes the match object
+        def replace_map(match):
+            # Group 1: Part before the map
+            # Group 2: The content *inside* the map {...}
+            # Group 3: Part after the map
+            # We return group 1, wrapped group 2, and group 3
+            # Build the string using concatenation for clarity
+            return match.group(1) + "{{" + match.group(2) + "}}" + match.group(3)
+
+        # Substitute using the function
+        escaped_prompt = pattern.sub(replace_map, prompt_text)
+
+        if escaped_prompt != prompt_text:
+            print("DEBUG: Applied property map escaping.")
+            # print(f"DEBUG: Original: {prompt_text}") # Uncomment for detailed debugging
+            # print(f"DEBUG: Escaped:  {escaped_prompt}") # Uncomment for detailed debugging
+        else:
+            print("DEBUG: No property map escaping applied.")
+
+        return escaped_prompt
+
+    def _escape_neo4j_properties2(self, prompt_text):
         """Escape Neo4j property syntax in prompts to prevent template variable confusion
         
         This ensures that expressions like {name: 'John'} are properly escaped as {{name: 'John'}}
@@ -485,6 +530,8 @@ class SchemaAwareGraphAssistant:
         if not prompt_text:
             return prompt_text
 
+        # replace all ` with '
+        prompt_text = prompt_text.replace("`", "'")
         # Check if there are already double braces around property patterns
         # This regex looks for {{prop: value}} patterns which are already escaped
         already_escaped_pattern = re.compile(r'\{\{([a-zA-Z0-9_]+\s*:(?![}]).*?)\}\}')
@@ -646,6 +693,27 @@ class SchemaAwareGraphAssistant:
         else:
             print("Cannot determine QA prompt variables")
         print("===================================\n")
+
+    def _get_cypher_from_table(self, model_class) -> str:
+        """Reads loading cypher from the specified table based on schema_id."""
+        db = None
+        try:
+            db = SessionLocal()
+            record = db.query(model_class).filter(model_class.schema_id == self.schema_id).first()
+            if record and record.cypher:
+                print(f"Found loading cypher in {model_class.__tablename__} for schema {self.schema_id}")
+                return record.cypher
+            else:
+                print(f"No loading cypher found in {model_class.__tablename__} for schema {self.schema_id}")
+                return "" # Return empty string if not found
+        except Exception as e:
+            print(f"Error reading from {model_class.__tablename__} for schema {self.schema_id}: {e}")
+            if db:
+                db.rollback() # Rollback on error, though it's just a read
+            return "" # Return empty string on error
+        finally:
+            if db:
+                db.close()
 
     def _format_schema(self):
         """

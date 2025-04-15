@@ -169,8 +169,8 @@ class SchemaGenerationCypher(Base):
     id = Column(Integer, primary_key=True, index=True)
     schema_id = Column(String, nullable=False, index=True)
     cypher = Column(Text, nullable=False)  # Store cypher as string
-    created_at = Column(DateTime, default=datetime.now(datetime.timezone.utc))
-    updated_at = Column(DateTime, default=datetime.now(datetime.timezone.utc), onupdate=datetime.now(datetime.timezone.utc))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class SchemaLoadingNodeCypher(Base):
@@ -179,8 +179,8 @@ class SchemaLoadingNodeCypher(Base):
     id = Column(Integer, primary_key=True, index=True)
     schema_id = Column(String, nullable=False, index=True)
     cypher = Column(Text, nullable=False)  # Store  cypher as string
-    created_at = Column(DateTime, default=datetime.now(datetime.timezone.utc))
-    updated_at = Column(DateTime, default=datetime.now(datetime.timezone.utc), onupdate=datetime.now(datetime.timezone.utc))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class SchemaLoadingRelationshipCypher(Base):
     __tablename__ = "schema_loading_relationship_cypher"
@@ -188,8 +188,8 @@ class SchemaLoadingRelationshipCypher(Base):
     id = Column(Integer, primary_key=True, index=True)
     schema_id = Column(String, nullable=False, index=True)
     cypher = Column(Text, nullable=False)  # Store  cypher as string
-    created_at = Column(DateTime, default=datetime.now(datetime.timezone.utc))
-    updated_at = Column(DateTime, default=datetime.now(datetime.timezone.utc), onupdate=datetime.now(datetime.timezone.utc))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 # Create tables

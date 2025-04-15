@@ -11,7 +11,7 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 from sqlalchemy.orm import Session
-from ..models import get_db, IngestionJob, UploadedFile, Schema, SchemaGenerationCypher, SchemaLoadingCypher
+from ..models import get_db, IngestionJob, UploadedFile, Schema, SchemaGenerationCypher, SchemaLoadingNodeCypher
 from ..auth import has_any_permission
 from ..models import User
 from ..db_config import SessionLocal
@@ -75,7 +75,7 @@ def update_schema_status(db=None, schema=None, db_id=None, schema_id=None, schem
         # Commit changes
         db.commit()
         
-        print(f"DEBUG: Schema record updated: schema_id={schema.id}, db_id={schema.db_id}, schema_generated={schema.schema_generated}, db_loaded={schema.db_loaded}")
+        print(f"DEBUG: Schema record updated: schema_id={schema.id}, db_id={schema.db_id}, schema_generated={schema.schema_generated}, db_loaded={schema.db_loaded}, generation_id={schema.generation_id}")
         return schema
         
     except Exception as update_error:
