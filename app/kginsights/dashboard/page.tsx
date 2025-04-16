@@ -4,7 +4,7 @@ import Navbar from "@/components/navbar"
 import { SparklesCore } from "@/components/sparkles"
 import KGInsightsSidebar from "@/components/kginsights-sidebar"
 import { motion } from "framer-motion"
-import { Plus, Search, Eye, FileText, PlusCircle, RefreshCw, Trash2, Database, Upload, Settings, LineChart } from "lucide-react"
+import { Plus, Search, Eye, FileText, PlusCircle, RefreshCw, Trash2, Database, Upload, Settings, LineChart, ChevronLeft, ChevronRight } from "lucide-react"
 import { useEffect, useState } from "react"
 import { getKGraphDashboard } from "@/lib/api"
 import LoadingSpinner from "@/components/loading-spinner"
@@ -81,6 +81,8 @@ function KGraphDashboardContent() {
   const [error, setError] = useState<string | null>(null)
   const [datasetsError, setDatasetsError] = useState<string | null>(null)
   const [neo4jGraphs, setNeo4jGraphs] = useState<Neo4jGraph[]>([])
+  const [currentPage, setCurrentPage] = useState(1)
+  const [itemsPerPage] = useState(10)
   const { toast } = useToast()
   const router = useRouter()
 
@@ -119,7 +121,10 @@ function KGraphDashboardContent() {
         status: "completed",
       }))
 
-      setDatasets(availableDatasets)
+      // Reverse the order so newest datasets appear first
+      const sortedDatasets = [...availableDatasets].reverse()
+
+      setDatasets(sortedDatasets)
       setDatasetsError(null)
     } catch (err) {
       console.error("Error fetching data sources:", err)
@@ -292,6 +297,29 @@ function KGraphDashboardContent() {
       setGraphToApply(null)
     }
   }
+
+  // Pagination control functions
+  const goToNextPage = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage(currentPage + 1)
+    }
+  }
+
+  const goToPreviousPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1)
+    }
+  }
+
+  const goToPage = (pageNumber: number) => {
+    setCurrentPage(pageNumber)
+  }
+
+  // Calculate pagination values
+  const indexOfLastItem = currentPage * itemsPerPage
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage
+  const currentItems = datasets.slice(indexOfFirstItem, indexOfLastItem)
+  const totalPages = Math.ceil(datasets.length / itemsPerPage)
 
   // Animation variants
   const container = {
@@ -498,66 +526,126 @@ function KGraphDashboardContent() {
                       <LoadingSpinner />
                     </div>
                   ) : datasets.length > 0 ? (
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-t border-b border-border">
-                          <th className="px-6 py-3 text-left text-foreground font-medium">Dataset</th>
-                          <th className="px-6 py-3 text-right text-foreground font-medium">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {datasets.map((dataset, index) => (
-                          <motion.tr
-                            key={dataset.id}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.4 + index * 0.1 }}
-                            className={cn(
-                              "border-b border-border hover:bg-accent/30 transition-colors",
-                              index === datasets.length - 1 && "border-b-0",
-                            )}
-                          >
-                            <td className="px-6 py-4 text-foreground font-medium">
-                              <div className="flex flex-col">
-                                <span>{dataset.name}</span>
-                                <span className="text-xs text-muted-foreground capitalize">{dataset.type}</span>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="flex justify-end gap-2">
+                    <>
+                      <table className="w-full">
+                        <thead>
+                          <tr className="border-t border-b border-border">
+                            <th className="px-6 py-3 text-left text-foreground font-medium">Dataset</th>
+                            <th className="px-6 py-3 text-right text-foreground font-medium">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {currentItems.map((dataset, index) => (
+                            <motion.tr
+                              key={dataset.id}
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ delay: 0.4 + index * 0.1 }}
+                              className={cn(
+                                "border-b border-border hover:bg-accent/30 transition-colors",
+                                index === currentItems.length - 1 && currentItems.length < itemsPerPage && "border-b-0",
+                              )}
+                            >
+                              <td className="px-6 py-4 text-foreground font-medium">
+                                <div className="flex flex-col">
+                                  <span>{dataset.name}</span>
+                                  <span className="text-xs text-muted-foreground capitalize">{dataset.type}</span>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex justify-end gap-2">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="text-amber-500 hover:text-amber-600 hover:bg-amber-500/10"
+                                    onClick={() => handlePreview(dataset.id, dataset.name)}
+                                    title="Preview"
+                                  >
+                                    <Eye className="w-5 h-5" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="text-orange-500 hover:text-orange-600 hover:bg-orange-500/10"
+                                    onClick={() => handleViewSchema(dataset.id, dataset.name)}
+                                    title="Schema"
+                                  >
+                                    <FileText className="w-5 h-5" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="text-primary hover:text-primary/80 hover:bg-primary/10"
+                                    onClick={() => handleGenerateKG(dataset.id, dataset.name)}
+                                    title="Generate KG"
+                                  >
+                                    <PlusCircle className="w-5 h-5" />
+                                  </Button>
+                                </div>
+                              </td>
+                            </motion.tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      
+                      {/* Pagination Controls */}
+                      {datasets.length > itemsPerPage && (
+                        <div className="flex items-center justify-between p-4 border-t border-border">
+                          <div className="text-sm text-muted-foreground">
+                            Showing {indexOfFirstItem + 1} to {Math.min(indexOfLastItem, datasets.length)} of {datasets.length} datasets
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={goToPreviousPage}
+                              disabled={currentPage === 1}
+                              className="h-8 w-8 p-0"
+                            >
+                              <ChevronLeft className="h-4 w-4" />
+                            </Button>
+                            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                              // Show pages around current page
+                              let pageNum = 0;
+                              if (totalPages <= 5) {
+                                // If we have 5 or fewer pages, show all
+                                pageNum = i + 1;
+                              } else if (currentPage <= 3) {
+                                // If we're near the start
+                                pageNum = i + 1;
+                              } else if (currentPage >= totalPages - 2) {
+                                // If we're near the end
+                                pageNum = totalPages - 4 + i;
+                              } else {
+                                // We're in the middle
+                                pageNum = currentPage - 2 + i;
+                              }
+                              
+                              return (
                                 <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="text-amber-500 hover:text-amber-600 hover:bg-amber-500/10"
-                                  onClick={() => handlePreview(dataset.id, dataset.name)}
-                                  title="Preview"
+                                  key={pageNum}
+                                  variant={currentPage === pageNum ? "default" : "outline"}
+                                  size="sm"
+                                  onClick={() => goToPage(pageNum)}
+                                  className="h-8 w-8 p-0"
                                 >
-                                  <Eye className="w-5 h-5" />
+                                  {pageNum}
                                 </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="text-orange-500 hover:text-orange-600 hover:bg-orange-500/10"
-                                  onClick={() => handleViewSchema(dataset.id, dataset.name)}
-                                  title="Schema"
-                                >
-                                  <FileText className="w-5 h-5" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="text-primary hover:text-primary/80 hover:bg-primary/10"
-                                  onClick={() => handleGenerateKG(dataset.id, dataset.name)}
-                                  title="Generate KG"
-                                >
-                                  <PlusCircle className="w-5 h-5" />
-                                </Button>
-                              </div>
-                            </td>
-                          </motion.tr>
-                        ))}
-                      </tbody>
-                    </table>
+                              );
+                            })}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={goToNextPage}
+                              disabled={currentPage === totalPages}
+                              className="h-8 w-8 p-0"
+                            >
+                              <ChevronRight className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <div className="text-center py-12 text-muted-foreground">
                       <p>No available datasets found. Please ingest data first.</p>
