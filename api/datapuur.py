@@ -541,9 +541,23 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
             # Refresh job from database to get latest status
             nonlocal job
             db_session.refresh(job)
-            if job.status == "failed":
-                logger.info(f"Job {job_id} has been cancelled, stopping processing")
+            
+            # Check if job has been marked as cancelled in the database
+            if job.status == "cancelled":
+                logger.info(f"Job {job_id} has been cancelled in the database, stopping processing")
                 return True
+                
+            # Check for cancellation marker file
+            cancel_marker_path = DATA_DIR / f"cancel_{job_id}"
+            if cancel_marker_path.exists():
+                logger.info(f"Cancellation marker found for job {job_id}, stopping processing")
+                # Update job status to cancelled since we found a marker
+                job.status = "cancelled"
+                job.end_time = datetime.now()
+                job.details = f"{job.details} (Cancelled by user)"
+                db_session.commit()
+                return True
+                
             return False
         
         # Process file based on type
@@ -559,6 +573,11 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                     job.details = f"Processing large file ({file_size / (1024 * 1024):.2f} MB) with optimized engine"
                     db_session.commit()
                     
+                    # Check for cancellation before starting large file processing
+                    if check_job_cancelled():
+                        logger.info(f"Job {job_id} was cancelled before starting large file processing, stopping")
+                        return
+                        
                     # Use pyarrow for better performance with large files
                     import pyarrow as pa
                     import pyarrow.csv as csv
@@ -586,6 +605,11 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                             
                             # Update progress every few batches
                             if batch_number % 5 == 0:
+                                # Check for cancellation during batch processing
+                                if check_job_cancelled():
+                                    logger.info(f"Job {job_id} was cancelled during batch processing, stopping")
+                                    return
+                                    
                                 # Estimate progress based on batches processed
                                 progress = min(int((batch_number * 10 * 1024 * 1024 / file_size) * 100), 99)
                                 job.progress = progress
@@ -604,6 +628,11 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                         job.progress = 99
                         job.details = f"Finalizing file processing..."
                         db_session.commit()
+                        
+                        # Check for cancellation after finalizing
+                        if check_job_cancelled():
+                            logger.info(f"Job {job_id} was cancelled after finalizing, stopping")
+                            return
                 else:
                     # For smaller files, use pandas with optimized settings
                     # Read CSV in chunks with all columns as string type initially
@@ -653,6 +682,11 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                     
                     # Process remaining chunks more efficiently
                     for chunk in chunk_iterator:
+                        # Check for cancellation before processing each chunk
+                        if check_job_cancelled():
+                            logger.info(f"Job {job_id} was cancelled during processing, stopping")
+                            return
+                                
                         # Try to convert numeric columns safely
                         for col in chunk.columns:
                             if col in ['MonthlyCharges', 'TotalCharges']:
@@ -690,7 +724,10 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                         job.details = f"Processed {processed_rows} of {total_rows} rows ({job.progress}%)"
                         db_session.commit()
                         
-                        # Remove sleep to speed up processing
+                        # Check for cancellation after updating progress
+                        if check_job_cancelled():
+                            logger.info(f"Job {job_id} was cancelled after updating progress, stopping")
+                            return
             except Exception as e:
                 logger.error(f"Error processing CSV file: {str(e)}")
                 raise ValueError(f"Error processing CSV file: {str(e)}")
@@ -699,8 +736,9 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
             try:
                 # Check if job has been cancelled before starting
                 if check_job_cancelled():
+                    logger.info(f"Job {job_id} has been cancelled before starting JSON processing, stopping")
                     return
-                
+                    
                 # Get file size to determine processing approach
                 file_size = os.path.getsize(file_path)
                 
@@ -764,12 +802,14 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                                 
                                 # Check for cancellation periodically
                                 if processed_items % 1000 == 0 and check_job_cancelled():
+                                    logger.info(f"Job {job_id} was cancelled during JSON processing, stopping")
                                     return
                                 
                                 # Process in batches for better performance
                                 if len(batch) >= batch_size:
                                     # Check for cancellation before processing batch
                                     if check_job_cancelled():
+                                        logger.info(f"Job {job_id} was cancelled before processing JSON batch, stopping")
                                         return
                                     
                                     batch_df = pd.DataFrame(batch)
@@ -811,6 +851,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                             if batch:
                                 # Check for cancellation before processing remaining batch
                                 if check_job_cancelled():
+                                    logger.info(f"Job {job_id} was cancelled before processing remaining JSON batch, stopping")
                                     return
                                         
                                 batch_df = pd.DataFrame(batch)
@@ -844,6 +885,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                             # It's a single object, process it directly
                             # Check for cancellation before processing single object
                             if check_job_cancelled():
+                                logger.info(f"Job {job_id} was cancelled before processing single JSON object, stopping")
                                 return
                                 
                             f.seek(0)  # Reset file position
@@ -861,6 +903,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                     # Update progress
                     # Check for cancellation before finalizing
                     if check_job_cancelled():
+                        logger.info(f"Job {job_id} was cancelled before finalizing JSON processing, stopping")
                         return
                         
                     job.progress = 99
@@ -870,6 +913,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                     # For smaller files, use the standard approach but with optimizations
                     # Check for cancellation before processing small file
                     if check_job_cancelled():
+                        logger.info(f"Job {job_id} was cancelled before processing small JSON file, stopping")
                         return
                         
                     with open(file_path, 'r', encoding='utf-8') as f:
@@ -962,6 +1006,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
         # Mark job as completed
         # Final check for cancellation before marking as completed
         if check_job_cancelled():
+            logger.info(f"Job {job_id} was cancelled before marking as completed, stopping")
             return
             
         job.status = "completed"
@@ -1491,6 +1536,15 @@ async def cancel_job(
             detail=f"Cannot cancel job with status: {job.status}"
         )
     
+    # Create a cancellation marker file to signal to any ongoing processes that they should stop
+    try:
+        cancel_marker_path = DATA_DIR / f"cancel_{job_id}"
+        with open(cancel_marker_path, 'w') as f:
+            f.write('cancelled')
+        logger.info(f"Created cancellation marker for job {job_id}")
+    except Exception as e:
+        logger.error(f"Error creating cancellation marker: {str(e)}")
+    
     # Update job status
     job.status = "cancelled"  # Changed from "failed" to "cancelled"
     job.error = None  # Remove error message since cancellation is not an error
@@ -1700,8 +1754,8 @@ async def get_ingestion_preview(
         # Read the parquet file
         df = pd.read_parquet(parquet_path)
         
-        # Limit to first 10 rows for preview
-        preview_df = df.head(10).copy()  # Create an explicit copy to avoid SettingWithCopyWarning
+        # Limit to first 100 rows for preview
+        preview_df = df.head(100).copy()  # Create an explicit copy to avoid SettingWithCopyWarning
         
         # Convert to appropriate format based on job type
         if job.type == "file":
@@ -2604,93 +2658,152 @@ async def preview_file(
     try:
         # For CSV files
         if file_info.type == "csv":
-            # Read first 10 rows
-            with open(file_path, 'r', newline='', encoding='utf-8') as csvfile:
-                reader = csv.reader(csvfile)
-                headers = next(reader)
+            try:
+                # Use pandas to efficiently read only the first 100 rows
+                # This is much more memory-efficient for large files
+                df = pd.read_csv(file_path, nrows=100)
+                
+                # Convert to list format for response
+                headers = df.columns.tolist()
+                # Convert NumPy types to Python native types
                 rows = []
-                for i, row in enumerate(reader):
-                    if i >= 10:  # Limit to 10 rows
-                        break
-                    rows.append(row)
-            
-            # Log activity
-            log_activity(
-                db=db,
-                username=current_user.username,
-                action="File preview",
-                details=f"Previewed file: {file_info.filename}"
-            )
-            
-            return {
-                "headers": headers,
-                "rows": rows,
-                "filename": file_info.filename,
-                "type": "csv"
-            }
+                for row in df.values:
+                    python_row = []
+                    for item in row:
+                        if pd.isna(item):
+                            python_row.append(None)
+                        elif isinstance(item, (np.integer, np.floating)):
+                            python_row.append(item.item())
+                        else:
+                            python_row.append(item)
+                    rows.append(python_row)
+                
+                # Log activity
+                log_activity(
+                    db=db,
+                    username=current_user.username,
+                    action="File preview",
+                    details=f"Previewed file: {file_info.filename}"
+                )
+                
+                return {
+                    "data": rows,
+                    "headers": headers,
+                    "filename": file_info.filename,
+                    "type": "csv"
+                }
+            except pd.errors.EmptyDataError:
+                # Handle empty CSV files
+                return {
+                    "data": [],  # Empty array
+                    "headers": [],
+                    "filename": file_info.filename,
+                    "type": "csv"
+                }
+            except Exception as e:
+                # If pandas fails (which is unlikely), fall back to a more robust method
+                # for extremely large files using csv module with iteration
+                logger.warning(f"Pandas CSV preview failed, falling back to csv module: {str(e)}")
+                with open(file_path, 'r', newline='', encoding='utf-8', errors='replace') as csvfile:
+                    # Use csv.reader with iteration to avoid loading the entire file
+                    reader = csv.reader(csvfile)
+                    try:
+                        headers = next(reader)
+                    except StopIteration:
+                        headers = []
+                    
+                    rows = []
+                    for i, row in enumerate(reader):
+                        if i >= 100:  # Limit to 100 rows
+                            break
+                        rows.append(row)
+                
+                return {
+                    "data": rows,
+                    "headers": headers,
+                    "filename": file_info.filename,
+                    "type": "csv"
+                }
         
         # For JSON files
         elif file_info.type == "json":
-            with open(file_path, 'r', encoding='utf-8') as jsonfile:
-                data = json.load(jsonfile)
-            
-            # Function to flatten nested JSON
-            def flatten_json(nested_json, prefix=''):
-                flattened = {}
-                for key, value in nested_json.items():
-                    if isinstance(value, dict):
-                        # Recursively flatten nested dictionaries
-                        flattened.update(flatten_json(value, f"{prefix}{key}_"))
-                    elif isinstance(value, list):
-                        # Handle lists by converting them to strings if they contain simple types
-                        # or by flattening if they contain dictionaries
-                        if all(not isinstance(item, dict) for item in value):
-                            # For lists of simple types, convert to string
-                            flattened[f"{prefix}{key}"] = str(value)
+            try:
+                # For large JSON files, we need to be careful about memory usage
+                # Read the file in chunks and only process the beginning
+                with open(file_path, 'r', encoding='utf-8', errors='replace') as jsonfile:
+                    # Try to parse the JSON data
+                    try:
+                        data = json.load(jsonfile)
+                    except json.JSONDecodeError as e:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Invalid JSON file: {str(e)}"
+                        )
+                
+                # Function to flatten nested JSON
+                def flatten_json(nested_json, prefix=''):
+                    flattened = {}
+                    for key, value in nested_json.items():
+                        if isinstance(value, dict):
+                            # Recursively flatten nested dictionaries
+                            flattened.update(flatten_json(value, f"{prefix}{key}_"))
+                        elif isinstance(value, list):
+                            # Handle lists by converting them to strings if they contain simple types
+                            # or by flattening if they contain dictionaries
+                            if all(not isinstance(item, dict) for item in value):
+                                # For lists of simple types, convert to string
+                                flattened[f"{prefix}{key}"] = str(value)
+                            else:
+                                # For lists of dictionaries, flatten each item
+                                for i, item in enumerate(value):
+                                    if isinstance(item, dict):
+                                        flattened.update(flatten_json(item, f"{prefix}{key}_{i}_"))
+                                    else:
+                                        flattened[f"{prefix}{key}_{i}"] = item
                         else:
-                            # For lists of dictionaries, flatten each item
-                            for i, item in enumerate(value):
-                                if isinstance(item, dict):
-                                    flattened.update(flatten_json(item, f"{prefix}{key}_{i}_"))
-                                else:
-                                    flattened[f"{prefix}{key}_{i}"] = item
-                    else:
-                        # For simple types, just add them with the prefix
-                        flattened[f"{prefix}{key}"] = value
-                return flattened
-            
-            # If it's an array, limit to first 10 items and flatten each item
-            if isinstance(data, list):
-                limited_data = data[:10]  # Limit to first 10 items
-                flattened_data = []
-                for item in limited_data:
-                    if isinstance(item, dict):
-                        flattened_data.append(flatten_json(item))
-                    else:
-                        flattened_data.append({"value": item})
-                preview_data = flattened_data
-            else:
+                            # For simple types, just add them with the prefix
+                            flattened[f"{prefix}{key}"] = value
+                    return flattened
+                
+                # If it's an array, limit to first 100 items and flatten each item
+                if isinstance(data, list):
+                    limited_data = data[:100]  # Limit to first 100 items
+                    flattened_data = []
+                    for item in limited_data:
+                        if isinstance(item, dict):
+                            flattened_data.append(flatten_json(item))
+                        else:
+                            flattened_data.append({"value": item})
                 # If it's a single object, flatten it
-                preview_data = flatten_json(data) if isinstance(data, dict) else {"value": data}
-            
-            # Log activity
-            log_activity(
-                db=db,
-                username=current_user.username,
-                action="File preview",
-                details=f"Previewed file: {file_info.filename}"
-            )
-            
-            # Convert to DataFrame to get headers and rows for consistent display
-            df = pd.DataFrame(preview_data if isinstance(preview_data, list) else [preview_data])
-            
-            # Return data in a format similar to CSV preview
-            return {
-                "headers": df.columns.tolist(),
-                "data": df.values.tolist() if not df.empty else [],
-                "filename": file_info.filename,
-                "type": "json"
-            }
+                elif isinstance(data, dict):
+                    flattened_data = [flatten_json(data)]
+                else:
+                    flattened_data = [{"value": data}]
+                
+                # Log activity
+                log_activity(
+                    db=db,
+                    username=current_user.username,
+                    action="File preview",
+                    details=f"Previewed file: {file_info.filename}"
+                )
+                
+                # Convert to DataFrame to get headers and rows for consistent display
+                df = pd.DataFrame(flattened_data)
+                
+                # Return data in a format similar to CSV preview
+                return {
+                    "data": df.values.tolist() if not df.empty else [],
+                    "headers": df.columns.tolist(),
+                    "filename": file_info.filename,
+                    "type": "json"
+                }
+            except Exception as e:
+                logger.error(f"Error previewing JSON file: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Error previewing JSON file: {str(e)}"
+                )
         
         else:
             raise HTTPException(
@@ -2759,16 +2872,50 @@ async def upload_chunk(
     db: Session = Depends(get_db)
 ):
     """Upload a chunk of a large file"""
+    logger.info(f"Received chunk {chunkIndex + 1} of {totalChunks} for upload ID: {uploadId}")
+    
     # Create a directory for this upload if it doesn't exist
     chunks_dir = UPLOAD_DIR / "chunks" / uploadId
-    chunks_dir.mkdir(parents=True, exist_ok=True)
     
-    # Save the chunk
-    chunk_path = chunks_dir / f"chunk_{chunkIndex}"
     try:
+        # Ensure the upload directory exists
+        if not UPLOAD_DIR.exists():
+            logger.info(f"Creating upload directory: {UPLOAD_DIR}")
+            UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        
+        # Ensure the chunks parent directory exists
+        chunks_parent = UPLOAD_DIR / "chunks"
+        if not chunks_parent.exists():
+            logger.info(f"Creating chunks parent directory: {chunks_parent}")
+            chunks_parent.mkdir(parents=True, exist_ok=True)
+        
+        # Create the specific chunks directory for this upload
+        if not chunks_dir.exists():
+            logger.info(f"Creating chunks directory for upload ID {uploadId}: {chunks_dir}")
+            chunks_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Log the directory structure
+        logger.info(f"Directory structure: UPLOAD_DIR={UPLOAD_DIR}, chunks_parent={chunks_parent}, chunks_dir={chunks_dir}")
+        
+        # Save the chunk
+        chunk_path = chunks_dir / f"chunk_{chunkIndex}"
+        logger.info(f"Saving chunk {chunkIndex + 1} to {chunk_path}")
+        
         with open(chunk_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
+        
+        # Verify the chunk was saved correctly
+        if not chunk_path.exists():
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to save chunk {chunkIndex + 1}: File not found after save"
+            )
+        
+        chunk_size = os.path.getsize(chunk_path)
+        logger.info(f"Chunk {chunkIndex + 1} saved successfully, size: {chunk_size} bytes")
+        
     except Exception as e:
+        logger.error(f"Error saving chunk {chunkIndex + 1}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error saving chunk: {str(e)}"
@@ -2786,122 +2933,205 @@ async def complete_chunked_upload(
 ):
     """Complete a chunked upload by combining all chunks into a single file"""
     # Parse request body
-    data = await request.json()
-    upload_id = data.get("uploadId")
-    file_name = data.get("fileName")
-    total_chunks = data.get("totalChunks")
-    chunk_size = data.get("chunkSize")
-    original_chunk_size = data.get("originalChunkSize", 1000)
-    
-    if not all([upload_id, file_name, total_chunks, chunk_size]):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing required parameters"
-        )
-    
-    # Check if this upload was cancelled
-    cancel_marker = UPLOAD_DIR / f"cancel_{upload_id}"
-    if cancel_marker.exists():
-        # The upload was cancelled, clean up any chunks and return appropriate response
-        chunks_dir = UPLOAD_DIR / f"chunks_{upload_id}"
-        if chunks_dir.exists():
-            try:
-                shutil.rmtree(chunks_dir)
-            except Exception as e:
-                logger.error(f"Error cleaning up chunks after cancellation: {str(e)}")
-        
-        # Remove the cancellation marker
-        try:
-            os.remove(cancel_marker)
-        except Exception as e:
-            logger.error(f"Error removing cancellation marker: {str(e)}")
-        
-        # Return a response indicating the upload was cancelled
-        return {"cancelled": True, "message": "Upload was cancelled by the user"}
-    
-    # Get file extension
-    file_ext = file_name.split('.')[-1].lower()
-    if file_ext not in ['csv', 'json']:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only CSV and JSON files are supported"
-        )
-    
-    # Generate a unique file ID
-    file_id = str(uuid.uuid4())
-    file_path = UPLOAD_DIR / f"{file_id}.{file_ext}"
-    
-    # Combine chunks into a single file
-    chunks_dir = UPLOAD_DIR / f"chunks_{upload_id}"
-    
     try:
+        data = await request.json()
+        upload_id = data.get("uploadId")
+        file_name = data.get("fileName")
+        total_chunks = data.get("totalChunks")
+        chunk_size = data.get("chunkSize")
+        original_chunk_size = data.get("originalChunkSize", 1000)
+        
+        logger.info(f"Starting chunked upload completion for {file_name}, ID: {upload_id}, chunks: {total_chunks}")
+        
+        if not all([upload_id, file_name, total_chunks, chunk_size]):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing required parameters"
+            )
+        
+        # Check if this upload was cancelled
+        cancel_marker = UPLOAD_DIR / f"cancel_{upload_id}"
+        if cancel_marker.exists():
+            # The upload was cancelled, clean up any chunks and return appropriate response
+            chunks_dir = UPLOAD_DIR / "chunks" / upload_id
+            if chunks_dir.exists():
+                try:
+                    shutil.rmtree(chunks_dir)
+                except Exception as e:
+                    logger.error(f"Error cleaning up chunks after cancellation: {str(e)}")
+            
+            # Remove the cancellation marker
+            try:
+                os.remove(cancel_marker)
+            except Exception as e:
+                logger.error(f"Error removing cancellation marker: {str(e)}")
+            
+            # Return a response indicating the upload was cancelled
+            return {"cancelled": True, "message": "Upload was cancelled by the user"}
+        
+        # Get file extension
+        file_ext = file_name.split('.')[-1].lower()
+        if file_ext not in ['csv', 'json']:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only CSV and JSON files are supported"
+            )
+        
+        # Generate a unique file ID
+        file_id = str(uuid.uuid4())
+        file_path = UPLOAD_DIR / f"{file_id}.{file_ext}"
+        
+        # Combine chunks into a single file
+        chunks_dir = UPLOAD_DIR / "chunks" / upload_id
+        
         # Check if chunks directory exists
         if not chunks_dir.exists():
-            # Check if this was a cancelled upload
-            if cancel_marker.exists():
-                try:
-                    os.remove(cancel_marker)
-                except Exception as e:
-                    logger.error(f"Error removing cancellation marker: {str(e)}")
-                return {"cancelled": True, "message": "Upload was cancelled by the user"}
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Chunks directory not found. Upload may have been cancelled or failed."
+            # Check all possible paths that might have been used
+            alternative_paths = [
+                UPLOAD_DIR / f"chunks_{upload_id}",  # Old format
+                UPLOAD_DIR / upload_id,              # Another possible format
+                UPLOAD_DIR / "chunks" / upload_id    # Current format
+            ]
+            
+            found_dir = None
+            for path in alternative_paths:
+                if path.exists():
+                    logger.info(f"Found chunks directory at alternative path: {path}")
+                    found_dir = path
+                    chunks_dir = path
+                    break
+            
+            if found_dir is None:
+                # Check if this was a cancelled upload
+                if cancel_marker.exists():
+                    try:
+                        os.remove(cancel_marker)
+                    except Exception as e:
+                        logger.error(f"Error removing cancellation marker: {str(e)}")
+                    return {"cancelled": True, "message": "Upload was cancelled by the user"}
+                else:
+                    # List all directories in UPLOAD_DIR to help debug
+                    try:
+                        upload_contents = list(UPLOAD_DIR.iterdir())
+                        chunks_parent = UPLOAD_DIR / "chunks"
+                        chunks_contents = list(chunks_parent.iterdir()) if chunks_parent.exists() else []
+                        
+                        logger.error(f"Chunks directory not found at {chunks_dir}")
+                        logger.error(f"UPLOAD_DIR contents: {upload_contents}")
+                        logger.error(f"Chunks parent directory exists: {chunks_parent.exists()}")
+                        if chunks_parent.exists():
+                            logger.error(f"Chunks parent directory contents: {chunks_contents}")
+                    except Exception as e:
+                        logger.error(f"Error listing directory contents: {str(e)}")
+                    
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Chunks directory not found. Upload may have been cancelled or failed."
+                    )
+        
+        logger.info(f"Found chunks directory for {upload_id}, combining {total_chunks} chunks")
+        
+        # Check if all chunks exist before starting to combine them
+        for i in range(total_chunks):
+            chunk_path = chunks_dir / f"chunk_{i}"
+            if not chunk_path.exists():
+                # Check if this was a cancelled upload
+                if cancel_marker.exists():
+                    try:
+                        os.remove(cancel_marker)
+                    except Exception as e:
+                        logger.error(f"Error removing cancellation marker: {str(e)}")
+                    return {"cancelled": True, "message": "Upload was cancelled by the user"}
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Chunk {i + 1} is missing"
+                    )
+        
+        # Now that we've verified all chunks exist, combine them
+        try:
+            # Use buffered I/O for better performance with large files
+            with open(file_path, "wb", buffering=8192) as outfile:
+                for i in range(total_chunks):
+                    chunk_path = chunks_dir / f"chunk_{i}"
+                    logger.info(f"Processing chunk {i+1}/{total_chunks} from {chunk_path}")
+                    
+                    # Use buffered reading for better performance
+                    with open(chunk_path, "rb", buffering=8192) as infile:
+                        # Copy in smaller chunks to avoid memory issues
+                        bytes_copied = 0
+                        while True:
+                            buffer = infile.read(1024 * 1024)  # Read 1MB at a time
+                            if not buffer:
+                                break
+                            outfile.write(buffer)
+                            bytes_copied += len(buffer)
+                        logger.info(f"Copied {bytes_copied} bytes from chunk {i+1}")
+            
+            logger.info(f"All chunks combined successfully into {file_path}")
+            
+            # Clean up chunks
+            try:
+                shutil.rmtree(chunks_dir)
+                logger.info(f"Cleaned up chunks directory {chunks_dir}")
+            except Exception as e:
+                logger.warning(f"Failed to clean up chunks directory: {str(e)}")
+            
+            # Get actual file size
+            actual_file_size = os.path.getsize(file_path)
+            logger.info(f"Final file size: {actual_file_size} bytes")
+            
+            # Store file info in database
+            file_data = {
+                "filename": file_name,
+                "path": str(file_path),
+                "type": file_ext,
+                "uploaded_by": current_user.username,
+                "uploaded_at": datetime.now(),
+                "chunk_size": original_chunk_size
+            }
+            
+            try:
+                save_uploaded_file(db, file_id, file_data)
+                logger.info(f"File information saved to database with ID {file_id}")
+            except Exception as db_error:
+                logger.error(f"Database error while saving file info: {str(db_error)}")
+                raise
+            
+            # Log activity
+            try:
+                log_activity(
+                    db=db,
+                    username=current_user.username,
+                    action="File upload (chunked)",
+                    details=f"Uploaded file: {file_name} ({file_ext.upper()}) using chunked upload"
                 )
-        
-        with open(file_path, "wb") as outfile:
-            for i in range(total_chunks):
-                chunk_path = chunks_dir / f"chunk_{i}"
-                if not chunk_path.exists():
-                    # Check if this was a cancelled upload
-                    if cancel_marker.exists():
-                        try:
-                            os.remove(cancel_marker)
-                        except Exception as e:
-                            logger.error(f"Error removing cancellation marker: {str(e)}")
-                        return {"cancelled": True, "message": "Upload was cancelled by the user"}
-                    else:
-                        raise HTTPException(
-                            status_code=status.HTTP_400_BAD_REQUEST,
-                            detail=f"Chunk {i + 1} is missing"
-                        )
-                
-                with open(chunk_path, "rb") as infile:
-                    shutil.copyfileobj(infile, outfile)
-        
-        # Clean up chunks
-        shutil.rmtree(chunks_dir)
-        
-        # Store file info in database
-        file_data = {
-            "filename": file_name,
-            "path": str(file_path),
-            "type": file_ext,
-            "uploaded_by": current_user.username,
-            "uploaded_at": datetime.now(),
-            "chunk_size": original_chunk_size
-        }
-        save_uploaded_file(db, file_id, file_data)
-        
-        # Log activity
-        log_activity(
-            db=db,
-            username=current_user.username,
-            action="File upload (chunked)",
-            details=f"Uploaded file: {file_name} ({file_ext.upper()}) using chunked upload"
-        )
-        
-        return {"file_id": file_id, "message": "File uploaded successfully"}
-    
+                logger.info(f"Activity logged for chunked upload of {file_name}")
+            except Exception as log_error:
+                logger.error(f"Error logging activity: {str(log_error)}")
+                # Don't raise here, as the file is already saved
+            
+            return {"file_id": file_id, "message": "File uploaded successfully"}
+            
+        except Exception as combine_error:
+            logger.error(f"Error while combining chunks: {str(combine_error)}")
+            # Re-raise to be caught by the outer exception handler
+            raise
+            
     except Exception as e:
+        error_msg = str(e) if str(e) else repr(e)
+        logger.error(f"Error completing chunked upload: {error_msg}", exc_info=True)
         # Clean up any partial files
-        if file_path.exists():
-            os.remove(file_path)
+        try:
+            if 'file_path' in locals() and file_path.exists():
+                os.remove(file_path)
+                logger.info(f"Cleaned up partial file {file_path}")
+        except Exception as cleanup_error:
+            logger.error(f"Error during cleanup after failure: {str(cleanup_error)}")
         
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error completing chunked upload: {str(e)}"
+            detail=f"Error completing chunked upload: {error_msg}"
         )
 
 # Add endpoint for cancelling chunked uploads
@@ -2923,7 +3153,7 @@ async def cancel_chunked_upload(
         )
     
     # Create the chunks directory path based on the upload ID
-    chunks_dir = UPLOAD_DIR / f"chunks_{upload_id}"
+    chunks_dir = UPLOAD_DIR / "chunks" / upload_id
     
     # Check if the chunks directory exists
     if chunks_dir.exists():
@@ -3054,4 +3284,128 @@ async def create_job(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create job: {str(e)}"
+        )
+
+# Add endpoint for previewing files directly from the client
+@router.post("/preview-file")
+async def preview_file_direct(
+    file: UploadFile = File(...),
+    current_user: User = Depends(has_permission("datapuur:read")),
+    db: Session = Depends(get_db)
+):
+    """
+    Preview a file directly from the client without requiring the file to be uploaded first.
+    Returns headers and a sample of rows from the file.
+    """
+    try:
+        # Create a temporary file to store the uploaded content
+        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+            # Read the file content in chunks to handle large files
+            content = await file.read()
+            temp_file.write(content)
+            temp_path = temp_file.name
+        
+        file_extension = file.filename.split('.')[-1].lower()
+        
+        # Process based on file type
+        if file_extension == 'csv':
+            # Read CSV file
+            try:
+                df = pd.read_csv(temp_path)
+                # Handle empty values in the DataFrame
+                df = df.replace({np.nan: None})
+                
+                # Convert to list of lists for JSON serialization
+                headers = df.columns.tolist()
+                
+                # Get a sample of rows (first 50 rows)
+                sample_rows = []
+                for _, row in df.head(50).iterrows():
+                    # Convert each row to a list of values
+                    row_values = []
+                    for val in row:
+                        # Handle special types for JSON serialization
+                        if isinstance(val, (np.integer, np.floating)):
+                            val = val.item()  # Convert numpy types to native Python types
+                        row_values.append(val)
+                    sample_rows.append(row_values)
+                
+                # Clean up the temporary file
+                os.unlink(temp_path)
+                
+                return {
+                    "headers": headers,
+                    "rows": sample_rows
+                }
+            except Exception as e:
+                logger.error(f"Error processing CSV file: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Error processing CSV file: {str(e)}"
+                )
+        
+        elif file_extension == 'json':
+            # Read JSON file
+            try:
+                with open(temp_path, 'r') as f:
+                    data = json.load(f)
+                
+                # Ensure data is a list of objects
+                if not isinstance(data, list):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="JSON file must contain an array of objects"
+                    )
+                
+                if len(data) == 0:
+                    return {
+                        "headers": [],
+                        "rows": []
+                    }
+                
+                # Get headers from the first object
+                headers = list(data[0].keys())
+                
+                # Get a sample of rows (first 50 rows)
+                sample_rows = []
+                for item in data[:50]:
+                    row = []
+                    for header in headers:
+                        row.append(item.get(header, None))
+                    sample_rows.append(row)
+                
+                # Clean up the temporary file
+                os.unlink(temp_path)
+                
+                return {
+                    "headers": headers,
+                    "rows": sample_rows
+                }
+            except json.JSONDecodeError:
+                logger.error("Invalid JSON file")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid JSON file"
+                )
+            except Exception as e:
+                logger.error(f"Error processing JSON file: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Error processing JSON file: {str(e)}"
+                )
+        
+        else:
+            # Clean up the temporary file
+            os.unlink(temp_path)
+            
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported file type: {file_extension}. Only CSV and JSON files are supported."
+            )
+    
+    except Exception as e:
+        logger.error(f"Error previewing file: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error previewing file: {str(e)}"
         )

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { PlusCircle, Search, Eye, BarChart2, Wand2, Compass, RefreshCw, Trash2 } from "lucide-react"
+import { PlusCircle, Search, Eye, BarChart2, Wand2, Compass, RefreshCw, Trash2, ChevronLeft, ChevronRight } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { DatasetPreviewModal } from "@/components/datapuur/dataset-preview-modal"
 import { format } from "date-fns"
@@ -70,6 +70,9 @@ export function DataDashboard() {
   const [datasetToDelete, setDatasetToDelete] = useState<{ id: string; name: string } | null>(null)
   const [userRole, setUserRole] = useState<string | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  // Add pagination state
+  const [currentPage, setCurrentPage] = useState(1)
+  const [itemsPerPage] = useState(10)
   const router = useRouter()
   const { toast } = useToast()
 
@@ -243,6 +246,29 @@ export function DataDashboard() {
   // Replace filteredDatasets with the sorted version
   const filteredDatasets = getSortedDatasets()
 
+  // Add pagination logic
+  const indexOfLastItem = currentPage * itemsPerPage
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage
+  const currentItems = filteredDatasets.slice(indexOfFirstItem, indexOfLastItem)
+  const totalPages = Math.ceil(filteredDatasets.length / itemsPerPage)
+
+  // Add pagination control functions
+  const goToNextPage = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage(currentPage + 1)
+    }
+  }
+
+  const goToPreviousPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1)
+    }
+  }
+
+  const goToPage = (pageNumber: number) => {
+    setCurrentPage(pageNumber)
+  }
+
   const getStatusClass = (status: string) => {
     switch (status.toLowerCase()) {
       case "active":
@@ -402,139 +428,197 @@ export function DataDashboard() {
               <RefreshCw className="h-8 w-8 animate-spin text-primary" />
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="border-t border-b border-border">
-                  <TableHead 
-                    className="cursor-pointer hover:text-primary transition-colors"
-                    onClick={() => handleSort("name")}
-                  >
-                    Name
-                    {sortColumn === "name" && (
-                      <span className="ml-1">
-                        {sortDirection === "asc" ? "↑" : "↓"}
-                      </span>
-                    )}
-                  </TableHead>
-                  <TableHead 
-                    className="cursor-pointer hover:text-primary transition-colors"
-                    onClick={() => handleSort("type")}
-                  >
-                    Type
-                    {sortColumn === "type" && (
-                      <span className="ml-1">
-                        {sortDirection === "asc" ? "↑" : "↓"}
-                      </span>
-                    )}
-                  </TableHead>
-                  <TableHead 
-                    className="cursor-pointer hover:text-primary transition-colors"
-                    onClick={() => handleSort("last_updated")}
-                  >
-                    Last Updated
-                    {sortColumn === "last_updated" && (
-                      <span className="ml-1">
-                        {sortDirection === "asc" ? "↑" : "↓"}
-                      </span>
-                    )}
-                  </TableHead>
-                  <TableHead 
-                    className="cursor-pointer hover:text-primary transition-colors"
-                    onClick={() => handleSort("status")}
-                  >
-                    Status
-                    {sortColumn === "status" && (
-                      <span className="ml-1">
-                        {sortDirection === "asc" ? "↑" : "↓"}
-                      </span>
-                    )}
-                  </TableHead>
-                  <TableHead 
-                    className="cursor-pointer hover:text-primary transition-colors"
-                    onClick={() => handleSort("uploaded_by")}
-                  >
-                    Uploaded By
-                    {sortColumn === "uploaded_by" && (
-                      <span className="ml-1">
-                        {sortDirection === "asc" ? "↑" : "↓"}
-                      </span>
-                    )}
-                  </TableHead>
-                  <TableHead className="w-[180px] text-center">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredDatasets.length > 0 ? (
-                  filteredDatasets.map((dataset) => (
-                    <TableRow key={dataset.id}>
-                      <TableCell className="font-medium">{dataset.name}</TableCell>
-                      <TableCell>{dataset.type}</TableCell>
-                      <TableCell>{formatDate(dataset.last_updated)}</TableCell>
-                      <TableCell className={getStatusClass(dataset.status)}>{dataset.status}</TableCell>
-                      <TableCell>{dataset.uploaded_by}</TableCell>
-                      <TableCell>
-                        <div className="flex justify-center space-x-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handlePreview(dataset.id, dataset.name)}
-                            title="Preview"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={(e) => handleProfile(dataset.id, e)}
-                            title="Profile"
-                            disabled={dataset.status.toLowerCase() !== "active"}
-                          >
-                            <BarChart2 className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleTransform(dataset.id)}
-                            title="Transform"
-                            disabled={dataset.status.toLowerCase() !== "active"}
-                          >
-                            <Wand2 className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleExplore(dataset.id)}
-                            title="Explore"
-                            disabled={dataset.status.toLowerCase() !== "active"}
-                          >
-                            <Compass className="h-4 w-4" />
-                          </Button>
-                          {canDeleteDataset(dataset) && (
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-t border-b border-border">
+                    <TableHead 
+                      className="cursor-pointer hover:text-primary transition-colors"
+                      onClick={() => handleSort("name")}
+                    >
+                      Name
+                      {sortColumn === "name" && (
+                        <span className="ml-1">
+                          {sortDirection === "asc" ? "↑" : "↓"}
+                        </span>
+                      )}
+                    </TableHead>
+                    <TableHead 
+                      className="cursor-pointer hover:text-primary transition-colors"
+                      onClick={() => handleSort("type")}
+                    >
+                      Type
+                      {sortColumn === "type" && (
+                        <span className="ml-1">
+                          {sortDirection === "asc" ? "↑" : "↓"}
+                        </span>
+                      )}
+                    </TableHead>
+                    <TableHead 
+                      className="cursor-pointer hover:text-primary transition-colors"
+                      onClick={() => handleSort("last_updated")}
+                    >
+                      Last Updated
+                      {sortColumn === "last_updated" && (
+                        <span className="ml-1">
+                          {sortDirection === "asc" ? "↑" : "↓"}
+                        </span>
+                      )}
+                    </TableHead>
+                    <TableHead 
+                      className="cursor-pointer hover:text-primary transition-colors"
+                      onClick={() => handleSort("status")}
+                    >
+                      Status
+                      {sortColumn === "status" && (
+                        <span className="ml-1">
+                          {sortDirection === "asc" ? "↑" : "↓"}
+                        </span>
+                      )}
+                    </TableHead>
+                    <TableHead 
+                      className="cursor-pointer hover:text-primary transition-colors"
+                      onClick={() => handleSort("uploaded_by")}
+                    >
+                      Uploaded By
+                      {sortColumn === "uploaded_by" && (
+                        <span className="ml-1">
+                          {sortDirection === "asc" ? "↑" : "↓"}
+                        </span>
+                      )}
+                    </TableHead>
+                    <TableHead className="w-[180px] text-center">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {currentItems.length > 0 ? (
+                    currentItems.map((dataset) => (
+                      <TableRow key={dataset.id}>
+                        <TableCell className="font-medium">{dataset.name}</TableCell>
+                        <TableCell>{dataset.type}</TableCell>
+                        <TableCell>{formatDate(dataset.last_updated)}</TableCell>
+                        <TableCell className={getStatusClass(dataset.status)}>{dataset.status}</TableCell>
+                        <TableCell>{dataset.uploaded_by}</TableCell>
+                        <TableCell>
+                          <div className="flex justify-center space-x-2">
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => handleDeleteClick(dataset)}
-                              title="Delete"
-                              className="text-destructive hover:bg-destructive/10"
+                              onClick={() => handlePreview(dataset.id, dataset.name)}
+                              title="Preview"
                             >
-                              <Trash2 className="h-4 w-4" />
+                              <Eye className="h-4 w-4" />
                             </Button>
-                          )}
-                        </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={(e) => handleProfile(dataset.id, e)}
+                              title="Profile"
+                              disabled={dataset.status.toLowerCase() !== "active"}
+                            >
+                              <BarChart2 className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleTransform(dataset.id)}
+                              title="Transform"
+                              disabled={dataset.status.toLowerCase() !== "active"}
+                            >
+                              <Wand2 className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleExplore(dataset.id)}
+                              title="Explore"
+                              disabled={dataset.status.toLowerCase() !== "active"}
+                            >
+                              <Compass className="h-4 w-4" />
+                            </Button>
+                            {canDeleteDataset(dataset) && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDeleteClick(dataset)}
+                                title="Delete"
+                                className="text-destructive hover:bg-destructive/10"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={6} className="h-24 text-center">
+                        {searchQuery
+                          ? "No matching datasets found."
+                          : "No datasets available. Create one by clicking 'New Dataset'."}
                       </TableCell>
                     </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={6} className="h-24 text-center">
-                      {searchQuery
-                        ? "No matching datasets found."
-                        : "No datasets available. Create one by clicking 'New Dataset'."}
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                  )}
+                </TableBody>
+              </Table>
+              {filteredDatasets.length > 0 && (
+                <div className="flex items-center justify-between mt-4 px-2">
+                  <div className="text-sm text-muted-foreground">
+                    Showing {indexOfFirstItem + 1} to {Math.min(indexOfLastItem, filteredDatasets.length)} of {filteredDatasets.length} datasets
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={goToPreviousPage}
+                      disabled={currentPage === 1}
+                      className="h-8 w-8 p-0"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      // Show pages around current page
+                      let pageNum = 0;
+                      if (totalPages <= 5) {
+                        // If we have 5 or fewer pages, show all
+                        pageNum = i + 1;
+                      } else if (currentPage <= 3) {
+                        // If we're near the start
+                        pageNum = i + 1;
+                      } else if (currentPage >= totalPages - 2) {
+                        // If we're near the end
+                        pageNum = totalPages - 4 + i;
+                      } else {
+                        // We're in the middle
+                        pageNum = currentPage - 2 + i;
+                      }
+                      
+                      return (
+                        <Button
+                          key={pageNum}
+                          variant={currentPage === pageNum ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => goToPage(pageNum)}
+                          className="h-8 w-8 p-0"
+                        >
+                          {pageNum}
+                        </Button>
+                      );
+                    })}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={goToNextPage}
+                      disabled={currentPage === totalPages}
+                      className="h-8 w-8 p-0"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
