@@ -838,10 +838,11 @@ export function FileUpload({
       const file = files[fileIndex]
       const fileType = file.name.split(".").pop()?.toLowerCase()
       
-      // Update status
+      // Update status - but DON'T set processing status for preview operations
       const previewStatus = `Generating preview for ${file.name}...`
       onStatusChange(previewStatus)
-      setProcessingStatus(previewStatus)
+      // Remove this line to prevent preview from showing in ingestion jobs
+      // setProcessingStatus(previewStatus)
       
       // Process the file locally instead of uploading to the server
       if (fileType === 'csv') {
@@ -901,14 +902,16 @@ export function FileUpload({
             
             // Clear status after preview is generated
             onStatusChange("")
-            setProcessingStatus("")
+            // Remove this line to prevent clearing processing status that might be needed for actual jobs
+            // setProcessingStatus("")
             setIsPreviewLoading(false)
           } catch (error) {
             console.error("CSV parsing error:", error)
             setError(error instanceof Error ? error.message : "Failed to parse CSV file")
             addError(error instanceof Error ? error.message : "Failed to parse CSV file")
             onStatusChange("")
-            setProcessingStatus("")
+            // Remove this line to prevent clearing processing status that might be needed for actual jobs
+            // setProcessingStatus("")
             setIsPreviewLoading(false)
           }
         }
@@ -917,7 +920,8 @@ export function FileUpload({
           setError("Failed to read file")
           addError("Failed to read file")
           onStatusChange("")
-          setProcessingStatus("")
+          // Remove this line to prevent clearing processing status that might be needed for actual jobs
+          // setProcessingStatus("")
           setIsPreviewLoading(false)
         }
         
@@ -949,7 +953,8 @@ export function FileUpload({
                 fileName: file.name,
               })
               onStatusChange("")
-              setProcessingStatus("")
+              // Remove this line to prevent clearing processing status that might be needed for actual jobs
+              // setProcessingStatus("")
               setIsPreviewLoading(false)
               return
             }
@@ -978,14 +983,16 @@ export function FileUpload({
             
             // Clear status after preview is generated
             onStatusChange("")
-            setProcessingStatus("")
+            // Remove this line to prevent clearing processing status that might be needed for actual jobs
+            // setProcessingStatus("")
             setIsPreviewLoading(false)
           } catch (error) {
             console.error("JSON parsing error:", error)
             setError(error instanceof Error ? error.message : "Failed to parse JSON file")
             addError(error instanceof Error ? error.message : "Failed to parse JSON file")
             onStatusChange("")
-            setProcessingStatus("")
+            // Remove this line to prevent clearing processing status that might be needed for actual jobs
+            // setProcessingStatus("")
             setIsPreviewLoading(false)
           }
         }
@@ -994,7 +1001,8 @@ export function FileUpload({
           setError("Failed to read file")
           addError("Failed to read file")
           onStatusChange("")
-          setProcessingStatus("")
+          // Remove this line to prevent clearing processing status that might be needed for actual jobs
+          // setProcessingStatus("")
           setIsPreviewLoading(false)
         }
         
@@ -1011,7 +1019,8 @@ export function FileUpload({
       
       // Clear status on error
       onStatusChange("")
-      setProcessingStatus("")
+      // Remove this line to prevent clearing processing status that might be needed for actual jobs
+      // setProcessingStatus("")
       setIsPreviewLoading(false)
     }
   }
