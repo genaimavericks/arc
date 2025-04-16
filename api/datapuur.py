@@ -1754,8 +1754,8 @@ async def get_ingestion_preview(
         # Read the parquet file
         df = pd.read_parquet(parquet_path)
         
-        # Limit to first 10 rows for preview
-        preview_df = df.head(10).copy()  # Create an explicit copy to avoid SettingWithCopyWarning
+        # Limit to first 100 rows for preview
+        preview_df = df.head(100).copy()  # Create an explicit copy to avoid SettingWithCopyWarning
         
         # Convert to appropriate format based on job type
         if job.type == "file":

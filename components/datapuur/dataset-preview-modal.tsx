@@ -71,12 +71,12 @@ export function DatasetPreviewModal({
         const dataArray = Array.isArray(data.data) ? data.data : [data.data];
         
         return (
-          <ScrollArea className="h-[400px]">
-            <Table>
+          <div className="overflow-x-auto w-full">
+            <Table className="min-w-max">
               <TableHeader>
                 <TableRow>
                   {data.headers.map((header: string, index: number) => (
-                    <TableHead key={index}>{header}</TableHead>
+                    <TableHead key={index} className="whitespace-nowrap">{header}</TableHead>
                   ))}
                 </TableRow>
               </TableHeader>
@@ -84,11 +84,11 @@ export function DatasetPreviewModal({
                 {dataArray.map((row: any, rowIndex: number) => (
                   <TableRow key={rowIndex}>
                     {Array.isArray(row) ? row.map((cell, cellIndex) => (
-                      <TableCell key={cellIndex}>
+                      <TableCell key={cellIndex} className="whitespace-nowrap">
                         {formatCellValue(cell)}
                       </TableCell>
                     )) : (
-                      <TableCell>
+                      <TableCell className="whitespace-nowrap">
                         {formatCellValue(row)}
                       </TableCell>
                     )}
@@ -96,7 +96,7 @@ export function DatasetPreviewModal({
                 ))}
               </TableBody>
             </Table>
-          </ScrollArea>
+          </div>
         )
       }
       
@@ -106,12 +106,12 @@ export function DatasetPreviewModal({
         const dataArray = Array.isArray(data.data) ? data.data : [data.data];
         
         return (
-          <ScrollArea className="h-[400px]">
-            <Table>
+          <div className="overflow-x-auto w-full">
+            <Table className="min-w-max">
               <TableHeader>
                 <TableRow>
                   {data.headers.map((header: string, index: number) => (
-                    <TableHead key={index}>{header}</TableHead>
+                    <TableHead key={index} className="whitespace-nowrap">{header}</TableHead>
                   ))}
                 </TableRow>
               </TableHeader>
@@ -119,11 +119,11 @@ export function DatasetPreviewModal({
                 {dataArray.map((row: { [key: string]: any }, rowIndex: number) => (
                   <TableRow key={rowIndex}>
                     {typeof row === 'object' && row !== null ? data.headers.map((header: string, cellIndex: number) => (
-                      <TableCell key={cellIndex}>
+                      <TableCell key={cellIndex} className="whitespace-nowrap">
                         {formatCellValue(row[header])}
                       </TableCell>
                     )) : (
-                      <TableCell colSpan={data.headers.length}>
+                      <TableCell colSpan={data.headers.length} className="whitespace-nowrap">
                         {formatCellValue(row)}
                       </TableCell>
                     )}
@@ -131,7 +131,7 @@ export function DatasetPreviewModal({
                 ))}
               </TableBody>
             </Table>
-          </ScrollArea>
+          </div>
         )
       }
     }
@@ -147,12 +147,12 @@ export function DatasetPreviewModal({
         : ['Value'];
 
       return (
-        <ScrollArea className="h-[400px]">
-          <Table>
+        <div className="overflow-x-auto w-full">
+          <Table className="min-w-max">
             <TableHeader>
               <TableRow>
                 {headers.map((header, index) => (
-                  <TableHead key={index}>{header}</TableHead>
+                  <TableHead key={index} className="whitespace-nowrap">{header}</TableHead>
                 ))}
               </TableRow>
             </TableHeader>
@@ -160,11 +160,11 @@ export function DatasetPreviewModal({
               {dataArray.map((row: { [key: string]: any }, rowIndex: number) => (
                 <TableRow key={rowIndex}>
                   {typeof row === 'object' && row !== null ? headers.map((header: string, cellIndex: number) => (
-                    <TableCell key={cellIndex}>
+                    <TableCell key={cellIndex} className="whitespace-nowrap">
                       {formatCellValue(row[header])}
                     </TableCell>
                   )) : (
-                    <TableCell colSpan={headers.length}>
+                    <TableCell colSpan={headers.length} className="whitespace-nowrap">
                       {formatCellValue(row)}
                     </TableCell>
                   )}
@@ -172,7 +172,7 @@ export function DatasetPreviewModal({
               ))}
             </TableBody>
           </Table>
-        </ScrollArea>
+        </div>
       )
     }
 
@@ -190,7 +190,7 @@ export function DatasetPreviewModal({
       try {
         // For better readability in the UI, use a pre-formatted display
         return (
-          <pre className="whitespace-pre-wrap text-xs max-w-[300px] overflow-auto">
+          <pre className="text-xs max-w-[200px] overflow-auto">
             {JSON.stringify(value, null, 2)}
           </pre>
         );
@@ -204,7 +204,7 @@ export function DatasetPreviewModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-4xl">
+      <DialogContent className="sm:max-w-6xl max-h-[90vh] overflow-hidden">
         <DialogHeader>
           <DialogTitle>Preview: {datasetName}</DialogTitle>
         </DialogHeader>
@@ -215,7 +215,17 @@ export function DatasetPreviewModal({
         ) : error ? (
           <div className="text-center text-red-500 py-4">{error}</div>
         ) : (
-          renderPreviewTable()
+          <div 
+            className="overflow-x-auto overflow-y-auto max-h-[70vh]" 
+            style={{ 
+              scrollbarWidth: 'auto', 
+              scrollbarColor: 'rgba(155, 155, 155, 0.7) transparent',
+              overflowX: 'scroll',
+              paddingBottom: '12px'
+            }}
+          >
+            {renderPreviewTable()}
+          </div>
         )}
       </DialogContent>
     </Dialog>

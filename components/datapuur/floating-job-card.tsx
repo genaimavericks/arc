@@ -310,45 +310,49 @@ export function FloatingJobCard() {
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-end">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            // Set cancelling state
-                            setIsCancelling(true);
-                            
-                            // Use the cancelAllActiveJobs function from context
-                            cancelAllActiveJobs()
-                              .then(() => {
-                                console.log("Successfully cancelled all jobs");
-                                // Clear processing status to ensure file processing stops
-                                setProcessingStatus("");
-                              })
-                              .catch((error: Error) => {
-                                console.error("Error cancelling jobs:", error);
-                              })
-                              .finally(() => {
-                                // Reset cancelling state after a short delay
-                                setTimeout(() => {
-                                  setIsCancelling(false);
-                                }, 1000);
-                              });
-                          }}
-                          disabled={isCancelling}
-                          className={`h-7 px-2 ${isCancelling ? 'text-muted-foreground' : 'text-destructive hover:bg-destructive/10'} text-xs`}
-                          title="Cancel processing"
-                        >
-                          {isCancelling ? (
-                            <>
-                              <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
-                              Cancelling...
-                            </>
-                          ) : (
-                            "Cancel"
-                          )}
-                        </Button>
-                      </div>
+                      
+                      {/* Only show cancel button if we're not in an ingestion state */}
+                      {!processingStatus.includes("Ingestion job started") && (
+                        <div className="flex items-end">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              // Set cancelling state
+                              setIsCancelling(true);
+                              
+                              // Use the cancelAllActiveJobs function from context
+                              cancelAllActiveJobs()
+                                .then(() => {
+                                  console.log("Successfully cancelled all jobs");
+                                  // Clear processing status to ensure file processing stops
+                                  setProcessingStatus("");
+                                })
+                                .catch((error: Error) => {
+                                  console.error("Error cancelling jobs:", error);
+                                })
+                                .finally(() => {
+                                  // Reset cancelling state after a short delay
+                                  setTimeout(() => {
+                                    setIsCancelling(false);
+                                  }, 1000);
+                                });
+                            }}
+                            disabled={isCancelling}
+                            className={`h-7 px-2 ${isCancelling ? 'text-muted-foreground' : 'text-destructive hover:bg-destructive/10'} text-xs`}
+                            title="Cancel processing"
+                          >
+                            {isCancelling ? (
+                              <>
+                                <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+                                Cancelling...
+                              </>
+                            ) : (
+                              "Cancel"
+                            )}
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </motion.div>
                 )}

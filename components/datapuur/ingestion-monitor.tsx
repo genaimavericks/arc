@@ -281,41 +281,44 @@ export function IngestionMonitor({ jobs: propJobs, onJobUpdated, errors: propErr
                         <p className="text-sm text-muted-foreground">{processingStatus}</p>
                       </div>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        // Set cancelling state for this job
-                        setCancellingProcessing(true);
-                        
-                        // Use the context function to cancel all active jobs
-                        cancelAllActiveJobs()
-                          .then(() => {
-                            console.log("Successfully cancelled all jobs from ingestion monitor");
-                          })
-                          .catch((error: Error) => {
-                            console.error("Error cancelling jobs from ingestion monitor:", error);
-                          })
-                          .finally(() => {
-                            // Reset cancelling state after a short delay
-                            setTimeout(() => {
-                              setCancellingProcessing(false);
-                            }, 1000);
-                          });
-                      }}
-                      disabled={cancellingProcessing}
-                      className={`h-7 px-2 ${cancellingProcessing ? 'text-muted-foreground' : 'text-destructive hover:bg-destructive/10'} text-xs`}
-                      title="Cancel processing"
-                    >
-                      {cancellingProcessing ? (
-                        <>
-                          <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
-                          Cancelling...
-                        </>
-                      ) : (
-                        "Cancel"
-                      )}
-                    </Button>
+                    {/* Only show cancel button if processing status doesn't include "Ingestion job started" */}
+                    {!processingStatus.includes("Ingestion job started") && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          // Set cancelling state for this job
+                          setCancellingProcessing(true);
+                          
+                          // Use the context function to cancel all active jobs
+                          cancelAllActiveJobs()
+                            .then(() => {
+                              console.log("Successfully cancelled all jobs from ingestion monitor");
+                            })
+                            .catch((error: Error) => {
+                              console.error("Error cancelling jobs from ingestion monitor:", error);
+                            })
+                            .finally(() => {
+                              // Reset cancelling state after a short delay
+                              setTimeout(() => {
+                                setCancellingProcessing(false);
+                              }, 1000);
+                            });
+                        }}
+                        disabled={cancellingProcessing}
+                        className={`h-7 px-2 ${cancellingProcessing ? 'text-muted-foreground' : 'text-destructive hover:bg-destructive/10'} text-xs`}
+                        title="Cancel processing"
+                      >
+                        {cancellingProcessing ? (
+                          <>
+                            <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+                            Cancelling...
+                          </>
+                        ) : (
+                          "Cancel"
+                        )}
+                      </Button>
+                    )}
                   </div>
                 </motion.div>
               )}
