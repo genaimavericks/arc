@@ -3301,17 +3301,36 @@ async def preview_file_direct(
         # Create a temporary file to store the uploaded content
         with tempfile.NamedTemporaryFile(delete=False) as temp_file:
             # Read the file content in chunks to handle large files
-            content = await file.read()
-            temp_file.write(content)
+            chunk_size = 1024 * 1024  # 1MB chunks
+            
+            # Only read the first 10MB for preview purposes
+            max_size = 10 * 1024 * 1024  # 10MB
+            total_read = 0
+            
+            while total_read < max_size:
+                chunk = await file.read(chunk_size)
+                if not chunk:
+                    break
+                
+                # Write the chunk to the temporary file
+                temp_file.write(chunk)
+                total_read += len(chunk)
+                
+                # If we've read enough for a preview, stop
+                if total_read >= max_size:
+                    logger.info(f"Preview size limit reached at {total_read} bytes. File may be larger.")
+                    break
+            
             temp_path = temp_file.name
         
         file_extension = file.filename.split('.')[-1].lower()
         
         # Process based on file type
         if file_extension == 'csv':
-            # Read CSV file
+            # Read CSV file with optimizations for large files
             try:
-                df = pd.read_csv(temp_path)
+                # Only read first 100 rows for preview
+                df = pd.read_csv(temp_path, nrows=100)
                 # Handle empty values in the DataFrame
                 df = df.replace({np.nan: None})
                 
@@ -3320,7 +3339,7 @@ async def preview_file_direct(
                 
                 # Get a sample of rows (first 50 rows)
                 sample_rows = []
-                for _, row in df.head(50).iterrows():
+                for _, row in df.iterrows():
                     # Convert each row to a list of values
                     row_values = []
                     for val in row:
@@ -3347,46 +3366,75 @@ async def preview_file_direct(
         elif file_extension == 'json':
             # Read JSON file
             try:
-                with open(temp_path, 'r') as f:
-                    data = json.load(f)
+                # For large JSON files, we need to be careful about memory usage
+                # Read the file in chunks and only process the beginning
+                with open(temp_path, 'r', encoding='utf-8', errors='replace') as jsonfile:
+                    # Try to parse the JSON data
+                    try:
+                        data = json.load(jsonfile)
+                    except json.JSONDecodeError:
+                        logger.error("Invalid JSON file")
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Invalid JSON file"
+                        )
                 
-                # Ensure data is a list of objects
-                if not isinstance(data, list):
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="JSON file must contain an array of objects"
-                    )
+                # Function to flatten nested JSON
+                def flatten_json(nested_json, prefix=''):
+                    flattened = {}
+                    for key, value in nested_json.items():
+                        if isinstance(value, dict):
+                            # Recursively flatten nested dictionaries
+                            flattened.update(flatten_json(value, f"{prefix}{key}_"))
+                        elif isinstance(value, list):
+                            # Handle lists by converting them to strings if they contain simple types
+                            # or by flattening if they contain dictionaries
+                            if all(not isinstance(item, dict) for item in value):
+                                # For lists of simple types, convert to string
+                                flattened[f"{prefix}{key}"] = str(value)
+                            else:
+                                # For lists of dictionaries, flatten each item
+                                for i, item in enumerate(value):
+                                    if isinstance(item, dict):
+                                        flattened.update(flatten_json(item, f"{prefix}{key}_{i}_"))
+                                    else:
+                                        flattened[f"{prefix}{key}_{i}"] = item
+                        else:
+                            # For simple types, just add them with the prefix
+                            flattened[f"{prefix}{key}"] = value
+                    return flattened
                 
-                if len(data) == 0:
-                    return {
-                        "headers": [],
-                        "rows": []
-                    }
+                # If it's an array, limit to first 100 items and flatten each item
+                if isinstance(data, list):
+                    limited_data = data[:100]  # Limit to first 100 items
+                    flattened_data = []
+                    for item in limited_data:
+                        if isinstance(item, dict):
+                            flattened_data.append(flatten_json(item))
+                        else:
+                            flattened_data.append({"value": item})
+                # If it's a single object, flatten it
+                elif isinstance(data, dict):
+                    flattened_data = [flatten_json(data)]
+                else:
+                    flattened_data = [{"value": data}]
                 
-                # Get headers from the first object
-                headers = list(data[0].keys())
-                
-                # Get a sample of rows (first 50 rows)
-                sample_rows = []
-                for item in data[:50]:
-                    row = []
-                    for header in headers:
-                        row.append(item.get(header, None))
-                    sample_rows.append(row)
-                
-                # Clean up the temporary file
-                os.unlink(temp_path)
-                
-                return {
-                    "headers": headers,
-                    "rows": sample_rows
-                }
-            except json.JSONDecodeError:
-                logger.error("Invalid JSON file")
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid JSON file"
+                # Log activity
+                log_activity(
+                    db=db,
+                    username=current_user.username,
+                    action="File preview",
+                    details=f"Previewed file: {file.filename}"
                 )
+                
+                # Convert to DataFrame to get headers and rows for consistent display
+                df = pd.DataFrame(flattened_data)
+                
+                # Return data in a format similar to CSV preview
+                return {
+                    "headers": df.columns.tolist(),
+                    "rows": df.values.tolist() if not df.empty else []
+                }
             except Exception as e:
                 logger.error(f"Error processing JSON file: {str(e)}")
                 raise HTTPException(

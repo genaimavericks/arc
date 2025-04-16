@@ -841,10 +841,53 @@ export function FileUpload({
       // Update status - but DON'T set processing status for preview operations
       const previewStatus = `Generating preview for ${file.name}...`
       onStatusChange(previewStatus)
-      // Remove this line to prevent preview from showing in ingestion jobs
-      // setProcessingStatus(previewStatus)
       
-      // Process the file locally instead of uploading to the server
+      // For large files (over 50MB), use the server-side preview API instead of client-side parsing
+      if (file.size > 50 * 1024 * 1024) {
+        try {
+          const apiBaseUrl = getApiBaseUrl();
+          const formData = new FormData();
+          
+          // Only send the first 10MB of the file for preview
+          const previewChunk = file.slice(0, 10 * 1024 * 1024);
+          formData.append('file', previewChunk, file.name);
+          
+          const response = await fetch(`${apiBaseUrl}/api/datapuur/preview-file`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem("token")}`,
+            },
+            body: formData,
+          });
+          
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || "Failed to preview file");
+          }
+          
+          const data = await response.json();
+          
+          setPreviewData({
+            headers: data.headers || [],
+            rows: data.rows || [],
+            fileName: file.name,
+          });
+          
+          onStatusChange("");
+          setIsPreviewLoading(false);
+          
+        } catch (error) {
+          console.error("Server preview error:", error);
+          setError(error instanceof Error ? error.message : "Failed to preview large file");
+          addError(error instanceof Error ? error.message : "Failed to preview large file");
+          onStatusChange("");
+          setIsPreviewLoading(false);
+        }
+        
+        return;
+      }
+      
+      // Process the file locally instead of uploading to the server (for smaller files)
       if (fileType === 'csv') {
         // Read CSV file locally
         const reader = new FileReader()
@@ -902,16 +945,12 @@ export function FileUpload({
             
             // Clear status after preview is generated
             onStatusChange("")
-            // Remove this line to prevent clearing processing status that might be needed for actual jobs
-            // setProcessingStatus("")
             setIsPreviewLoading(false)
           } catch (error) {
             console.error("CSV parsing error:", error)
             setError(error instanceof Error ? error.message : "Failed to parse CSV file")
             addError(error instanceof Error ? error.message : "Failed to parse CSV file")
             onStatusChange("")
-            // Remove this line to prevent clearing processing status that might be needed for actual jobs
-            // setProcessingStatus("")
             setIsPreviewLoading(false)
           }
         }
@@ -920,8 +959,6 @@ export function FileUpload({
           setError("Failed to read file")
           addError("Failed to read file")
           onStatusChange("")
-          // Remove this line to prevent clearing processing status that might be needed for actual jobs
-          // setProcessingStatus("")
           setIsPreviewLoading(false)
         }
         
@@ -953,8 +990,6 @@ export function FileUpload({
                 fileName: file.name,
               })
               onStatusChange("")
-              // Remove this line to prevent clearing processing status that might be needed for actual jobs
-              // setProcessingStatus("")
               setIsPreviewLoading(false)
               return
             }
@@ -983,16 +1018,12 @@ export function FileUpload({
             
             // Clear status after preview is generated
             onStatusChange("")
-            // Remove this line to prevent clearing processing status that might be needed for actual jobs
-            // setProcessingStatus("")
             setIsPreviewLoading(false)
           } catch (error) {
             console.error("JSON parsing error:", error)
             setError(error instanceof Error ? error.message : "Failed to parse JSON file")
             addError(error instanceof Error ? error.message : "Failed to parse JSON file")
             onStatusChange("")
-            // Remove this line to prevent clearing processing status that might be needed for actual jobs
-            // setProcessingStatus("")
             setIsPreviewLoading(false)
           }
         }
@@ -1001,8 +1032,6 @@ export function FileUpload({
           setError("Failed to read file")
           addError("Failed to read file")
           onStatusChange("")
-          // Remove this line to prevent clearing processing status that might be needed for actual jobs
-          // setProcessingStatus("")
           setIsPreviewLoading(false)
         }
         
@@ -1019,8 +1048,6 @@ export function FileUpload({
       
       // Clear status on error
       onStatusChange("")
-      // Remove this line to prevent clearing processing status that might be needed for actual jobs
-      // setProcessingStatus("")
       setIsPreviewLoading(false)
     }
   }
