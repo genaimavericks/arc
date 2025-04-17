@@ -26,8 +26,10 @@ from .cache import Cache
 from .cache import cacheable
 
 from ...kginsights.database_api import get_database_config, parse_connection_params
-from ...models import Schema, SchemaLoadingNodeCypher, SchemaLoadingRelationshipCypher
+from ...models import Schema
 from ...db_config import SessionLocal  
+from .csv_to_cypher_generator import CsvToCypherGenerator
+from ...utils.llm_provider import LLMProvider, LLMConstants
 
 # Load environment variables
 load_dotenv()
@@ -61,6 +63,8 @@ class SchemaAwareGraphAssistant:
         self.schema = json.loads(schema) if isinstance(schema, str) else schema
         self.session_id = session_id or f"session_{uuid4()}"
         self.formatted_schema = None
+        # read csv path from Schema table
+        self.csv_file_path = self._get_csv_path()
         self._format_schema()
         
         # Ensure we have the prompt files
@@ -151,7 +155,15 @@ class SchemaAwareGraphAssistant:
         
         # Initialize cache
         self.cache = Cache()
-    
+
+    def _get_csv_path(self):
+        """
+        Read csv path from Schema table
+        """
+        db = SessionLocal()
+        schema = db.query(Schema).filter(Schema.id == self.schema_id).first()
+        return schema.csv_file_path
+
     def _get_connection_params(self) -> dict:
         """
         Get connection parameters for the specified database ID from the database API.
@@ -396,11 +408,14 @@ class SchemaAwareGraphAssistant:
             cypher_response = prompt_generator_llm.invoke(cypher_messages)
             cypher_prompt_template = cypher_response.content.strip()
             
+            cypher_generator = CsvToCypherGenerator(self.schema, self.csv_file_path, LLMConstants.Providers.GOOGLE, LLMConstants.GoogleModels.DEFAULT)
+            cypher_queries = cypher_generator.generate_cypher_for_rows()
+            cypher_queries_str = '\n'.join(cypher_queries)
             # Read SchemaLoadingNodeCypher and SchemaLoadingRelationshipCypher tables
-            node_cypher = self._get_cypher_from_table(SchemaLoadingNodeCypher)
-            relationship_cypher = self._get_cypher_from_table(SchemaLoadingRelationshipCypher)
+            #node_cypher = self._get_cypher_from_table(SchemaLoadingNodeCypher)
+            #relationship_cypher = self._get_cypher_from_table(SchemaLoadingRelationshipCypher)
             import_notes = '\n\n Note: DO NOT return example question and cypher query. Return PROPER cypher query only. DO NOT include any explanation'
-            cypher_prompt_template = f"### Database Schema:\n\n*Create Nodes*\n\n{node_cypher}\n\n*Create Relationships*\n\n{relationship_cypher}\n\n{import_notes}\n\n{cypher_prompt_template}"
+            cypher_prompt_template = f"### Cypher Queries:\n\n{cypher_queries_str}\n\n{import_notes}\n\n{cypher_prompt_template}"
 
             # Apply Neo4j property syntax escaping to prevent template variable confusion
             cypher_prompt_template = self._escape_neo4j_properties(cypher_prompt_template)
@@ -483,92 +498,40 @@ class SchemaAwareGraphAssistant:
 
     def _escape_neo4j_properties(self, prompt_text: str) -> str:
         """
-        Escapes Neo4j property maps (e.g., {key: value}) within node patterns (...)
+        Escapes Neo4j property maps (e.g., {key: value}) within node/relationship patterns (...) or [...]
         by wrapping them in double curly braces {{ {key: value} }} for LangChain compatibility.
-        It avoids wrapping already escaped maps {{...}}.
+        It avoids wrapping already escaped maps {{...}} and template variables like {query}.
         """
         if not prompt_text:
             return prompt_text
 
-        # Regex to find property maps {...} within node patterns (...)
-        # It avoids matching maps already wrapped in {{...}}
-        # Breakdown:
-        # (\([^)]*?)             : Group 1: Capture the opening parenthesis and any characters inside up to the property map (non-greedy)
-        # (?<!\{)\{(?!")       : Match a literal { that is NOT preceded by { and NOT followed by { (negative lookbehind/lookahead)
-        # ([^\{\}]*?)         : Group 2: Capture the content inside the braces (non-greedy)
-        # \}                    : Match the closing literal }
-        # ([^)]*\))             : Group 3: Capture characters from after the map up to and including the closing parenthesis
-        pattern = re.compile(r"(\([^)]*?)(?<!\{)\{(?!\{)([^\{\}]*?)\}([^)]*\))")
+        # V2 pattern using raw string for easier regex definition
+        # Explanation:
+        # ([\(\[][^\]\)]*?)   # Group 1: ( or [ followed by non-) or non-] chars, up to the map
+        # (?<!\{)\{(?!\{)     # Match { only if not preceded/followed by {
+        # (.*?)                 # Group 2: The content inside the map (non-greedy)
+        # \}                    # Match the closing }
+        # ([^\]\)]*[\)\]])   # Group 3: Non-) or non-] chars up to the final ) or ]
+        pattern = re.compile(r"([\(\[][^\]\)]*?)(?<!\{)\{(?!\{)(.*?)\}([^\]\)]*[\)\]])")
 
         # Replacement function: Takes the match object
         def replace_map(match):
-            # Group 1: Part before the map
+            # Group 1: Part before the map (e.g., "(n " or "[r:")
             # Group 2: The content *inside* the map {...}
-            # Group 3: Part after the map
-            # We return group 1, wrapped group 2, and group 3
-            # Build the string using concatenation for clarity
+            # Group 3: Part after the map up to closing ) or ]
             return match.group(1) + "{{" + match.group(2) + "}}" + match.group(3)
 
         # Substitute using the function
         escaped_prompt = pattern.sub(replace_map, prompt_text)
 
+        # Debug print... (same as before)
         if escaped_prompt != prompt_text:
             print("DEBUG: Applied property map escaping.")
-            # print(f"DEBUG: Original: {prompt_text}") # Uncomment for detailed debugging
-            # print(f"DEBUG: Escaped:  {escaped_prompt}") # Uncomment for detailed debugging
-        else:
-            print("DEBUG: No property map escaping applied.")
+        # else: # Reduce noise
+            # print("DEBUG: No property map escaping applied.")
 
         return escaped_prompt
 
-    def _escape_neo4j_properties2(self, prompt_text):
-        """Escape Neo4j property syntax in prompts to prevent template variable confusion
-        
-        This ensures that expressions like {name: 'John'} are properly escaped as {{name: 'John'}}
-        while preserving actual template variables like {query}
-        """
-        if not prompt_text:
-            return prompt_text
-
-        # replace all ` with '
-        prompt_text = prompt_text.replace("`", "'")
-        # Check if there are already double braces around property patterns
-        # This regex looks for {{prop: value}} patterns which are already escaped
-        already_escaped_pattern = re.compile(r'\{\{([a-zA-Z0-9_]+\s*:(?![}]).*?)\}\}')
-        
-        # Mark positions that are already escaped to avoid double-escaping
-        already_escaped_positions = set()
-        for match in already_escaped_pattern.finditer(prompt_text):
-            start, end = match.span()
-            for i in range(start, end):
-                already_escaped_positions.add(i)
-        
-        # Define patterns that need escaping - Neo4j property patterns but not template variables
-        # This regex looks for {prop: value} patterns but ignores {query} or {context}
-        neo4j_prop_pattern = re.compile(r'\{([a-zA-Z0-9_]+\s*:(?![}]).*?)\}')
-
-        # Find all Neo4j property patterns
-        matches = list(neo4j_prop_pattern.finditer(prompt_text))
-
-        # Process matches from end to beginning to avoid offset issues
-        for match in reversed(matches):
-            start, end = match.span()
-            
-            # Skip if any part of this match is already in an escaped section
-            if any(i in already_escaped_positions for i in range(start, end)):
-                continue
-            
-            # Skip if it looks like a template variable
-            content = match.group(1)
-            if content.strip() in ["query", "context", "response", "question"]:
-                continue
-
-            # Replace with double braces
-            prompt_text = prompt_text[:start] + "{" + prompt_text[start:end] + "}" + prompt_text[end:]
-
-        return prompt_text
-
-    
     def _load_prompts(self) -> None:
         """Load custom prompts for this source"""
         # Use both db_id and schema_id in the prompt filename for better specificity

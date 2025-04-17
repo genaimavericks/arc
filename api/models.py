@@ -163,34 +163,6 @@ class GraphIngestionJob(Base):
     # Relationship to Schema
     schema = relationship("Schema", backref="graph_jobs")
 
-class SchemaGenerationCypher(Base):
-    __tablename__ = "schema_generation_cypher"
-
-    id = Column(Integer, primary_key=True, index=True)
-    schema_id = Column(String, nullable=False, index=True)
-    cypher = Column(Text, nullable=False)  # Store cypher as string
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-
-class SchemaLoadingNodeCypher(Base):
-    __tablename__ = "schema_loading_node_cypher"
-
-    id = Column(Integer, primary_key=True, index=True)
-    schema_id = Column(String, nullable=False, index=True)
-    cypher = Column(Text, nullable=False)  # Store  cypher as string
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-class SchemaLoadingRelationshipCypher(Base):
-    __tablename__ = "schema_loading_relationship_cypher"
-
-    id = Column(Integer, primary_key=True, index=True)
-    schema_id = Column(String, nullable=False, index=True)
-    cypher = Column(Text, nullable=False)  # Store  cypher as string
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
 
 # Create tables
 Base.metadata.create_all(bind=engine)

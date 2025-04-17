@@ -13,7 +13,7 @@ from .csv_connector import CSVConnector
 from .neo4j_loader import Neo4jLoader
 from ..database_api import get_database_config, parse_connection_params
 from ...db_config import SessionLocal
-from ...models import Schema, SchemaLoadingNodeCypher, SchemaLoadingRelationshipCypher
+from ...models import Schema
 
 class DataLoader:
     """
@@ -228,10 +228,6 @@ class DataLoader:
                 self.status["end_time"] = datetime.now().isoformat()
                 return self.status
                 
-            # Initialize cypher tracking maps
-            label_to_cypher_map = {}
-            relationship_to_cypher_map = {}
-            
             # Clean database if requested
             if self.drop_existing:
                 print("Cleaning database before loading data")
@@ -305,7 +301,7 @@ class DataLoader:
                     print(f"Processing batch {batch_count} with {len(batch)} records")
                     
                     # Load nodes
-                    node_result = await self.neo4j_loader.load_nodes(batch, self.schema, column_mapping, label_to_cypher_map)
+                    node_result = await self.neo4j_loader.load_nodes(batch, self.schema, column_mapping)
                     self.status["nodes_created"] += node_result["nodes_created"]
                     
                     for error in node_result["errors"]:
@@ -332,7 +328,7 @@ class DataLoader:
                                 print(f"Potential ID column: {col} = {val}")
                     
                     # Load relationships
-                    rel_result = await self.neo4j_loader.load_relationships(batch, self.schema, relationship_to_cypher_map)
+                    rel_result = await self.neo4j_loader.load_relationships(batch, self.schema, column_mapping)
                     self.status["relationships_created"] += rel_result["relationships_created"]
                     
                     for error in rel_result["errors"]:
@@ -349,15 +345,6 @@ class DataLoader:
                 self.status["end_time"] = datetime.now().isoformat()
                 return self.status
                 
-            # Store loading Cypher statements
-            self.status["message"] = "Storing loading Cypher statements..."
-            try:
-                self._store_loading_cypher(self.schema_id, label_to_cypher_map, relationship_to_cypher_map)
-                print("Successfully stored loading Cypher statements.")
-            except Exception as e:
-                error_msg = f"Error storing loading Cypher statements: {str(e)}"
-                print(error_msg)
-                                
             # Close Neo4j connection
             if self.neo4j_loader:
                 self.neo4j_loader.close()
@@ -398,52 +385,3 @@ class DataLoader:
                 self.neo4j_loader.close()
                 
             return self.status
-
-    def _store_loading_cypher(self, schema_id: str, label_map: Dict, relationship_map: Dict):
-        """Store the collected loading Cypher statements in the database."""
-        db = None
-        try:
-            db = SessionLocal()
-            # Store Node Cypher
-            if label_map:
-                print(f"Storing executable Cypher for nodes in SchemaLoadingNodeCypher for schema {schema_id}")
-                node_cypher_str = "\n".join(label_map.values())
-                print(f"Node Cypher: {node_cypher_str}")
-                existing_node_cypher = db.query(SchemaLoadingNodeCypher).filter(SchemaLoadingNodeCypher.schema_id == schema_id).first()
-                if existing_node_cypher:
-                    existing_node_cypher.cypher = node_cypher_str
-                else:
-                    new_node_cypher = SchemaLoadingNodeCypher(schema_id=schema_id, cypher=node_cypher_str)
-                    db.add(new_node_cypher)
-                db.commit()
-            else:
-                print("No node loading Cypher statements to store.")
-
-            # Store Relationship Cypher
-            if relationship_map:
-                print(f"Storing executable Cypher for relationships in SchemaLoadingRelationshipCypher for schema {schema_id}")
-                rel_cypher_str = "\n".join(relationship_map.values())
-                print(f"Relationship Cypher: {rel_cypher_str}")
-                existing_rel_cypher = db.query(SchemaLoadingRelationshipCypher).filter(SchemaLoadingRelationshipCypher.schema_id == schema_id).first()
-                if existing_rel_cypher:
-                    existing_rel_cypher.cypher = rel_cypher_str
-                else:
-                    new_rel_cypher = SchemaLoadingRelationshipCypher(schema_id=schema_id, cypher=rel_cypher_str)
-                    db.add(new_rel_cypher)
-                db.commit()
-            else:
-                print("No relationship loading Cypher statements to store.")
-
-        except Exception as e:
-            if db:
-                db.rollback()
-            print(f"Error storing loading Cypher statements: {str(e)}")
-            # Re-raise the exception to be caught by the caller
-            raise e
-        finally:
-            if db:
-                db.close()
-
-    def get_status(self) -> Dict[str, Any]:
-        """Get the current status of the data loader."""
-        return self.status

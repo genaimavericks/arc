@@ -9,7 +9,6 @@ from typing import Dict, List, Any, Optional, Tuple
 from neo4j import GraphDatabase, Driver, Session, Transaction
 from ..database_api import get_database_config, parse_connection_params
 
-
 class Neo4jLoader:
     """
     Handles loading data into Neo4j from processed CSV records.
@@ -189,8 +188,7 @@ class Neo4jLoader:
         self, 
         records: List[Dict[str, Any]], 
         schema: Dict[str, Any],
-        column_mapping: Dict[str, Dict[str, Any]],
-        label_to_cypher_map: Dict
+        column_mapping: Dict[str, Dict[str, Any]]
     ) -> Dict[str, Any]:
         """
         Load nodes into Neo4j from CSV records.
@@ -199,7 +197,6 @@ class Neo4jLoader:
             records: List of records from CSV
             schema: The schema definition
             column_mapping: Mapping of CSV columns to node properties with metadata
-            label_to_cypher_map: Dictionary to store generated Cypher statements per node label.
             
         Returns:
             Dict with results of node loading
@@ -347,9 +344,7 @@ class Neo4jLoader:
                                     
                                     result_set = session.run(cypher, params)
                                     summary = result_set.consume()
-                                    if node_label not in label_to_cypher_map:
-                                        label_to_cypher_map[node_label] = param_cypher
-
+                                    
                                     # Check if node was created or matched
                                     if summary.counters.nodes_created > 0:
                                         print(f"Created new node {node_label} with ID {id_property}={unique_value}")
@@ -431,17 +426,6 @@ class Neo4jLoader:
                             session.run(cypher, params)
                             result["nodes_created"] += 1
                             
-                            # Store the Cypher statement in the map
-                            if node_label not in label_to_cypher_map:
-                                param_cypher = cypher
-                                for param_name, param_value in params.items():
-                                    if isinstance(param_value, str):
-                                        param_cypher = param_cypher.replace(f"${param_name}", f"'{param_value}'")
-                                    else:
-                                        param_cypher = param_cypher.replace(f"${param_name}", str(param_value))
-                                print(f"Executable Cypher: {param_cypher}")
-                                label_to_cypher_map[node_label] = param_cypher
-
                             # Store the node for relationship creation
                             if node_label not in unique_nodes:
                                 unique_nodes[node_label] = {}
@@ -451,8 +435,7 @@ class Neo4jLoader:
                             error_msg = f"Error creating node {node_label}: {str(e)}"
                             print(error_msg)
                             result["errors"].append(error_msg)
-                
-
+                    
                     # Skip the original per-record processing for this node type
                     continue
                     
@@ -519,8 +502,7 @@ class Neo4jLoader:
                             error_msg = f"Error creating node {node_label}: {str(e)}"
                             print(error_msg)
                             result["errors"].append(error_msg)
-            # -- End of the main try block for processing nodes --
-            
+                            
         except Exception as e:
             error_msg = f"Error loading nodes: {str(e)}"
             print(error_msg)
@@ -533,7 +515,7 @@ class Neo4jLoader:
         self, 
         records: List[Dict[str, Any]], 
         schema: Dict[str, Any],
-        relationship_to_cypher_map: Dict
+        column_mapping: Optional[Dict[str, Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """
         Load relationships into Neo4j from CSV records.
@@ -541,7 +523,7 @@ class Neo4jLoader:
         Args:
             records: List of records from CSV
             schema: The schema definition
-            relationship_to_cypher_map: Dictionary to store generated Cypher statements per relationship type.
+            column_mapping: Optional mapping of CSV columns to node properties
             
         Returns:
             Dict with results of relationship loading
@@ -804,7 +786,7 @@ class Neo4jLoader:
                                     else:
                                         param_cypher = param_cypher.replace(f"${param_name}", str(param_value))
                                 print(f"Executable Cypher: {param_cypher}")
-
+                                
                                 # Try a different approach with explicit node matching
                                 try:
                                     # First, try to create the relationship with the original query
@@ -816,14 +798,10 @@ class Neo4jLoader:
                                         print(f"Successfully created relationship {rel_type} from {source_id_str} to {target_id_str}")
                                         result["relationships_created"] += 1
                                         created_relationships.add(rel_signature)
-                                        if rel_type not in relationship_to_cypher_map:
-                                            relationship_to_cypher_map[rel_type] = param_cypher
                                     elif summary.counters.relationships_created == 0 and summary.counters.contains_updates:
                                         # Relationship might have been matched but not created (already exists)
                                         print(f"Relationship {rel_type} from {source_id_str} to {target_id_str} already exists")
                                         created_relationships.add(rel_signature)
-                                        if rel_type not in relationship_to_cypher_map:
-                                            relationship_to_cypher_map[rel_type] = param_cypher
                                     else:
                                         # Try a more direct approach with explicit node creation and relationship
                                         print(f"Initial relationship creation failed. Trying alternative approach...")
@@ -869,8 +847,7 @@ class Neo4jLoader:
                                         print(f"Alternative Cypher: {alt_cypher}")
                                         alt_result = session.run(alt_cypher)
                                         alt_summary = alt_result.consume()
-                                        if rel_type not in relationship_to_cypher_map:
-                                            relationship_to_cypher_map[rel_type] = alt_cypher
+                                        
                                         if alt_summary.counters.relationships_created > 0:
                                             print(f"Successfully created relationship with alternative approach")
                                             result["relationships_created"] += 1
@@ -886,15 +863,15 @@ class Neo4jLoader:
                             error_msg = f"Error creating relationship {rel_type}: {str(e)}"
                             print(error_msg)
                             result["errors"].append(error_msg)
-            # -- End of the main try block for processing relationships --
-
+        
         except Exception as e:
             error_msg = f"Error in relationship loading: {str(e)}"
             print(error_msg)
+            self.logger.exception(e)
             result["errors"].append(error_msg)
             
         return result
-
+        
     def _analyze_relationship_columns(self, records: List[Dict[str, Any]], relationships: List[Dict[str, Any]]) -> Dict[str, Dict[str, str]]:
         """
         Analyze records to find columns that might represent relationships.
