@@ -7,12 +7,9 @@ import traceback
 import re
 from pathlib import Path
 from uuid import uuid4
-from typing import Dict, List, Optional, Any
+from typing import Dict, Any
 
-import httpx
-from fastapi import Depends, HTTPException
 from dotenv import load_dotenv
-from langchain.chat_models import ChatOpenAI
 from langchain.chains import GraphCypherQAChain
 from langchain.graphs import Neo4jGraph
 from langchain.prompts import ChatPromptTemplate
@@ -58,6 +55,10 @@ class SchemaAwareGraphAssistant:
             schema: The schema content as a string or dict
             session_id: Optional session ID for chat history, generated if not provided
         """
+
+        # Initialize LLM first
+        self.llm = LLMProvider.get_default_llm(temperature=0.0)
+
         self.db_id = db_id
         self.schema_id = schema_id
         self.schema = json.loads(schema) if isinstance(schema, str) else schema
@@ -95,9 +96,6 @@ class SchemaAwareGraphAssistant:
         
         # Load the custom prompts for this source
         self._load_prompts()
-        
-        # Initialize LLM first
-        self.llm = ChatOpenAI(model="gpt-4", temperature=0.2)
         
         # Initialize QA chain with Neo4j optimizations using modular LangChain pattern
         try:
@@ -307,8 +305,6 @@ class SchemaAwareGraphAssistant:
         
     def _generate_prompts(self) -> Dict[str, Any]:
         """Generate custom prompts using LLM based on the schema"""
-        # Initialize an LLM for prompt generation
-        prompt_generator_llm = ChatOpenAI(model="gpt-4", temperature=0.2)
         
         # Define a system prompt for prompt generation
         system_prompt = """
@@ -405,7 +401,7 @@ class SchemaAwareGraphAssistant:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Here is the Neo4j schema: {self.formatted_schema}\n\n{cypher_prompt_instruction}"}
             ]
-            cypher_response = prompt_generator_llm.invoke(cypher_messages)
+            cypher_response = self.llm.invoke(cypher_messages)
             cypher_prompt_template = cypher_response.content.strip()
             
             cypher_generator = CsvToCypherGenerator(self.schema, self.csv_file_path, LLMConstants.Providers.GOOGLE, LLMConstants.GoogleModels.DEFAULT)
@@ -431,7 +427,7 @@ class SchemaAwareGraphAssistant:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Here is the Neo4j schema: {self.formatted_schema}\n\n{qa_prompt_instruction}"}
             ]
-            qa_response = prompt_generator_llm.invoke(qa_messages)
+            qa_response = self.llm.invoke(qa_messages)
             qa_prompt_template = qa_response.content.strip()
             
             # Apply Neo4j property syntax escaping to prevent template variable confusion
@@ -446,7 +442,7 @@ class SchemaAwareGraphAssistant:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Here is the Neo4j schema: {self.formatted_schema}\n\n{sample_queries_instruction}"}
             ]
-            sample_queries_response = prompt_generator_llm.invoke(sample_queries_messages)
+            sample_queries_response = self.llm.invoke(sample_queries_messages)
             
             # Extract JSON array from response
             try:
