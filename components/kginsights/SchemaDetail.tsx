@@ -138,17 +138,28 @@ export default function SchemaDetail() {
   
   if (!selectedSchemaId || !selectedSchema) {
     return (
-      <div className="text-center py-8 text-muted-foreground">
-        Select a schema to view details
+      <div className="h-full flex items-center justify-center p-8">
+        <div className="text-center text-muted-foreground max-w-md">
+          <div className="mx-auto w-16 h-16 rounded-full bg-muted/20 flex items-center justify-center mb-4">
+            <Database className="h-8 w-8 text-muted-foreground/50" />
+          </div>
+          <h3 className="text-lg font-medium mb-2">No Schema Selected</h3>
+          <p className="text-sm">Select a schema from the list to view details and manage your knowledge graph.</p>
+        </div>
       </div>
     )
   }
   
   return (
-    <div>
+    <div className="animate-in fade-in duration-300">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-2xl font-bold">{selectedSchema.name}</h2>
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            {selectedSchema.name}
+            {activeJobs.length > 0 && (
+              <span className="inline-block h-2 w-2 rounded-full bg-blue-500 animate-pulse" title="Processing"></span>
+            )}
+          </h2>
           <p className="text-sm text-muted-foreground">
             Created {formatDistanceToNow(new Date(selectedSchema.created_at), { addSuffix: true })}
           </p>
@@ -157,12 +168,12 @@ export default function SchemaDetail() {
         <div className="flex gap-2">
           {/* Load Data Button */}
           <TooltipProvider>
-            <Tooltip>
+            <Tooltip delayDuration={200}>
               <TooltipTrigger asChild>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="flex items-center gap-1"
+                  className="flex items-center gap-1 transition-colors hover:bg-primary/10"
                   onClick={handleLoadData}
                   disabled={activeJobs.length > 0}
                 >
@@ -170,7 +181,7 @@ export default function SchemaDetail() {
                   Load Data
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>
+              <TooltipContent side="bottom">
                 <p>Load data for this schema</p>
               </TooltipContent>
             </Tooltip>
@@ -179,13 +190,13 @@ export default function SchemaDetail() {
           {/* Clean Data Button - Wrapped in AlertDialog */}
           <AlertDialog>
             <TooltipProvider>
-              <Tooltip>
+              <Tooltip delayDuration={200}>
                 <TooltipTrigger asChild>
                   <AlertDialogTrigger asChild> 
                     <Button
                       variant="outline"
                       size="sm"
-                      className="flex items-center gap-1"
+                      className="flex items-center gap-1 transition-colors hover:bg-primary/10"
                       disabled={activeJobs.length > 0 || !(schemaStatus?.has_data) || schemaStatus?.was_cleaned}
                     >
                       <FileText className="h-4 w-4" />
@@ -193,7 +204,7 @@ export default function SchemaDetail() {
                     </Button>
                   </AlertDialogTrigger>
                 </TooltipTrigger>
-                <TooltipContent>
+                <TooltipContent side="bottom">
                   <p>Clean existing data for this schema (Requires confirmation)</p>
                 </TooltipContent>
               </Tooltip>
@@ -214,17 +225,18 @@ export default function SchemaDetail() {
           
           {/* Edit Button */}
           <TooltipProvider>
-            <Tooltip>
+            <Tooltip delayDuration={200}>
               <TooltipTrigger asChild>
                 <Button
                   variant="outline"
                   size="icon"
+                  className="transition-colors hover:bg-primary/10"
                   disabled={activeJobs.length > 0}
                 >
                   <Edit className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>
+              <TooltipContent side="bottom">
                 <p>Edit schema</p>
               </TooltipContent>
             </Tooltip>
@@ -233,20 +245,20 @@ export default function SchemaDetail() {
           {/* Delete Button - Wrapped in AlertDialog */}
           <AlertDialog>
             <TooltipProvider>
-              <Tooltip>
+              <Tooltip delayDuration={200}>
                 <TooltipTrigger asChild>
                   <AlertDialogTrigger asChild>
                     <Button
                       variant="outline"
                       size="icon"
-                      className="text-destructive"
+                      className="text-destructive transition-colors hover:bg-destructive/10"
                       disabled={activeJobs.length > 0}
                     >
                       <Trash className="h-4 w-4" />
                     </Button>
                   </AlertDialogTrigger>
                 </TooltipTrigger>
-                <TooltipContent>
+                <TooltipContent side="bottom">
                   <p>Delete schema (Requires confirmation)</p>
                 </TooltipContent>
               </Tooltip>
@@ -269,38 +281,38 @@ export default function SchemaDetail() {
       </div>
       
       {/* Status badges */}
-      <div className="flex gap-2 mb-4">
-        <Badge variant={schemaStatus?.has_data ? "default" : "outline"}>
+      <div className="flex flex-wrap gap-2 mb-4">
+        <Badge variant={schemaStatus?.has_data ? "default" : "outline"} className="transition-colors">
           <Database className="h-3 w-3 mr-1" />
           {schemaStatus?.has_data ? "Data Loaded" : "No Data"}
         </Badge>
         
         {schemaStatus?.node_count !== undefined && schemaStatus.node_count > 0 && (
-          <Badge variant="secondary">
-            {schemaStatus.node_count} Nodes
+          <Badge variant="secondary" className="bg-blue-50 text-blue-700 hover:bg-blue-50 hover:text-blue-700 transition-colors">
+            {schemaStatus.node_count.toLocaleString()} Nodes
           </Badge>
         )}
         
         {schemaStatus?.relationship_count !== undefined && schemaStatus.relationship_count > 0 && (
-          <Badge variant="secondary">
-            {schemaStatus.relationship_count} Relationships
+          <Badge variant="secondary" className="bg-indigo-50 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors">
+            {schemaStatus.relationship_count.toLocaleString()} Relationships
           </Badge>
         )}
         
         {schemaStatus?.last_data_update && (
-          <Badge variant="outline">
+          <Badge variant="outline" className="transition-colors">
             Updated {formatDistanceToNow(new Date(schemaStatus.last_data_update), { addSuffix: true })}
           </Badge>
         )}
         
         {activeJobs.length > 0 && (
-          <Badge variant="secondary" className="animate-pulse">
+          <Badge variant="secondary" className="animate-pulse bg-blue-100 text-blue-800 hover:bg-blue-100 transition-colors">
             Processing
           </Badge>
         )}
         
         {schemaStatus?.was_cleaned && (
-          <Badge variant="secondary" className="bg-green-100 text-green-800 hover:bg-green-100">
+          <Badge variant="secondary" className="bg-green-100 text-green-800 hover:bg-green-100 transition-colors">
             Data Cleaned
           </Badge>
         )}
@@ -308,71 +320,99 @@ export default function SchemaDetail() {
       
       {/* Schema details tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid grid-cols-3 w-full">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="structure">Structure</TabsTrigger>
-          <TabsTrigger value="cypher">Cypher</TabsTrigger>
+        <TabsList className="grid grid-cols-3 w-full mb-1">
+          <TabsTrigger value="overview" className="transition-colors">Overview</TabsTrigger>
+          <TabsTrigger value="structure" className="transition-colors">Structure</TabsTrigger>
+          <TabsTrigger value="cypher" className="transition-colors">Cypher</TabsTrigger>
         </TabsList>
         
-        <TabsContent value="overview" className="mt-4">
+        <TabsContent value="overview" className="mt-4 transition-all animate-in fade-in-50 duration-200">
           {isLoadingStatus ? (
-            <Card>
+            <Card className="border border-muted/60">
               <CardContent className="p-4">
-                <div className="space-y-2">
-                  <Skeleton className="h-4 w-1/2" />
-                  <Skeleton className="h-4 w-3/4" />
-                  <Skeleton className="h-4 w-2/3" />
+                <div className="space-y-3">
+                  <Skeleton className="h-5 w-1/2" />
+                  <Skeleton className="h-5 w-3/4" />
+                  <Skeleton className="h-5 w-2/3" />
                 </div>
               </CardContent>
             </Card>
           ) : (
-            <Card>
+            <Card className="border border-muted/70 shadow-sm">
               <CardContent className="p-4">
-                <div className="space-y-2">
-                  <div>
-                    <span className="text-sm font-medium">Schema ID:</span>
-                    <span className="text-sm ml-2">{selectedSchemaId}</span>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-y-2 gap-x-4">
+                    <div>
+                      <span className="text-sm font-medium">Schema ID:</span>
+                      <span className="text-sm ml-2 font-mono text-muted-foreground">{selectedSchemaId}</span>
+                    </div>
+                  
+                    {selectedSchema.csv_path && (
+                      <div>
+                        <span className="text-sm font-medium">Source Data:</span>
+                        <span className="text-sm ml-2 text-muted-foreground truncate block">{selectedSchema.csv_path}</span>
+                      </div>
+                    )}
+                  
+                    {schemaStatus && (
+                      <>
+                        <div>
+                          <span className="text-sm font-medium">Data Status:</span>
+                          <span className="text-sm ml-2 inline-flex items-center">
+                            {schemaStatus.has_data ? (
+                              <>
+                                <span className="h-2 w-2 rounded-full bg-green-500 mr-1.5"></span>
+                                Data loaded
+                              </>
+                            ) : (
+                              <>
+                                <span className="h-2 w-2 rounded-full bg-gray-300 mr-1.5"></span>
+                                No data loaded
+                              </>
+                            )}
+                          </span>
+                        </div>
+                      
+                        {schemaStatus.has_data && (
+                          <>
+                            <div>
+                              <span className="text-sm font-medium">Nodes:</span>
+                              <span className="text-sm ml-2 font-semibold">{schemaStatus.node_count.toLocaleString()}</span>
+                            </div>
+                          
+                            <div>
+                              <span className="text-sm font-medium">Relationships:</span>
+                              <span className="text-sm ml-2 font-semibold">{schemaStatus.relationship_count.toLocaleString()}</span>
+                            </div>
+                          
+                            {schemaStatus.last_data_update && (
+                              <div>
+                                <span className="text-sm font-medium">Last Updated:</span>
+                                <span className="text-sm ml-2 text-muted-foreground">
+                                  {format(new Date(schemaStatus.last_data_update), 'PPpp')}
+                                </span>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </>
+                    )}
                   </div>
                   
-                  {selectedSchema.csv_path && (
-                    <div>
-                      <span className="text-sm font-medium">Source Data:</span>
-                      <span className="text-sm ml-2 text-muted-foreground">{selectedSchema.csv_path}</span>
-                    </div>
-                  )}
-                  
-                  {schemaStatus && (
-                    <>
-                      <div className="pt-2">
-                        <span className="text-sm font-medium">Data Status:</span>
-                        <span className="text-sm ml-2">
-                          {schemaStatus.has_data ? "Data loaded" : "No data loaded"}
-                        </span>
+                  {schemaStatus && schemaStatus.has_data && schemaStatus.graph_data_stats.node_counts && (
+                    <div className="mt-4 pt-4 border-t">
+                      <h4 className="text-sm font-medium mb-2">Node Types Distribution</h4>
+                      <div className="grid grid-cols-2 gap-2">
+                        {Object.entries(schemaStatus.graph_data_stats.node_counts).map(([type, count]) => (
+                          <div key={`node-${type}`} className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-900/40 rounded text-sm">
+                            <span className="font-medium">{type}</span>
+                            <Badge variant="outline" className="bg-white dark:bg-slate-800">
+                              {count.toLocaleString()}
+                            </Badge>
+                          </div>
+                        ))}
                       </div>
-                      
-                      {schemaStatus.has_data && (
-                        <>
-                          <div>
-                            <span className="text-sm font-medium">Nodes:</span>
-                            <span className="text-sm ml-2">{schemaStatus.node_count}</span>
-                          </div>
-                          
-                          <div>
-                            <span className="text-sm font-medium">Relationships:</span>
-                            <span className="text-sm ml-2">{schemaStatus.relationship_count}</span>
-                          </div>
-                          
-                          {schemaStatus.last_data_update && (
-                            <div>
-                              <span className="text-sm font-medium">Last Updated:</span>
-                              <span className="text-sm ml-2">
-                                {format(new Date(schemaStatus.last_data_update), 'PPpp')}
-                              </span>
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </>
+                    </div>
                   )}
                 </div>
               </CardContent>
