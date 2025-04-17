@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { formatDistanceToNow } from "date-fns"
 import { motion, AnimatePresence } from "framer-motion"
+import { createPortal } from "react-dom"
 
 export default function FloatingKGJobCard() {
   const { 
@@ -34,6 +35,13 @@ export default function FloatingKGJobCard() {
   const [lastRefreshTime, setLastRefreshTime] = useState(Date.now())
   const [activeTab, setActiveTab] = useState("active")
   const [cancellingJobs, setCancellingJobs] = useState<string[]>([])
+  const [mounted, setMounted] = useState(false)
+
+  // Initialize mounted state for portal
+  useEffect(() => {
+    setMounted(true)
+    return () => setMounted(false)
+  }, [])
 
   // Save minimized state to localStorage when it changes
   useEffect(() => {
@@ -174,7 +182,10 @@ export default function FloatingKGJobCard() {
   }
   
   // Handle user dismissing the card
-  const handleDismiss = () => {
+  const handleDismiss = (e: React.MouseEvent) => {
+    // Prevent the event from propagating to parent elements
+    e.stopPropagation();
+    
     // Only hide the card if it's already in minimized state
     if (minimized) {
       setVisible(false);
@@ -188,7 +199,10 @@ export default function FloatingKGJobCard() {
   }
 
   // Handle cancelling a job with visual feedback
-  const handleCancelJob = async (jobId: string) => {
+  const handleCancelJob = async (jobId: string, e: React.MouseEvent) => {
+    // Prevent the event from propagating
+    e.stopPropagation();
+    
     // Add job to cancelling list
     setCancellingJobs(prev => [...prev, jobId]);
     
@@ -205,12 +219,13 @@ export default function FloatingKGJobCard() {
 
   if (!visible) {
     if (activeJobs.length > 0 && userDismissed) {
-      return (
+      const notificationBubble = (
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           className="fixed bottom-4 right-4 z-50 bg-blue-500 dark:bg-blue-700 text-white rounded-full p-2 shadow-lg cursor-pointer flex items-center gap-2"
-          onClick={() => {
+          onClick={(e) => {
+            e.stopPropagation();
             setUserDismissed(false);
             setVisible(true);
             setMinimized(false);
@@ -220,13 +235,15 @@ export default function FloatingKGJobCard() {
           <span className="font-medium">{activeJobs.length} active</span>
         </motion.div>
       );
+      
+      return mounted ? createPortal(notificationBubble, document.body) : null;
     }
     return null;
   }
 
   // Minimized view that shows just a summary
   if (minimized) {
-    return (
+    const minimizedView = (
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -243,7 +260,10 @@ export default function FloatingKGJobCard() {
                 variant="ghost" 
                 size="sm"
                 className="h-7 rounded-none border-r border-border dark:border-gray-700 px-2 text-foreground dark:text-gray-200 hover:bg-accent dark:hover:bg-gray-700" 
-                onClick={() => setMinimized(false)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMinimized(false);
+                }}
                 title="Expand"
               >
                 <ChevronUp className="h-4 w-4" />
@@ -252,7 +272,7 @@ export default function FloatingKGJobCard() {
                 variant="ghost" 
                 size="sm"
                 className="h-7 rounded-none px-2 text-foreground dark:text-gray-200 hover:bg-accent dark:hover:bg-gray-700" 
-                onClick={handleDismiss}
+                onClick={(e) => handleDismiss(e)}
                 title="Close"
               >
                 <X className="h-4 w-4" />
@@ -262,15 +282,18 @@ export default function FloatingKGJobCard() {
         </div>
       </motion.div>
     );
+    
+    return mounted ? createPortal(minimizedView, document.body) : null;
   }
 
-  return (
+  return mounted ? createPortal(
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0, y: 50 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 50 }}
         className="fixed bottom-4 right-4 z-50 w-96 max-w-[calc(100vw-2rem)]"
+        onClick={(e) => e.stopPropagation()}
       >
         <Card className="shadow-lg border overflow-hidden bg-card/95 backdrop-blur-sm dark:bg-gray-900/95 dark:border-gray-700">
           <CardHeader className="py-2 px-4 border-b border-border dark:border-gray-700 flex flex-row items-center justify-between space-y-0">
@@ -283,7 +306,8 @@ export default function FloatingKGJobCard() {
                 variant="ghost" 
                 size="sm"
                 className="h-7 px-2 text-xs text-foreground dark:text-gray-200 hover:bg-accent dark:hover:bg-gray-700 flex items-center gap-1" 
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   refreshJobs();
                   setLastRefreshTime(Date.now());
                 }}
@@ -298,7 +322,10 @@ export default function FloatingKGJobCard() {
                   variant="ghost" 
                   size="sm"
                   className="h-7 rounded-none border-r border-border dark:border-gray-700 px-2 text-foreground dark:text-gray-200 hover:bg-accent dark:hover:bg-gray-700" 
-                  onClick={() => setMinimized(true)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMinimized(true);
+                  }}
                   title="Minimize"
                 >
                   <ChevronDown className="h-4 w-4" />
@@ -307,7 +334,7 @@ export default function FloatingKGJobCard() {
                   variant="ghost" 
                   size="sm"
                   className="h-7 rounded-none px-2 text-foreground dark:text-gray-200 hover:bg-accent dark:hover:bg-gray-700" 
-                  onClick={handleDismiss}
+                  onClick={(e) => handleDismiss(e)}
                   title="Close"
                 >
                   <X className="h-4 w-4" />
@@ -321,19 +348,28 @@ export default function FloatingKGJobCard() {
             <div className="flex border-b border-border dark:border-gray-700 mb-3">
               <button
                 className={`px-3 py-1.5 text-sm font-medium ${activeTab === "active" ? "border-b-2 border-primary text-primary" : "text-muted-foreground"}`}
-                onClick={() => setActiveTab("active")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveTab("active");
+                }}
               >
                 Active ({activeJobs.length})
               </button>
               <button
                 className={`px-3 py-1.5 text-sm font-medium ${activeTab === "completed" ? "border-b-2 border-primary text-primary" : "text-muted-foreground"}`}
-                onClick={() => setActiveTab("completed")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveTab("completed");
+                }}
               >
                 Completed ({completedJobs.length})
               </button>
               <button
                 className={`px-3 py-1.5 text-sm font-medium ${activeTab === "failed" ? "border-b-2 border-primary text-primary" : "text-muted-foreground"}`}
-                onClick={() => setActiveTab("failed")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveTab("failed");
+                }}
               >
                 Failed ({failedJobs.length})
               </button>
@@ -408,7 +444,7 @@ export default function FloatingKGJobCard() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => handleCancelJob(job.id)}
+                              onClick={(e) => handleCancelJob(job.id, e)}
                               disabled={cancellingJobs.includes(job.id)}
                               className="h-7 px-2 text-destructive hover:bg-destructive/10 text-xs"
                             >
@@ -511,7 +547,10 @@ export default function FloatingKGJobCard() {
                 variant="ghost" 
                 size="sm"
                 className="text-xs text-foreground dark:text-gray-200 hover:bg-accent dark:hover:bg-gray-700"
-                onClick={clearCompletedJobs}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  clearCompletedJobs();
+                }}
               >
                 Clear Completed
               </Button>
@@ -525,6 +564,7 @@ export default function FloatingKGJobCard() {
           </CardFooter>
         </Card>
       </motion.div>
-    </AnimatePresence>
-  )
+    </AnimatePresence>,
+    document.body
+  ) : null;
 }
