@@ -102,6 +102,30 @@ class LLMProvider:
              
         return llm_instance
 
+    @staticmethod
+    def get_default_llm(temperature: float = 0) -> BaseChatModel:
+        """
+        Returns the default Google LLM instance.
+
+        This is a convenience method that calls get_llm with the default Google provider and model.
+
+        Args:
+            temperature: The sampling temperature for the model.
+
+        Returns:
+            An instance of BaseChatModel (ChatGoogleGenerativeAI).
+
+        Raises:
+            ImportError: If langchain_google_genai is not installed.
+            ValueError: If GOOGLE_API_KEY environment variable is not set.
+            RuntimeError: If an error occurs during the LLM client initialization.
+        """
+        return LLMProvider.get_llm(
+            provider_name=LLMConstants.Providers.GOOGLE,
+            model_name=LLMConstants.GoogleModels.DEFAULT,
+            temperature=temperature
+        )
+
 # Example Usage (Optional - for testing)
 if __name__ == '__main__':
     print("Testing LLMProvider...")
