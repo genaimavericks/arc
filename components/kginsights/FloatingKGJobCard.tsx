@@ -40,8 +40,39 @@ export default function FloatingKGJobCard() {
   // Initialize mounted state for portal
   useEffect(() => {
     setMounted(true)
-    return () => setMounted(false)
-  }, [])
+    
+    // Add a global click handler to detect clicks on menu items
+    const handleGlobalClick = (e: MouseEvent) => {
+      // Check if the click is on a menu item or navigation element
+      const target = e.target as HTMLElement;
+      const isMenuOrNavElement = 
+        target.closest('nav') || 
+        target.closest('a') || 
+        target.closest('button[role="menuitem"]') ||
+        target.closest('[data-menu-item]') ||
+        target.closest('[role="menu"]') ||
+        target.closest('[role="menubar"]') ||
+        target.closest('[role="navigation"]') ||
+        target.closest('.sidebar') ||
+        target.closest('.navbar');
+      
+      // If clicking on a menu item, ensure the card doesn't interfere
+      if (isMenuOrNavElement && visible) {
+        // Immediately hide the card when interacting with menus
+        setVisible(false);
+        setUserDismissed(true);
+      }
+    };
+    
+    // Add the global click handler with capture to ensure it runs before other handlers
+    document.addEventListener('click', handleGlobalClick, { capture: true });
+    
+    return () => {
+      setMounted(false);
+      // Remove the global click handler
+      document.removeEventListener('click', handleGlobalClick, { capture: true });
+    }
+  }, [visible])
 
   // Save minimized state to localStorage when it changes
   useEffect(() => {
@@ -77,8 +108,16 @@ export default function FloatingKGJobCard() {
       }
       
       const timeout = setTimeout(() => {
-        setMinimized(true); // Minimize instead of hiding
-      }, 3000); // Shorter timeout before minimizing
+        // After a job completes, minimize the card
+        setMinimized(true);
+        
+        // Then hide it completely after another delay
+        const hideTimeout = setTimeout(() => {
+          setVisible(false);
+        }, 5000);
+        
+        return () => clearTimeout(hideTimeout);
+      }, 3000);
       
       setShowCardTimeout(timeout);
     } else if (!userDismissed) {
@@ -184,23 +223,19 @@ export default function FloatingKGJobCard() {
   // Handle user dismissing the card
   const handleDismiss = (e: React.MouseEvent) => {
     // Prevent the event from propagating to parent elements
+    e.preventDefault();
     e.stopPropagation();
     
-    // Only hide the card if it's already in minimized state
-    if (minimized) {
-      setVisible(false);
-      setUserDismissed(true);
-      // Don't clear completed jobs when dismissing
-      // This ensures they're still available when the card reappears
-    } else {
-      // If not minimized, just minimize it
-      setMinimized(true);
-    }
+    // Immediately hide the card regardless of minimized state
+    // This ensures a single click is sufficient to dismiss the card
+    setVisible(false);
+    setUserDismissed(true);
   }
 
   // Handle cancelling a job with visual feedback
   const handleCancelJob = async (jobId: string, e: React.MouseEvent) => {
     // Prevent the event from propagating
+    e.preventDefault();
     e.stopPropagation();
     
     // Add job to cancelling list
@@ -220,20 +255,21 @@ export default function FloatingKGJobCard() {
   if (!visible) {
     if (activeJobs.length > 0 && userDismissed) {
       const notificationBubble = (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="fixed bottom-4 right-4 z-50 bg-blue-500 dark:bg-blue-700 text-white rounded-full p-2 shadow-lg cursor-pointer flex items-center gap-2"
-          onClick={(e) => {
-            e.stopPropagation();
-            setUserDismissed(false);
-            setVisible(true);
-            setMinimized(false);
-          }}
-        >
-          <RefreshCw className="h-4 w-4 animate-spin" />
-          <span className="font-medium">{activeJobs.length} active</span>
-        </motion.div>
+        <div className="fixed bottom-4 right-4 z-10 pointer-events-auto">
+          <div 
+            className="bg-blue-500 dark:bg-blue-700 text-white rounded-full p-2 shadow-lg cursor-pointer flex items-center gap-2"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setUserDismissed(false);
+              setVisible(true);
+              setMinimized(false);
+            }}
+          >
+            <RefreshCw className="h-4 w-4 animate-spin" />
+            <span className="font-medium">{activeJobs.length} active</span>
+          </div>
+        </div>
       );
       
       return mounted ? createPortal(notificationBubble, document.body) : null;
@@ -244,11 +280,7 @@ export default function FloatingKGJobCard() {
   // Minimized view that shows just a summary
   if (minimized) {
     const minimizedView = (
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="fixed bottom-4 right-4 z-50"
-      >
+      <div className="fixed bottom-4 right-4 z-10 pointer-events-auto">
         <div className="bg-card dark:bg-gray-900 border border-border dark:border-gray-700 rounded-lg shadow-lg p-2 flex items-center gap-2">
           <Activity className="h-4 w-4 text-primary" />
           <span className="font-medium text-sm text-foreground dark:text-gray-200">
@@ -261,6 +293,7 @@ export default function FloatingKGJobCard() {
                 size="sm"
                 className="h-7 rounded-none border-r border-border dark:border-gray-700 px-2 text-foreground dark:text-gray-200 hover:bg-accent dark:hover:bg-gray-700" 
                 onClick={(e) => {
+                  e.preventDefault();
                   e.stopPropagation();
                   setMinimized(false);
                 }}
@@ -280,291 +313,286 @@ export default function FloatingKGJobCard() {
             </div>
           </div>
         </div>
-      </motion.div>
+      </div>
     );
     
     return mounted ? createPortal(minimizedView, document.body) : null;
   }
 
   return mounted ? createPortal(
-    <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0, y: 50 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 50 }}
-        className="fixed bottom-4 right-4 z-50 w-96 max-w-[calc(100vw-2rem)]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <Card className="shadow-lg border overflow-hidden bg-card/95 backdrop-blur-sm dark:bg-gray-900/95 dark:border-gray-700">
-          <CardHeader className="py-2 px-4 border-b border-border dark:border-gray-700 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="font-medium text-sm flex gap-2 items-center text-foreground dark:text-gray-100">
-              <Activity className="h-4 w-4 text-primary" />
-              KG Processing Jobs {activeJobs.length > 0 ? `(${activeJobs.length} active)` : ''}
-            </CardTitle>
-            <div className="flex items-center space-x-2">
+    <div className="fixed bottom-4 right-4 z-10 w-96 max-w-[calc(100vw-2rem)] pointer-events-none">
+      <Card className="shadow-lg border overflow-hidden bg-card/95 backdrop-blur-sm dark:bg-gray-900/95 dark:border-gray-700 pointer-events-auto">
+        <CardHeader className="py-2 px-4 border-b border-border dark:border-gray-700 flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="font-medium text-sm flex gap-2 items-center text-foreground dark:text-gray-100">
+            <Activity className="h-4 w-4 text-primary" />
+            KG Processing Jobs {activeJobs.length > 0 ? `(${activeJobs.length} active)` : ''}
+          </CardTitle>
+          <div className="flex items-center space-x-2">
+            <Button 
+              variant="ghost" 
+              size="sm"
+              className="h-7 px-2 text-xs text-foreground dark:text-gray-200 hover:bg-accent dark:hover:bg-gray-700 flex items-center gap-1" 
+              onClick={(e) => {
+                e.preventDefault();
+                refreshJobs();
+                setLastRefreshTime(Date.now());
+              }}
+              disabled={isLoading}
+              title="Refresh"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin text-primary' : ''}`} />
+              Refresh
+            </Button>
+            <div className="flex rounded-md border border-border dark:border-gray-700 overflow-hidden">
               <Button 
                 variant="ghost" 
                 size="sm"
-                className="h-7 px-2 text-xs text-foreground dark:text-gray-200 hover:bg-accent dark:hover:bg-gray-700 flex items-center gap-1" 
+                className="h-7 rounded-none border-r border-border dark:border-gray-700 px-2 text-foreground dark:text-gray-200 hover:bg-accent dark:hover:bg-gray-700" 
                 onClick={(e) => {
-                  e.stopPropagation();
-                  refreshJobs();
-                  setLastRefreshTime(Date.now());
+                  e.preventDefault();
+                  setMinimized(true);
                 }}
-                disabled={isLoading}
-                title="Refresh"
+                title="Minimize"
               >
-                <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin text-primary' : ''}`} />
-                Refresh
+                <ChevronDown className="h-4 w-4" />
               </Button>
-              <div className="flex rounded-md border border-border dark:border-gray-700 overflow-hidden">
-                <Button 
-                  variant="ghost" 
-                  size="sm"
-                  className="h-7 rounded-none border-r border-border dark:border-gray-700 px-2 text-foreground dark:text-gray-200 hover:bg-accent dark:hover:bg-gray-700" 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setMinimized(true);
-                  }}
-                  title="Minimize"
-                >
-                  <ChevronDown className="h-4 w-4" />
-                </Button>
-                <Button 
-                  variant="ghost" 
-                  size="sm"
-                  className="h-7 rounded-none px-2 text-foreground dark:text-gray-200 hover:bg-accent dark:hover:bg-gray-700" 
-                  onClick={(e) => handleDismiss(e)}
-                  title="Close"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
+              <Button 
+                variant="ghost" 
+                size="sm"
+                className="h-7 rounded-none px-2 text-foreground dark:text-gray-200 hover:bg-accent dark:hover:bg-gray-700" 
+                onClick={(e) => handleDismiss(e)}
+                title="Close"
+              >
+                <X className="h-4 w-4" />
+              </Button>
             </div>
-          </CardHeader>
+          </div>
+        </CardHeader>
+        
+        <CardContent className="p-3 max-h-80 overflow-y-auto">
+          {/* Tabs for job types */}
+          <div className="flex border-b border-border dark:border-gray-700 mb-3">
+            <button
+              className={`px-3 py-1.5 text-sm font-medium ${activeTab === "active" ? "border-b-2 border-primary text-primary" : "text-muted-foreground"}`}
+              onClick={(e) => {
+                e.preventDefault();
+                setActiveTab("active");
+              }}
+              type="button"
+            >
+              Active ({activeJobs.length})
+            </button>
+            <button
+              className={`px-3 py-1.5 text-sm font-medium ${activeTab === "completed" ? "border-b-2 border-primary text-primary" : "text-muted-foreground"}`}
+              onClick={(e) => {
+                e.preventDefault();
+                setActiveTab("completed");
+              }}
+              type="button"
+            >
+              Completed ({completedJobs.length})
+            </button>
+            <button
+              className={`px-3 py-1.5 text-sm font-medium ${activeTab === "failed" ? "border-b-2 border-primary text-primary" : "text-muted-foreground"}`}
+              onClick={(e) => {
+                e.preventDefault();
+                setActiveTab("failed");
+              }}
+              type="button"
+            >
+              Failed ({failedJobs.length})
+            </button>
+          </div>
           
-          <CardContent className="p-3 max-h-80 overflow-y-auto">
-            {/* Tabs for job types */}
-            <div className="flex border-b border-border dark:border-gray-700 mb-3">
-              <button
-                className={`px-3 py-1.5 text-sm font-medium ${activeTab === "active" ? "border-b-2 border-primary text-primary" : "text-muted-foreground"}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActiveTab("active");
-                }}
-              >
-                Active ({activeJobs.length})
-              </button>
-              <button
-                className={`px-3 py-1.5 text-sm font-medium ${activeTab === "completed" ? "border-b-2 border-primary text-primary" : "text-muted-foreground"}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActiveTab("completed");
-                }}
-              >
-                Completed ({completedJobs.length})
-              </button>
-              <button
-                className={`px-3 py-1.5 text-sm font-medium ${activeTab === "failed" ? "border-b-2 border-primary text-primary" : "text-muted-foreground"}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActiveTab("failed");
-                }}
-              >
-                Failed ({failedJobs.length})
-              </button>
-            </div>
-            
-            {/* Active Jobs Tab Content */}
-            {activeTab === "active" && (
-              <div className="space-y-3">
-                {activeJobs.length === 0 ? (
-                  <div className="text-center py-4 text-muted-foreground text-sm">
-                    No active jobs
-                  </div>
-                ) : (
-                  activeJobs.map(job => (
-                    <motion.div
-                      key={job.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="relative bg-card dark:bg-gray-800 border border-border dark:border-gray-700 rounded-lg p-3 overflow-hidden"
-                    >
-                      {/* Progress bar background for running jobs */}
+          {/* Active Jobs Tab Content */}
+          {activeTab === "active" && (
+            <div className="space-y-3">
+              {activeJobs.length === 0 ? (
+                <div className="text-center py-4 text-muted-foreground text-sm">
+                  No active jobs
+                </div>
+              ) : (
+                activeJobs.map(job => (
+                  <motion.div
+                    key={job.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="relative bg-card dark:bg-gray-800 border border-border dark:border-gray-700 rounded-lg p-3 overflow-hidden"
+                  >
+                    {/* Progress bar background for running jobs */}
+                    {job.status === "running" && (
+                      <div 
+                        className="absolute inset-0 bg-blue-500/5 dark:bg-blue-500/10 z-0"
+                        style={{ 
+                          width: `${job.progress}%`,
+                          transition: 'width 0.5s ease-in-out'
+                        }}
+                      />
+                    )}
+                    
+                    {/* Job content */}
+                    <div className="relative z-10">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <h4 className="font-medium text-foreground dark:text-gray-200 text-sm">
+                            {formatJobType(job.job_type)} - Schema #{job.schema_id}
+                          </h4>
+                          <p className="text-xs text-muted-foreground dark:text-gray-400 break-words max-w-[220px]">
+                            {job.message || 'Processing...'}
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-end space-y-1">
+                          {getStatusBadge(job.status)}
+                          <span className="text-xs text-muted-foreground dark:text-gray-400">
+                            {getTimeAgo(job.created_at)}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      {/* Progress indicator for running jobs */}
                       {job.status === "running" && (
-                        <div 
-                          className="absolute inset-0 bg-blue-500/5 dark:bg-blue-500/10 z-0"
-                          style={{ 
-                            width: `${job.progress}%`,
-                            transition: 'width 0.5s ease-in-out'
-                          }}
-                        />
+                        <div className="mt-2">
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className="text-muted-foreground dark:text-gray-400">Progress</span>
+                            <span className="text-foreground dark:text-gray-300 font-medium">{job.progress || 0}%</span>
+                          </div>
+                          <Progress value={job.progress || 0} className="h-1.5 dark:bg-gray-700" />
+                        </div>
                       )}
                       
-                      {/* Job content */}
-                      <div className="relative z-10">
-                        <div className="flex justify-between items-start mb-2">
-                          <div>
-                            <h4 className="font-medium text-foreground dark:text-gray-200 text-sm">
-                              {formatJobType(job.job_type)} - Schema #{job.schema_id}
-                            </h4>
-                            <p className="text-xs text-muted-foreground dark:text-gray-400 break-words max-w-[220px]">
-                              {job.message || 'Processing...'}
-                            </p>
-                          </div>
-                          <div className="flex flex-col items-end space-y-1">
-                            {getStatusBadge(job.status)}
-                            <span className="text-xs text-muted-foreground dark:text-gray-400">
-                              {getTimeAgo(job.created_at)}
-                            </span>
-                          </div>
+                      {/* Error message for failed jobs */}
+                      {job.error && (
+                        <p className="text-xs text-red-600 dark:text-red-400 mt-1 bg-red-50 dark:bg-red-900/20 p-1.5 rounded border border-red-100 dark:border-red-900/30">
+                          Error: {job.error}
+                        </p>
+                      )}
+                      
+                      {/* Action buttons */}
+                      {(job.status === "pending" || job.status === "running") && (
+                        <div className="flex justify-end mt-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => handleCancelJob(job.id, e)}
+                            disabled={cancellingJobs.includes(job.id)}
+                            className="h-7 px-2 text-destructive hover:bg-destructive/10 text-xs"
+                          >
+                            {cancellingJobs.includes(job.id) ? (
+                              <>
+                                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                Cancelling...
+                              </>
+                            ) : (
+                              "Cancel"
+                            )}
+                          </Button>
                         </div>
-                        
-                        {/* Progress indicator for running jobs */}
-                        {job.status === "running" && (
-                          <div className="mt-2">
-                            <div className="flex justify-between text-xs mb-1">
-                              <span className="text-muted-foreground dark:text-gray-400">Progress</span>
-                              <span className="text-foreground dark:text-gray-300 font-medium">{job.progress || 0}%</span>
-                            </div>
-                            <Progress value={job.progress || 0} className="h-1.5 dark:bg-gray-700" />
-                          </div>
-                        )}
-                        
-                        {/* Error message for failed jobs */}
-                        {job.error && (
-                          <p className="text-xs text-red-600 dark:text-red-400 mt-1 bg-red-50 dark:bg-red-900/20 p-1.5 rounded border border-red-100 dark:border-red-900/30">
-                            Error: {job.error}
-                          </p>
-                        )}
-                        
-                        {/* Action buttons */}
-                        {(job.status === "pending" || job.status === "running") && (
-                          <div className="flex justify-end mt-2">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={(e) => handleCancelJob(job.id, e)}
-                              disabled={cancellingJobs.includes(job.id)}
-                              className="h-7 px-2 text-destructive hover:bg-destructive/10 text-xs"
-                            >
-                              {cancellingJobs.includes(job.id) ? (
-                                <>
-                                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                                  Cancelling...
-                                </>
-                              ) : (
-                                "Cancel"
-                              )}
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    </motion.div>
-                  ))
-                )}
-              </div>
-            )}
-            
-            {/* Completed Jobs Tab Content */}
-            {activeTab === "completed" && (
-              <div className="space-y-3">
-                {completedJobs.length === 0 ? (
-                  <div className="text-center py-4 text-muted-foreground text-sm">
-                    No completed jobs
-                  </div>
-                ) : (
-                  completedJobs.map(job => (
-                    <motion.div
-                      key={job.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="bg-card dark:bg-gray-800 border border-border dark:border-gray-700 rounded-lg p-3"
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <h4 className="font-medium text-foreground dark:text-gray-200 text-sm">
-                            {formatJobType(job.job_type)} - Schema #{job.schema_id}
-                          </h4>
-                          <p className="text-xs text-muted-foreground dark:text-gray-400 break-words max-w-[220px]">
-                            Completed successfully
-                          </p>
-                        </div>
-                        <div className="flex flex-col items-end">
-                          {getStatusBadge(job.status)}
-                          <span className="text-xs text-muted-foreground dark:text-gray-400 mt-1">
-                            {getTimeAgo(job.updated_at)}
-                          </span>
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))
-                )}
-              </div>
-            )}
-            
-            {/* Failed Jobs Tab Content */}
-            {activeTab === "failed" && (
-              <div className="space-y-3">
-                {failedJobs.length === 0 ? (
-                  <div className="text-center py-4 text-muted-foreground text-sm">
-                    No failed jobs
-                  </div>
-                ) : (
-                  failedJobs.map(job => (
-                    <motion.div
-                      key={job.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="bg-card dark:bg-gray-800 border border-border dark:border-gray-700 rounded-lg p-3"
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <h4 className="font-medium text-foreground dark:text-gray-200 text-sm">
-                            {formatJobType(job.job_type)} - Schema #{job.schema_id}
-                          </h4>
-                          <p className="text-xs text-muted-foreground dark:text-gray-400 break-words max-w-[220px]">
-                            {job.error || (job.status === "cancelled" ? "Cancelled by user" : "Failed")}
-                          </p>
-                        </div>
-                        <div className="flex flex-col items-end">
-                          {getStatusBadge(job.status)}
-                          <span className="text-xs text-muted-foreground dark:text-gray-400 mt-1">
-                            {getTimeAgo(job.updated_at)}
-                          </span>
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))
-                )}
-              </div>
-            )}
-          </CardContent>
-          
-          <CardFooter className="p-2 bg-muted/50 dark:bg-gray-800 flex justify-between border-t border-border dark:border-gray-700">
-            {jobs.some(job => job.status === "completed" || job.status === "failed" || job.status === "cancelled") && (
-              <Button 
-                variant="ghost" 
-                size="sm"
-                className="text-xs text-foreground dark:text-gray-200 hover:bg-accent dark:hover:bg-gray-700"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  clearCompletedJobs();
-                }}
-              >
-                Clear Completed
-              </Button>
-            )}
-            {!jobs.some(job => job.status === "completed" || job.status === "failed" || job.status === "cancelled") && (
-              <div></div> // Empty div to maintain flex layout
-            )}
-            <div className="text-xs text-muted-foreground">
-              {activeJobs.length > 0 ? `${activeJobs.length} active job${activeJobs.length > 1 ? 's' : ''}` : ''}
+                      )}
+                    </div>
+                  </motion.div>
+                ))
+              )}
             </div>
-          </CardFooter>
-        </Card>
-      </motion.div>
-    </AnimatePresence>,
+          )}
+          
+          {/* Completed Jobs Tab Content */}
+          {activeTab === "completed" && (
+            <div className="space-y-3">
+              {completedJobs.length === 0 ? (
+                <div className="text-center py-4 text-muted-foreground text-sm">
+                  No completed jobs
+                </div>
+              ) : (
+                completedJobs.map(job => (
+                  <motion.div
+                    key={job.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-card dark:bg-gray-800 border border-border dark:border-gray-700 rounded-lg p-3"
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h4 className="font-medium text-foreground dark:text-gray-200 text-sm">
+                          {formatJobType(job.job_type)} - Schema #{job.schema_id}
+                        </h4>
+                        <p className="text-xs text-muted-foreground dark:text-gray-400 break-words max-w-[220px]">
+                          Completed successfully
+                        </p>
+                      </div>
+                      <div className="flex flex-col items-end">
+                        {getStatusBadge(job.status)}
+                        <span className="text-xs text-muted-foreground dark:text-gray-400 mt-1">
+                          {getTimeAgo(job.updated_at)}
+                        </span>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))
+              )}
+            </div>
+          )}
+          
+          {/* Failed Jobs Tab Content */}
+          {activeTab === "failed" && (
+            <div className="space-y-3">
+              {failedJobs.length === 0 ? (
+                <div className="text-center py-4 text-muted-foreground text-sm">
+                  No failed jobs
+                </div>
+              ) : (
+                failedJobs.map(job => (
+                  <motion.div
+                    key={job.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-card dark:bg-gray-800 border border-border dark:border-gray-700 rounded-lg p-3"
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h4 className="font-medium text-foreground dark:text-gray-200 text-sm">
+                          {formatJobType(job.job_type)} - Schema #{job.schema_id}
+                        </h4>
+                        <p className="text-xs text-muted-foreground dark:text-gray-400 break-words max-w-[220px]">
+                          {job.error || (job.status === "cancelled" ? "Cancelled by user" : "Failed")}
+                        </p>
+                      </div>
+                      <div className="flex flex-col items-end">
+                        {getStatusBadge(job.status)}
+                        <span className="text-xs text-muted-foreground dark:text-gray-400 mt-1">
+                          {getTimeAgo(job.updated_at)}
+                        </span>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))
+              )}
+            </div>
+          )}
+        </CardContent>
+        
+        <CardFooter className="p-2 bg-muted/50 dark:bg-gray-800 flex justify-between border-t border-border dark:border-gray-700">
+          {jobs.some(job => job.status === "completed" || job.status === "failed" || job.status === "cancelled") && (
+            <Button 
+              variant="ghost" 
+              size="sm"
+              className="text-xs text-foreground dark:text-gray-200 hover:bg-accent dark:hover:bg-gray-700"
+              onClick={(e) => {
+                e.preventDefault();
+                clearCompletedJobs();
+              }}
+            >
+              Clear Completed
+            </Button>
+          )}
+          {!jobs.some(job => job.status === "completed" || job.status === "failed" || job.status === "cancelled") && (
+            <div></div> // Empty div to maintain flex layout
+          )}
+          <div className="text-xs text-muted-foreground">
+            {activeJobs.length > 0 ? `${activeJobs.length} active job${activeJobs.length > 1 ? 's' : ''}` : ''}
+          </div>
+        </CardFooter>
+      </Card>
+    </div>,
     document.body
   ) : null;
 }
