@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, Query, Response, status
+from fastapi import APIRouter, HTTPException, Depends, Query, Response, status, Body
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 import asyncio
@@ -125,6 +125,10 @@ class PredefinedQueriesResponse(BaseModel):
     """Response model for the predefined queries endpoint."""
     schema_id: str
     queries: List[PredefinedQuery]
+
+class GeneratePromptsResponse(BaseModel):
+    schema_id: str
+    message: str
 
 print('$$$$$$$$$$$$$$- Loading data insights')
 # API Routes
@@ -557,3 +561,27 @@ async def get_predefined_queries(
         return PredefinedQueriesResponse(schema_id=schema_id, queries=result_queries)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving predefined queries: {str(e)}")
+
+@router.post("/{schema_id}/generate-prompts", response_model=GeneratePromptsResponse)
+async def generate_prompts_for_schema(
+    schema_id: str,
+    current_user: User = Depends(has_any_permission(["kginsights:write"]))
+):
+    """
+    Generate and save cypher prompt template, QA prompt template, and sample queries for the given schema_id
+    using the existing SchemaAwareGraphAssistant logic. This will overwrite any existing prompts/queries files for this schema.
+    """
+    try:
+        db = SessionLocal()
+        schema_record = db.query(Schema).filter(Schema.id == schema_id).first()
+        if not schema_record or not schema_record.schema or not schema_record.db_id:
+            raise HTTPException(status_code=404, detail="Schema not found or incomplete for given schema_id")
+        assistant = get_schema_aware_assistant(schema_record.db_id, schema_id, schema_record.schema)
+        # This will trigger prompt and query file generation via _ensure_prompt
+        assistant._ensure_prompt()
+        return GeneratePromptsResponse(schema_id=schema_id, message="Prompts and sample queries generated and saved successfully.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating prompts: {str(e)}")
+    finally:
+        if 'db' in locals():
+            db.close()

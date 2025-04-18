@@ -259,7 +259,6 @@ export default function InsightsChat() {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache',
         }
       })
       
@@ -599,7 +598,7 @@ export default function InsightsChat() {
                     <div className="space-y-2">
                       {predefinedQueries
                         .filter(q => q.category === "general")
-                        .slice(0, 5)
+                        .slice(0, 10)
                         .map(query => (
                           <button
                             key={query.id}
@@ -618,7 +617,7 @@ export default function InsightsChat() {
                     <div className="space-y-2">
                       {predefinedQueries
                         .filter(q => q.category === "relationships")
-                        .slice(0, 5)
+                        .slice(0, 10)
                         .map(query => (
                           <button
                             key={query.id}
@@ -637,7 +636,7 @@ export default function InsightsChat() {
                     <div className="space-y-2">
                       {predefinedQueries
                         .filter(q => q.category === "domain")
-                        .slice(0, 5)
+                        .slice(0, 10)
                         .map(query => (
                           <button
                             key={query.id}

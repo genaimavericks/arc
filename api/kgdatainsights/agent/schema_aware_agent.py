@@ -35,6 +35,7 @@ load_dotenv()
 OUTPUT_DIR = Path("runtime-data/output/kgdatainsights")
 SCHEMA_DIR = OUTPUT_DIR / "schema"
 PROMPT_DIR = OUTPUT_DIR / "prompts"
+QUERY_DIR = OUTPUT_DIR / "queries"  # This matches QUERIES_DIR in data_insights_api.py
 
 # Create directories if they don't exist
 SCHEMA_DIR.mkdir(parents=True, exist_ok=True)
@@ -225,6 +226,8 @@ class SchemaAwareGraphAssistant:
     def _ensure_prompt(self) -> None:
         """Check if prompts exist, validate generation_id, create and save if needed."""
         prompt_file = PROMPT_DIR / f"prompt_{self.db_id}_{self.schema_id}.json"
+        query_file = QUERY_DIR / f"{self.schema_id}_queries.json" 
+
         regenerate_prompts = False
         current_generation_id = None
         existing_prompts = None
@@ -297,6 +300,37 @@ class SchemaAwareGraphAssistant:
                 with open(prompt_file, "w") as f:
                     json.dump(prompts, f, indent=2)
                 print(f"Prompts saved to {prompt_file}")
+
+                QUERY_DIR.mkdir(parents=True, exist_ok=True) # Ensure directory exists
+                with open(query_file, "w") as f:
+                    # Format the sample queries to match what the API expects
+                    # The API expects a dictionary with categories as keys and lists of queries as values
+                    formatted_queries = {
+                        "general": [],
+                        "relationships": [],
+                        "domain": []
+                    }
+                    
+                    # Add each sample query to an appropriate category based on content analysis
+                    for i, query in enumerate(prompts["sample_queries"]):
+                        query_lower = query.lower()
+                        
+                        # Determine the best category based on query content
+                        if any(keyword in query_lower for keyword in ["relation", "connect", "link", "between", "path"]):
+                            category = "relationships"
+                        elif any(keyword in query_lower for keyword in ["domain", "specific", "industry", "field", "area"]):
+                            category = "domain"
+                        else:
+                            category = "general"  # Default category
+                        
+                        formatted_queries[category].append({
+                            "id": f"{category}_{len(formatted_queries[category])+1}",
+                            "query": query,
+                            "description": f"AI-generated sample query #{i+1}"
+                        })
+                    
+                    json.dump(formatted_queries, f, indent=2)
+                print(f"Queries saved to {query_file}")
 
             except Exception as e:
                 print(f"Error saving prompts to {prompt_file}: {e}")
@@ -486,37 +520,31 @@ class SchemaAwareGraphAssistant:
         """
         Escapes Neo4j property maps (e.g., {key: value}) within node/relationship patterns (...) or [...]
         by wrapping them in double curly braces {{ {key: value} }} for LangChain compatibility.
-        It avoids wrapping already escaped maps {{...}} and template variables like {query}.
+        It avoids wrapping already escaped maps {{...}} and template variables like {question} or {context}.
         """
         if not prompt_text:
             return prompt_text
 
-        # V2 pattern using raw string for easier regex definition
-        # Explanation:
-        # ([\(\[][^\]\)]*?)   # Group 1: ( or [ followed by non-) or non-] chars, up to the map
-        # (?<!\{)\{(?!\{)     # Match { only if not preceded/followed by {
-        # (.*?)                 # Group 2: The content inside the map (non-greedy)
-        # \}                    # Match the closing }
-        # ([^\]\)]*[\)\]])   # Group 3: Non-) or non-] chars up to the final ) or ]
-        pattern = re.compile(r"([\(\[][^\]\)]*?)(?<!\{)\{(?!\{)(.*?)\}([^\]\)]*[\)\]])")
-
-        # Replacement function: Takes the match object
-        def replace_map(match):
-            # Group 1: Part before the map (e.g., "(n " or "[r:")
-            # Group 2: The content *inside* the map {...}
-            # Group 3: Part after the map up to closing ) or ]
-            return match.group(1) + "{{" + match.group(2) + "}}" + match.group(3)
-
-        # Substitute using the function
-        escaped_prompt = pattern.sub(replace_map, prompt_text)
-
-        # Debug print... (same as before)
-        if escaped_prompt != prompt_text:
-            print("DEBUG: Applied property map escaping.")
-        # else: # Reduce noise
-            # print("DEBUG: No property map escaping applied.")
-
-        return escaped_prompt
+        # First, temporarily replace {question} and {context} with placeholders
+        # to prevent them from being double-escaped
+        placeholder_map = {
+            "{question}": "__QUESTION_PLACEHOLDER__",
+            "{context}": "__CONTEXT_PLACEHOLDER__",
+            "{query}": "__QUERY_PLACEHOLDER__"
+        }
+        
+        # Replace template variables with placeholders
+        for template_var, placeholder in placeholder_map.items():
+            prompt_text = prompt_text.replace(template_var, placeholder)
+        
+        # Now escape all remaining curly braces
+        prompt_text = prompt_text.replace("{", "{{").replace("}", "}}")
+        
+        # Restore the template variables from placeholders
+        for template_var, placeholder in placeholder_map.items():
+            prompt_text = prompt_text.replace(placeholder, template_var)
+            
+        return prompt_text
 
     def _load_prompts(self) -> None:
         """Load custom prompts for this source"""

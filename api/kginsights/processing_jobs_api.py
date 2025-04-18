@@ -158,6 +158,20 @@ async def process_load_data_job(job_id: str, schema_id: int, graph_name: str, dr
             job.progress = 100
             job.message = f"Successfully loaded data for schema ID {schema_id} to graph {graph_name}"
             db.commit()
+            
+            # TEMP: Generate prompt templates and sample queries after data load
+            try:
+                schema_db = db.query(Schema).filter(Schema.id == schema_id).first()
+                if schema_db and schema_db.schema and schema_db.db_id:
+                    from api.kgdatainsights.data_insights_api import get_schema_aware_assistant
+                    assistant = get_schema_aware_assistant(schema_db.db_id, schema_id, schema_db.schema)
+                    assistant._ensure_prompt()
+                    print(f"Prompt templates and queries generated for schema_id={schema_id}")
+                else:
+                    print(f"Could not generate prompts: Schema record not found or incomplete for schema_id={schema_id}")
+            except Exception as e:
+                print(f"Error generating prompts after data load for schema_id={schema_id}: {e}")
+        
         finally:
             # Make sure to close the new session
             task_db.close()
