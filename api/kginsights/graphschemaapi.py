@@ -21,6 +21,7 @@ from .loaders.data_loader import DataLoader
 from .loaders.neo4j_loader import Neo4jLoader
 import traceback
 import re
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 # Utility function to update schema status
 def update_schema_status(db=None, schema=None, db_id=None, schema_id=None, schema_generated=None, db_loaded=None):
@@ -171,6 +172,7 @@ class SourceIdInput(BaseModel):
     source_id: str
     metadata: str = None  # Optional metadata about the data
     file_path: str = None  # Add file_path field to accept path from frontend
+    domain: str = None  # Data domain (e.g., 'telecom_churn', 'foam_factory')
 
 class SaveSchemaInput(BaseModel):
     schema: dict
@@ -186,6 +188,7 @@ class RefineSchemaInput(BaseModel):
     current_schema: dict
     feedback: str
     file_path: str = None  # Optional file path, similar to SourceIdInput
+    domain: str = None  # Data domain (e.g., 'telecom_churn', 'foam_factory')
 
 class ApplySchemaInput(BaseModel):
     schema_id: int
@@ -205,24 +208,60 @@ router = APIRouter(prefix="/graphschema", tags=["graphschema"])
 
 # Initialize LLM
 try:
-    api_key = os.getenv('OPENAI_API_KEY')
+    api_key = os.getenv('GOOGLE_API_KEY')
     if not api_key:
-        raise ValueError("OPENAI_API_KEY environment variable is not set")
+        raise ValueError("GOOGLE_API_KEY environment variable is not set")
     
-    llm = ChatOpenAI(
-        model='gpt-4',
-        api_key=api_key,
+    llm = ChatGoogleGenerativeAI(
+        model='gemini-1.5-pro',
+        google_api_key=api_key,
         temperature=0
     )
-    print("Successfully initialized OpenAI LLM")
+    print("Successfully initialized Google Gemini LLM")
 except Exception as e:
-    print(f"Warning: Could not initialize OpenAI LLM: {e}")
+    print(f"Warning: Could not initialize Google Gemini LLM: {e}")
     # Create a placeholder LLM for development/testing
     from unittest.mock import MagicMock
     llm = MagicMock()
-    llm.invoke.return_value = {"content": "This is a mock response as OpenAI API key is not configured."}
+    llm.invoke.return_value = {"content": "This is a mock response as Google API key is not configured."}
 
 # Helper Functions
+def read_domain_data(domain_name):
+    """Read domain-specific data from text files"""
+    if not domain_name:
+        return ""
+        
+    # Map domain names to file paths
+    domain_files = {
+        "telecom_churn": "TelecomChurnDomain.txt",
+        "foam_factory": "FoamFactoryDomain.txt"
+    }
+    
+    # Get the file path for the domain
+    file_name = domain_files.get(domain_name.lower())
+    if not file_name:
+        print(f"WARNING: Unknown domain: {domain_name}")
+        return ""
+    
+    # Construct the full file path
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(current_dir, file_name)
+    
+    # Check if the file exists
+    if not os.path.exists(file_path):
+        print(f"WARNING: Domain file not found: {file_path}")
+        return ""
+    
+    # Read the domain data from the file
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            domain_data = f.read().strip()
+        print(f"DEBUG: Successfully read domain data from {file_path}")
+        return domain_data
+    except Exception as e:
+        print(f"ERROR: Failed to read domain file {file_path}: {str(e)}")
+        return ""
+
 def format_schema_response(schema, cypher):
     """Format schema and cypher data for frontend consumption"""
     # Ensure schema has necessary structure
@@ -444,20 +483,39 @@ async def build_schema_from_source(
         # Initialize agent with the provided file path and metadata
         print(f"DEBUG: Initializing GraphSchemaAgent with file_path: {file_path}")
         print(f"DEBUG: LLM type: {type(llm)}")
+        print(f"DEBUG: Using domain: {source_input.domain}")
+        
+        # Read domain-specific data from text files
+        domain_data = ""
+        if source_input.domain:
+            domain_data = read_domain_data(source_input.domain)
+            print(f"DEBUG: Domain data length: {len(domain_data)} characters")
         
         try:
+            # Set up initial state with domain information
+            initial_state = {
+                "csv_path": file_path,
+                "messages": [],
+                "data_info": None,
+                "schema": None,
+                "cypher": None,
+                "error": None,
+                "domain": source_input.domain  # Include domain information
+            }
+            
             agent_instance = GraphSchemaAgent(
                 model=llm,
                 csv_path=file_path,
                 metadata=metadata,
                 log=True,
-                log_path='logs'
+                log_path='logs',
+                domain=domain_data  # Pass domain data to the agent
             )
             print(f"DEBUG: GraphSchemaAgent initialized successfully")
             
             # Generate the schema
-            print(f"DEBUG: Invoking GraphSchemaAgent")
-            response = agent_instance.invoke_agent()
+            print(f"DEBUG: Invoking GraphSchemaAgent with domain: {source_input.domain}")
+            response = agent_instance.invoke_agent(initial_state)
             print(f"DEBUG: GraphSchemaAgent invoked successfully")
             
             # Get the generated schema and cypher
@@ -604,6 +662,12 @@ async def refine_schema(
             openai_api_key=openai_api_key
         )
         
+        # Read domain-specific data from text files
+        domain_data = ""
+        if refine_input.domain:
+            domain_data = read_domain_data(refine_input.domain)
+            print(f"DEBUG: Domain data length: {len(domain_data)} characters")
+        
         # Initialize agent with the provided file path and current schema
         agent_instance = GraphSchemaAgent(
             model=llm,
@@ -611,7 +675,8 @@ async def refine_schema(
             metadata=refine_input.feedback,  # User feedback for schema refinement
             current_schema=refine_input.current_schema,  # Current schema to be refined
             log=True,
-            log_path='logs'
+            log_path='logs',
+            domain=domain_data  # Pass domain data to the agent
         )
         
         print(f"DEBUG: Refining schema with feedback: {refine_input.feedback}")
@@ -625,8 +690,11 @@ async def refine_schema(
             "schema": None,
             "cypher": None,
             "error": None,
-            "current_schema": refine_input.current_schema  # Explicitly include current schema in initial state
+            "current_schema": refine_input.current_schema,  # Explicitly include current schema in initial state
+            "domain": refine_input.domain  # Include domain information
         }
+        
+        print(f"DEBUG: Using domain: {refine_input.domain}")
         
         # Run the agent to refine the schema with the explicit initial state
         agent_instance.invoke_agent(initial_state)
