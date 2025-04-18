@@ -3,6 +3,13 @@
 import { useState, useRef, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+
+// Extend Window interface to include our schema mapping
+declare global {
+  interface Window {
+    schemaIdMap: Record<string, number>;
+  }
+}
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 import {
@@ -99,23 +106,11 @@ export default function InsightsChat() {
   
   // Initialize component
   useEffect(() => {
-    // Initialize with a welcome message if messages is empty
-    if (messages.length === 0) {
-      setMessages([
-        {
-          id: "welcome",
-          role: "system",
-          content: "Welcome to Knowledge Graph Insights! Ask me anything about your knowledge graph.",
-          timestamp: new Date(),
-        }
-      ])
-    }
+    // Load available knowledge graph sources first, as it will set the welcome message
+    fetchKnowledgeGraphSources()
     
     // Load predefined queries
     fetchPredefinedQueries()
-    
-    // Load available knowledge graph sources
-    fetchKnowledgeGraphSources()
     
     // Cleanup function to ensure state is preserved
     return () => {
@@ -170,8 +165,8 @@ export default function InsightsChat() {
         console.warn("No authentication token found in localStorage")
       }
       
-      // Fetch available knowledge graph sources
-      const response = await fetch(`/api/graph/db`, {
+      // Fetch available knowledge graph sources from schemas with db_loaded='yes'
+      const response = await fetch(`/api/graph/schema`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -180,22 +175,66 @@ export default function InsightsChat() {
       })
       
       if (!response.ok) {
-        console.warn(`Graph sources API returned ${response.status}. Using default.`)
+        console.warn(`Schema sources API returned ${response.status}. Using default.`)
         throw new Error(`Failed with status ${response.status}`)
       }
       
       const data = await response.json()
       
-      if (data.databases && data.databases.length > 0) {
-        setAvailableSources(data.databases)
-        
-        // If sourceId is not in the list, set it to the first available source
-        if (!data.databases.includes(sourceId) && data.databases.length > 0) {
-          setSourceId(data.databases[0])
+      // Create a global map to store schema IDs keyed by schema name
+      window.schemaIdMap = {} as Record<string, number>
+      
+      if (data.schemas && data.schemas.length > 0) {
+        // Check if we only have the empty placeholder
+        if (data.schemas.length === 1 && data.schemas[0].id === -100) {
+          // No valid graphs available - set empty message
+          setAvailableSources([])
+          setMessages([
+            {
+              id: "welcome",
+              role: "system",
+              content: "Welcome to Knowledge Graph Insights! Knowledge graph is not created and loaded with data. Generate Graph with appropriate data to use Insights agent",
+              timestamp: new Date(),
+            }
+          ])
+        } else {
+          // We have real schemas
+          const schemaNames = data.schemas.map((schema: { id: number, name: string }) => schema.name)
+          setAvailableSources(schemaNames)
+          
+          // Build schema ID lookup map
+          data.schemas.forEach((schema: { id: number, name: string }) => {
+            window.schemaIdMap[schema.name] = schema.id
+          })
+          
+          // If sourceId is not in the list, set it to the first available source
+          if (!schemaNames.includes(sourceId) && schemaNames.length > 0) {
+            setSourceId(schemaNames[0])
+          }
+          
+          // Set standard welcome message if messages is empty
+          if (messages.length === 0) {
+            setMessages([
+              {
+                id: "welcome",
+                role: "system",
+                content: "Welcome to Knowledge Graph Insights! Ask me anything about your knowledge graph.",
+                timestamp: new Date(),
+              }
+            ])
+          }
         }
       } else {
-        // Fallback to default if no sources available
-        setAvailableSources(['default'])
+        // Fallback to empty case
+        setAvailableSources([])
+        setMessages([
+          {
+            id: "welcome",
+            role: "system",
+            content: "Welcome to Knowledge Graph Insights! Knowledge graph is not created and loaded with data. Generate Graph with appropriate data to use Insights agent",
+            timestamp: new Date(),
+          }
+        ])
       }
     } catch (error) {
       console.error("Error fetching knowledge graph sources:", error)
@@ -214,12 +253,12 @@ export default function InsightsChat() {
         console.warn("No authentication token found in localStorage")
       }
       
+      const schemaId = window.schemaIdMap?.[sourceId] || -1
       // Try the API endpoint with proper authorization header
-      const response = await fetch(`/api/datainsights/${sourceId}/query/canned`, {
+      const response = await fetch(`/api/datainsights/${schemaId}/query/canned`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache',
         }
       })
       
@@ -256,8 +295,9 @@ export default function InsightsChat() {
         console.warn("No authentication token found in localStorage")
       }
       
+      const schemaId = window.schemaIdMap?.[sourceId] || -1
       // Try the API endpoint with proper authorization header
-      const apiUrl = `/api/datainsights/${sourceId}/query/history?limit=50`
+      const apiUrl = `/api/datainsights/${schemaId}/query/history?limit=50`
       console.log("Fetching from:", apiUrl)
       
       const response = await fetch(apiUrl, {
@@ -326,8 +366,11 @@ export default function InsightsChat() {
         console.warn("No authentication token found in localStorage")
       }
       
+      // Get schema ID from the source name
+      const schemaId = window.schemaIdMap?.[sourceId] || -1
+      
       // Send request to API with proper authorization header
-      const response = await fetch(`/api/datainsights/${sourceId}/query`, {
+      const response = await fetch(`/api/datainsights/${schemaId}/query`, {
         method: "POST",
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -417,7 +460,8 @@ export default function InsightsChat() {
         console.warn("No authentication token found in localStorage")
       }
       
-      const response = await fetch(`/api/datainsights/${sourceId}/query/history/${id}`, {
+      const schemaId = window.schemaIdMap?.[sourceId] || -1
+      const response = await fetch(`/api/datainsights/${schemaId}/query/history/${id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -457,7 +501,8 @@ export default function InsightsChat() {
         console.warn("No authentication token found in localStorage")
       }
       
-      const response = await fetch(`/api/datainsights/${sourceId}/query/history`, {
+      const schemaId = window.schemaIdMap?.[sourceId] || -1
+      const response = await fetch(`/api/datainsights/${schemaId}/query/history`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -553,7 +598,7 @@ export default function InsightsChat() {
                     <div className="space-y-2">
                       {predefinedQueries
                         .filter(q => q.category === "general")
-                        .slice(0, 5)
+                        .slice(0, 10)
                         .map(query => (
                           <button
                             key={query.id}
@@ -572,7 +617,7 @@ export default function InsightsChat() {
                     <div className="space-y-2">
                       {predefinedQueries
                         .filter(q => q.category === "relationships")
-                        .slice(0, 5)
+                        .slice(0, 10)
                         .map(query => (
                           <button
                             key={query.id}
@@ -591,7 +636,7 @@ export default function InsightsChat() {
                     <div className="space-y-2">
                       {predefinedQueries
                         .filter(q => q.category === "domain")
-                        .slice(0, 5)
+                        .slice(0, 10)
                         .map(query => (
                           <button
                             key={query.id}
