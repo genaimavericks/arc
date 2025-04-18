@@ -2,7 +2,8 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Dict, List, Optional
 from ..auth import has_any_permission
-from ..models import User
+from ..models import User, Schema
+from ..db_config import SessionLocal, get_db
 import json
 import os
 from pathlib import Path
@@ -51,6 +52,15 @@ def parse_connection_params(params_dict):
 
 # API Routes
 
+class SchemaDetails(BaseModel):
+    """Schema details model for response"""
+    id: int
+    name: str
+
+class SchemaListResponse(BaseModel):
+    """Response model for schema list"""
+    schemas: List[SchemaDetails]
+
 @router.get("/db", response_model=DatabaseListResponse)
 async def list_graphs(
     current_user: User = Depends(has_any_permission(["kginsights:read"]))
@@ -70,83 +80,35 @@ async def list_graphs(
             detail=f"Error retrieving graph list: {str(e)}"
         )
 
-@router.get("/db/{graph_name}", response_model=DatabaseInfo)
-async def get_graph_connection(
-    graph_name: str,
-    current_user: User = Depends(has_any_permission(["kginsights:manage"]))
+
+@router.get("/schema", response_model=SchemaListResponse)
+async def list_graphs(
+    current_user: User = Depends(has_any_permission(["kginsights:read"])),
+    db: SessionLocal = Depends(get_db)
 ):
     """
-    Get connection parameters for a specific knowledge graph.
+    Get a list of all loaded schemas for knowledge graphs.
     
-    Args:
-        graph_name: Name of the graph to get connection parameters for
-        
     Returns:
-        Graph database connection parameters
+        List of schema objects with id and name
     """
     try:
-        config = get_database_config()
+        # Query schemas with db_loaded='yes'
+        loaded_schemas = db.query(Schema.id, Schema.name).filter(Schema.db_loaded == 'yes').all()
         
-        if graph_name not in config:
-            raise HTTPException(
-                status_code=404, 
-                detail=f"Graph '{graph_name}' not found"
-            )
+        # Map results to SchemaDetails model
+        result = [SchemaDetails(id=schema.id, name=schema.name) for schema in loaded_schemas]
         
-        # Get connection parameters from JSON format
-        connection_params = config[graph_name]
+        # Return default empty result if no loaded schemas found
+        if not result:
+            result = [SchemaDetails(id=-100, name="empty")]
         
-        # JSON format already has the parameters in the correct structure
-        parsed_params = DatabaseConnectionParams(
-            username=connection_params.get("username", ""),
-            database=connection_params.get("database", ""),
-            uri=connection_params.get("uri", ""),
-            password=connection_params.get("password", "")
-        )
-        
-        return DatabaseInfo(
-            name=graph_name,
-            connection_params=parsed_params
-        )
-    except HTTPException:
-        raise
+        print(f"DEBUG: Found {len(result)} loaded schemas")
+        return SchemaListResponse(schemas=result)
     except Exception as e:
+        print(f"ERROR: Failed to retrieve loaded schemas: {str(e)}")
         raise HTTPException(
             status_code=500, 
-            detail=f"Error retrieving graph connection parameters: {str(e)}"
+            detail=f"Error retrieving loaded schemas: {str(e)}"
         )
 
-@router.get("/db/{graph_name}/test")
-async def test_graph_connection(
-    graph_name: str,
-    current_user: User = Depends(has_any_permission(["kginsights:manage"]))
-):
-    """
-    Test the connection to a specific knowledge graph database.
-    
-    Args:
-        graph_name: Name of the graph to test connection for
-        
-    Returns:
-        Connection status
-    """
-    try:
-        config = get_database_config()
-        
-        if graph_name not in config:
-            raise HTTPException(
-                status_code=404, 
-                detail=f"Graph '{graph_name}' not found"
-            )
-        
-        # In a production environment, you would actually test the connection here
-        # For now, we'll just return success if the graph exists in config
-        
-        return {"status": "success", "message": f"Successfully connected to {graph_name}"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Error testing graph connection: {str(e)}"
-        )

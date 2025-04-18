@@ -133,6 +133,10 @@ class Schema(Base):
     description = Column(Text, nullable=True)
     schema = Column(Text, nullable=False)  # Store schema as JSON string
     csv_file_path = Column(Text, nullable=True)  # Path to the original CSV file
+    schema_generated = Column(Text, nullable=True, default='no')
+    db_loaded = Column(Text, nullable=True, default='no')
+    db_id = Column(String, nullable=True, default='invalid')
+    generation_id = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -158,6 +162,7 @@ class GraphIngestionJob(Base):
 
     # Relationship to Schema
     schema = relationship("Schema", backref="graph_jobs")
+
 
 # Create tables
 Base.metadata.create_all(bind=engine)
