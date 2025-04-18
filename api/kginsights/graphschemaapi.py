@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from .agent.graph_schema_agent import GraphSchemaAgent
-from langchain_openai import ChatOpenAI
+# Using only Google Generative AI
 import os
 import json
 import uuid
@@ -22,6 +22,7 @@ from .loaders.neo4j_loader import Neo4jLoader
 import traceback
 import re
 from langchain_google_genai import ChatGoogleGenerativeAI
+from unittest.mock import MagicMock
 
 # Utility function to update schema status
 def update_schema_status(db=None, schema=None, db_id=None, schema_id=None, schema_generated=None, db_loaded=None):
@@ -207,23 +208,23 @@ class LoadDataInput(BaseModel):
 router = APIRouter(prefix="/graphschema", tags=["graphschema"])
 
 # Initialize LLM
+# Initialize the LLM variable
+llm = None
+
+# Try to initialize Google Gemini LLM
 try:
     api_key = os.getenv('GOOGLE_API_KEY')
     if not api_key:
-        raise ValueError("GOOGLE_API_KEY environment variable is not set")
-    
-    llm = ChatGoogleGenerativeAI(
-        model='gemini-1.5-pro',
-        google_api_key=api_key,
-        temperature=0
-    )
-    print("Successfully initialized Google Gemini LLM")
+        print("Warning: GOOGLE_API_KEY environment variable is not set")
+    else:
+        llm = ChatGoogleGenerativeAI(
+            model='gemini-1.5-pro',
+            google_api_key=api_key,
+            temperature=0
+        )
+        print("Successfully initialized Google Gemini LLM")
 except Exception as e:
     print(f"Warning: Could not initialize Google Gemini LLM: {e}")
-    # Create a placeholder LLM for development/testing
-    from unittest.mock import MagicMock
-    llm = MagicMock()
-    llm.invoke.return_value = {"content": "This is a mock response as Google API key is not configured."}
 
 # Helper Functions
 def read_domain_data(domain_name):
@@ -651,16 +652,23 @@ async def refine_schema(
         except Exception as e:
             print(f"WARNING: Could not read from file: {e}")
         
-        # Initialize OpenAI model
-        openai_api_key = os.environ.get("OPENAI_API_KEY")
-        if not openai_api_key:
-            raise HTTPException(status_code=500, detail="OpenAI API key not found in environment variables")
+        # Use the already initialized Google Gemini model
+        # This uses the global 'llm' variable initialized at the module level
+        # Try to initialize a fresh instance for refinement
+        api_key = os.getenv('GOOGLE_API_KEY')
+        if not api_key:
+            raise HTTPException(status_code=500, detail="GOOGLE_API_KEY environment variable is not set")
             
-        llm = ChatOpenAI(
-            model="gpt-4o",
-            temperature=0.2,
-            openai_api_key=openai_api_key
-        )
+        try:
+            model_instance = ChatGoogleGenerativeAI(
+                model='gemini-1.5-pro',
+                google_api_key=api_key,
+                temperature=0.2  # Slightly higher temperature for refinement
+            )
+            print("Successfully initialized Google Gemini LLM for schema refinement")
+        except Exception as e:
+            print(f"Error initializing Google Gemini LLM: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to initialize LLM: {str(e)}")
         
         # Read domain-specific data from text files
         domain_data = ""
@@ -670,7 +678,7 @@ async def refine_schema(
         
         # Initialize agent with the provided file path and current schema
         agent_instance = GraphSchemaAgent(
-            model=llm,
+            model=model_instance,
             csv_path=file_path,
             metadata=refine_input.feedback,  # User feedback for schema refinement
             current_schema=refine_input.current_schema,  # Current schema to be refined
