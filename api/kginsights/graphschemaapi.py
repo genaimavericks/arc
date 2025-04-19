@@ -1325,6 +1325,7 @@ async def get_schema(
         schema = db.query(Schema).filter(Schema.id == schema_id).first()
         
         if not schema:
+            print(f"ERROR: Schema {schema_id} not found")
             raise HTTPException(status_code=404, detail=f"Schema with ID {schema_id} not found")
         
         # Check for uploaded files if no CSV file path is specified

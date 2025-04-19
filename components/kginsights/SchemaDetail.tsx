@@ -45,6 +45,8 @@ export default function SchemaDetail() {
   const [schemaStatus, setSchemaStatus] = useState<SchemaStatus | null>(null)
   const [isLoadingStatus, setIsLoadingStatus] = useState(false)
   const [activeTab, setActiveTab] = useState("overview")
+  const [fullSchemaData, setFullSchemaData] = useState<any>(null)
+  const [isLoadingSchemaData, setIsLoadingSchemaData] = useState(false)
   
   const selectedSchema = selectedSchemaId ? getSchemaById(selectedSchemaId) : undefined
   const activeJobs = selectedSchemaId ? getActiveJobsForSchema(selectedSchemaId) : []
@@ -65,6 +67,44 @@ export default function SchemaDetail() {
       console.log("Jobs updated, active jobs:", activeJobs.length, "schema has data:", schemaStatus?.has_data)
     }
   }, [jobs])
+  
+  // Fetch full schema data when the Structure tab is clicked
+  useEffect(() => {
+    if (activeTab === "structure" && selectedSchemaId) {
+      fetchFullSchemaData(selectedSchemaId)
+    }
+  }, [activeTab, selectedSchemaId])
+  
+  // Fetch full schema data from API
+  const fetchFullSchemaData = async (schemaId: number) => {
+    setIsLoadingSchemaData(true)
+    
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) {
+        throw new Error('Authentication token not found.')
+      }
+      
+      const response = await fetch(`/api/graphschema/schemas/${schemaId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch schema data: ${response.statusText}`)
+      }
+      
+      const data = await response.json()
+      console.log("Full schema data:", data)
+      setFullSchemaData(data)
+    } catch (error) {
+      console.error("Error fetching full schema data:", error)
+    } finally {
+      setIsLoadingSchemaData(false)
+    }
+  }
   
   // Fetch schema status from API
   const fetchSchemaStatus = async (schemaId: number) => {
@@ -320,10 +360,9 @@ export default function SchemaDetail() {
       
       {/* Schema details tabs - more compact layout */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid grid-cols-3 w-full mb-1">
+        <TabsList className="grid grid-cols-2 w-full mb-1">
           <TabsTrigger value="overview" className="transition-colors text-sm py-1">Overview</TabsTrigger>
           <TabsTrigger value="structure" className="transition-colors text-sm py-1">Structure</TabsTrigger>
-          <TabsTrigger value="cypher" className="transition-colors text-sm py-1">Cypher</TabsTrigger>
         </TabsList>
         
         <TabsContent value="overview" className="mt-4 transition-all animate-in fade-in-50 duration-200">
@@ -423,7 +462,7 @@ export default function SchemaDetail() {
         <TabsContent value="structure" className="mt-4">
           <Card>
             <CardContent className="p-4">
-              {isLoadingStatus ? (
+              {isLoadingSchemaData ? (
                 <div className="space-y-4">
                   <Skeleton className="h-5 w-1/4" />
                   <div className="space-y-2">
@@ -438,11 +477,37 @@ export default function SchemaDetail() {
                     <Skeleton className="h-4 w-3/5" />
                   </div>
                 </div>
-              ) : (
+              ) : fullSchemaData ? (
                 <div>
-                  {selectedSchema.schema_json && (
+                  <div className="mb-4">
+                    <h3 className="text-sm font-medium mb-2 flex items-center">
+                      <FileCode className="h-4 w-4 mr-1" />
+                      Schema Structure
+                    </h3>
+                    <div className="bg-slate-50 dark:bg-slate-900/40 p-3 rounded-md">
+                      <pre className="text-xs overflow-auto max-h-[400px]">
+                        {(() => {
+                          try {
+                            // Parse the schema property if it exists
+                            if (fullSchemaData && fullSchemaData.schema) {
+                              const schemaObj = typeof fullSchemaData.schema === 'string' 
+                                ? JSON.parse(fullSchemaData.schema) 
+                                : fullSchemaData.schema;
+                              return JSON.stringify(schemaObj, null, 2);
+                            }
+                            return 'No schema data available';
+                          } catch (e) {
+                            console.error('Error parsing schema JSON:', e);
+                            return 'Error parsing schema JSON';
+                          }
+                        })()}
+                      </pre>
+                    </div>
+                  </div>
+                  
+                  {fullSchemaData.schema_json && (
                     <>
-                      <div className="mb-4">
+                      <div className="mb-4 mt-6">
                         <h3 className="text-sm font-medium mb-2 flex items-center">
                           <FileCode className="h-4 w-4 mr-1" />
                           Node Types
@@ -450,9 +515,9 @@ export default function SchemaDetail() {
                         <div className="space-y-1">
                           {(() => {
                             try {
-                              const schema = typeof selectedSchema.schema_json === 'string'
-                                ? JSON.parse(selectedSchema.schema_json)
-                                : selectedSchema.schema_json;
+                              const schema = typeof fullSchemaData.schema_json === 'string'
+                                ? JSON.parse(fullSchemaData.schema_json)
+                                : fullSchemaData.schema_json;
                               
                               return schema.nodes?.map((node: any, index: number) => (
                                 <div key={index} className="text-sm">
@@ -477,9 +542,9 @@ export default function SchemaDetail() {
                         <div className="space-y-1">
                           {(() => {
                             try {
-                              const schema = typeof selectedSchema.schema_json === 'string'
-                                ? JSON.parse(selectedSchema.schema_json)
-                                : selectedSchema.schema_json;
+                              const schema = typeof fullSchemaData.schema_json === 'string'
+                                ? JSON.parse(fullSchemaData.schema_json)
+                                : fullSchemaData.schema_json;
                               
                               return schema.relationships?.map((rel: any, index: number) => (
                                 <div key={index} className="text-sm">
@@ -497,39 +562,16 @@ export default function SchemaDetail() {
                     </>
                   )}
                 </div>
+              ) : (
+                <div className="text-center p-4 text-muted-foreground">
+                  <p>No schema data available</p>
+                </div>
               )}
             </CardContent>
           </Card>
         </TabsContent>
         
-        <TabsContent value="cypher" className="mt-4">
-          <Card>
-            <CardContent className="p-4">
-              {isLoadingStatus ? (
-                <div className="space-y-2">
-                  <Skeleton className="h-4 w-full" />
-                  <Skeleton className="h-4 w-full" />
-                  <Skeleton className="h-4 w-3/4" />
-                </div>
-              ) : (
-                <div>
-                  <h3 className="text-sm font-medium mb-2 flex items-center">
-                    <BarChart className="h-4 w-4 mr-1" />
-                    Cypher Query
-                  </h3>
-                  
-                  {selectedSchema.cypher ? (
-                    <pre className="text-xs bg-secondary p-2 rounded-md overflow-x-auto">
-                      {selectedSchema.cypher}
-                    </pre>
-                  ) : (
-                    <div className="text-sm text-muted-foreground">No Cypher query available</div>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+
       </Tabs>
     </div>
   )
