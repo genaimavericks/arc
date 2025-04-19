@@ -318,12 +318,12 @@ export default function SchemaDetail() {
         )}
       </div>
       
-      {/* Schema details tabs */}
+      {/* Schema details tabs - more compact layout */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid grid-cols-3 w-full mb-1">
-          <TabsTrigger value="overview" className="transition-colors">Overview</TabsTrigger>
-          <TabsTrigger value="structure" className="transition-colors">Structure</TabsTrigger>
-          <TabsTrigger value="cypher" className="transition-colors">Cypher</TabsTrigger>
+          <TabsTrigger value="overview" className="transition-colors text-sm py-1">Overview</TabsTrigger>
+          <TabsTrigger value="structure" className="transition-colors text-sm py-1">Structure</TabsTrigger>
+          <TabsTrigger value="cypher" className="transition-colors text-sm py-1">Cypher</TabsTrigger>
         </TabsList>
         
         <TabsContent value="overview" className="mt-4 transition-all animate-in fade-in-50 duration-200">

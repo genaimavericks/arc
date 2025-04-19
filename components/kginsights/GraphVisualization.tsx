@@ -145,18 +145,21 @@ export default function GraphVisualization() {
   return (
     <motion.div 
       ref={containerRef}
-      className="h-full w-full"
+      className="h-full w-full flex items-center justify-center min-h-[400px] p-4"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5, ease: "easeInOut" }}
+      style={{ flex: '1 1 auto' }}
     >
-      <CytoscapeGraph
-        schema={convertToSchema()}
-        showContainer={false}
-        showTitle={false}
-        height="100%"
-        customTitle="Schema Visualization"
-      />
+      <div className="w-full h-full flex-1">
+        <CytoscapeGraph
+          schema={convertToSchema()}
+          showContainer={false}
+          showTitle={false}
+          height="100%"
+          customTitle="Schema Visualization"
+        />
+      </div>
     </motion.div>
   )
 }
