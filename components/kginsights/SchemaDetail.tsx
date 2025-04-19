@@ -175,7 +175,7 @@ export default function SchemaDetail() {
                   size="sm"
                   className="flex items-center gap-1 transition-colors hover:bg-primary/10"
                   onClick={handleLoadData}
-                  disabled={activeJobs.length > 0}
+                  disabled={activeJobs.length > 0 || (schemaStatus?.has_data && !schemaStatus?.was_cleaned)}
                 >
                   <Play className="h-4 w-4" />
                   Load Data
@@ -282,9 +282,9 @@ export default function SchemaDetail() {
       
       {/* Status badges */}
       <div className="flex flex-wrap gap-2 mb-4">
-        <Badge variant={schemaStatus?.has_data ? "default" : "outline"} className="transition-colors">
+        <Badge variant={(schemaStatus?.has_data && !schemaStatus?.was_cleaned) ? "default" : "outline"} className="transition-colors">
           <Database className="h-3 w-3 mr-1" />
-          {schemaStatus?.has_data ? "Data Loaded" : "No Data"}
+          {(schemaStatus?.has_data && !schemaStatus?.was_cleaned) ? "Data Loaded" : "No Data"}
         </Badge>
         
         {schemaStatus?.node_count !== undefined && schemaStatus.node_count > 0 && (
