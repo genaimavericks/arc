@@ -347,59 +347,73 @@ class SchemaAwareGraphAssistant:
         Your job is to analyze the schema and generate two specialized prompt templates:
         1. A Cypher query generation prompt that will help an LLM convert natural language questions to Cypher queries
         2. A QA prompt that will help an LLM interpret Cypher query results and answer user questions
-        
+        3. Do not include any additional text other than the prompt template in required output format
+        4. Do not include duplicate output sections
         These prompts should be tailored to the specific domain and structure of the knowledge graph as defined in the schema.
         """
         
         # Define the prompt for generating the Cypher generation prompt
         # IMPORTANT: Updated to use 'query' instead of 'question' for compatibility with GraphCypherQAChain
         cypher_prompt_instruction = """
-        Please create a prompt template for generating Neo4j Cypher queries.
+        Create a prompt template for generating Neo4j Cypher queries.
         
         The template should:
         1. Be tailored to the specific domain and structure of this knowledge graph
         2. Include specific node labels, relationship types, and important properties from the schema
         3. Provide guidance on Neo4j Cypher best practices
         4. Include examples of good question patterns based on this schema
-        5. CRITICALLY IMPORTANT: The final prompt MUST explicitly instruct the LLM to return ONLY a single raw Cypher query with NO explanations, NO headers, NO numbering, NO query repetition, NO backticks, and NO additional text of any kind
         6. The output must ONLY contain the executable Cypher query string without quotes or backticks around it
-        8. VERY IMPORTANT: Generate Cypher queries that embed values directly. DO NOT use parameters like $name.
+        7. VERY IMPORTANT: While generating Cypher queries, embed values directly. DO NOT use parameters like $name.
            - For string values, use single quotes: `{{name: 'Example Name'}}` (Note the double braces for the example itself!)
            - For numeric values, use them directly: `{{born: 1234}}` (Note the double braces!)
            - Ensure example Cypher queries you provide in the prompt follow this pattern, e.g.: `MATCH (p:Person {{name: 'Example Name'}})-[:ACTED_IN]->(m:Movie) RETURN m.title`
         
-        9. For example queries, use the following format to make it clear what is the natural language and what is the Cypher code:
-
-        Example 1: <example_natural_language_query>
-        cypher: MATCH (n) RETURN n LIMIT 5
+        8. Include example queries **Examples** section as per output format, use the following format to make it clear what is the natural language and what is the Cypher code:
+           DO NOT put {question} in the example queries
+            Example 1: <example_natural_language_query>
+            cypher: MATCH (n) RETURN n LIMIT 5
+            
+            Example 2: <example_natural_language_query>
+            cypher: MATCH (p)-[r]->(m) RETURN p, r, m LIMIT 5
         
-        Example 2: <example_natural_language_query>
-        cypher: MATCH (p)-[r]->(m) RETURN p, r, m LIMIT 5
+        9. Include placeholders for {question} where the user question will be inserted
         
-        DO NOT put {question} in the example queries
-        
-        10. Include placeholders for {question} where the user question will be inserted
-        11. EXTREMELY IMPORTANT: The prompt should emphasize that the response should be ONLY the executable Cypher query with no additional text. The LLM must not include any of the following in its response:
-            - NO "Simple Query:" or "Medium Query:" or "Complex Query:" headers
-            - NO numbered lists like "1." or "2."
-            - NO explanations before or after the query
-            - NO backticks around the query
-            - NO examples of multiple queries - just one single executable query
-            - NO "Here's a Cypher query that..." text
-            - NO "This query will..." explanatory text
-        12. EXTREMELY IMPORTANT: If no cypher query could be generated for given query then return None or empty. DO NOT RETURN text with explaination.
-        
-        Do not use generic examples - use the actual node labels, relationship types and properties from the provided schema.
+        10. Do not use generic examples - use the actual node labels, relationship types and properties from the provided schema.
         Keep the prompt concise but comprehensive enough to guide accurate Cypher query generation.
         Focus on the most important entity types and relationships that would be commonly queried.
         
-        IMPORTANT: Use {question} (not {{question}} or query) as the placeholder for the user's question, as this is required for compatibility with the GraphCypherQAChain.
+        11. IMPORTANT: Use {question} (not {{question}} or query) as the placeholder for the user's question, as this is required for compatibility with the GraphCypherQAChain.
+        12. Append following critical instructions to **Instructions for Cypher Query Generation:** section:
+            - Return ONLY a single raw Cypher query with NO explanations, NO headers, NO numbering, NO query repetition, NO backticks, and NO additional text of any kind
+            - The response should be ONLY the executable Cypher query with no additional text. The LLM must not include any of the following in its response:
+                - NO "Simple Query:" or "Medium Query:" or "Complex Query:" headers
+                - NO numbered lists like "1." or "2."
+                - NO explanations before or after the query
+                - NO backticks around the query
+                - NO examples of multiple queries - just one single executable query
+                - NO "Here's a Cypher query that..." text
+                - NO "This query will..." explanatory text
+            - If no cypher query could be generated for given query then return None or empty. DO NOT RETURN text with explaination.
+        13. Do not alter **Sample Cyphers used for node/relationship creation** section
+        14. Output Format:
+        **Your Role:**
+        **Your Task:**
+        **Schema:**
+          **Nodes:**
+          **Relationships:**
+        **Sample Cyphers used for node/relationship creation:**
+        {sample_cyphers}
+        **Cypher Best Practices:**
+        **Value Embedding:**
+        **Examples:**
+        **Instructions for Cypher Query Generation:**
+        **Question:**
         """
         
         # Define the prompt for generating the QA prompt
         # IMPORTANT: Updated to use simple {question} and {response} for compatibility with GraphCypherQAChain
         qa_prompt_instruction = """
-        Please create a prompt template for answering questions based on Neo4j query results.
+        Create a prompt template for answering questions based on Neo4j query results.
         
         The template should:
         1. Guide the response generation for questions about this specific knowledge graph
@@ -407,9 +421,37 @@ class SchemaAwareGraphAssistant:
         3. Provide instructions on how to interpret and present the query results
         4. IMPORTANT: Include placeholders for {question} and {context} 
         5. Suggest how to handle common scenarios like empty results or large result sets
-        
-        Make the prompt specific to this graph's domain and structure, not generic.
-        Include specifics about the most important node types and relationships in this particular graph.
+        6. Make the prompt specific to this graph's domain and structure, not generic.
+        7. Include specific examples based on schema only, examples should similar in format to following -
+            **Example 1:**
+                *   `question`: "How many senior citizens have churned?"
+                *   `context`: `[{{"count": 150}}]`
+                *   *Answer:* "There are 150 senior citizens who have churned."
+
+            **Example 2:**
+                *   `question`: "What are the details for customer '1234-ABCD'?"
+                *   `context`: `[{{"customerID": "1234-ABCD", "tenure": 24, "Contract": "Month-to-month", "MonthlyCharges": 75.50, "Churn": "No"}}]`
+                *   *Answer:* "Customer '1234-ABCD' has been with us for 24 months, is on a Month-to-month contract, has monthly charges of $75.50, and has not churned."
+
+            **Example 3:**
+                *   `question`: "Are there any customers with Fiber optic who pay by Electronic check?"
+                *   `context`: `[]`
+                *   *Answer:* "No, I could not find any customers who have Fiber optic internet service and pay by Electronic check."
+
+        8. Append following critical instructions to **Instructions for Interpretation and Response:** section. Do not include {question} or {context} directly in **Instructions for Interpretation and Response:** section instead if needed just use words 'question', 'context'
+            - Return ONLY the answer string with data from context or question
+            - Return "It seems like there is no data to support this query" string if no answer can be generated
+            - Use data only from context or question to prepare answer
+        9. Output Format:
+        **Your Role:**
+        **Your Task:**
+        **Schema:**
+          **Nodes:**
+          **Relationships:**
+        **Cypher Results Context:**
+        **User Question:**
+        **Example Scenario:**
+        **Instructions for Interpretation and Response:**
         """
         
         # Define the prompt for generating sample queries
@@ -433,17 +475,20 @@ class SchemaAwareGraphAssistant:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Here is the Neo4j schema: {self.formatted_schema}\n\n{cypher_prompt_instruction}"}
             ]
-            cypher_response = self.llm.invoke(cypher_messages)
+            llm_local = LLMProvider.get_llm(provider_name=LLMConstants.Providers.GOOGLE, model_name=LLMConstants.GoogleModels.DEFAULT, temperature=0.0)
+            cypher_response = llm_local.invoke(cypher_messages)
             cypher_prompt_template = cypher_response.content.strip()
             
             cypher_generator = CsvToCypherGenerator(self.schema, self.csv_file_path, LLMConstants.Providers.GOOGLE, LLMConstants.GoogleModels.DEFAULT)
             cypher_queries = cypher_generator.generate_cypher_for_rows()
-            cypher_queries_str = '\n'.join(cypher_queries)
-            import_notes = '\n\n Note: DO NOT return example question and cypher query. Return PROPER cypher query only. DO NOT include any explanation'
-            cypher_prompt_template = f"### Task: Generate Cypher queries for time-series data using this schema:\n\n### Cypher Queries:\n\n{cypher_queries_str}\n\n{import_notes}\n\n{cypher_prompt_template}"
+            #cypher_queries_str = '\n'.join(cypher_queries)
+            #import_notes = '\n\n Note: DO NOT return example question and cypher query. Return PROPER cypher query only. DO NOT include any explanation'
+            #cypher_prompt_template = f"### Task: Generate Cypher queries for time-series data using this schema:\n\n### Cypher Queries:\n\n{cypher_queries_str}\n\n{import_notes}\n\n{cypher_prompt_template}"
 
             # Apply Neo4j property syntax escaping to prevent template variable confusion
             cypher_prompt_template = self._escape_neo4j_properties(cypher_prompt_template)
+            cypher_prompt_template = cypher_prompt_template.replace("{context}", "")
+
             
             # Generate QA prompt template
             print(f"Generating QA prompt template for {self.db_id}...")
@@ -451,22 +496,21 @@ class SchemaAwareGraphAssistant:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Here is the Neo4j schema: {self.formatted_schema}\n\n{qa_prompt_instruction}"}
             ]
-            qa_response = self.llm.invoke(qa_messages)
+            qa_response = llm_local.invoke(qa_messages)
             qa_prompt_template = qa_response.content.strip()
             
             # Apply Neo4j property syntax escaping to prevent template variable confusion
             qa_prompt_template = self._escape_neo4j_properties(qa_prompt_template)
             # Append formatted schema at the front of the template
-            qa_prompt_gen_txt = 'You are an expert at answering questions using data from a knowledge graph. You will receive a question and the results of a Cypher query executed against the graph. Your task is to interpret the Cypher query results and provide a concise and informative natural language answer to the original question.'
-            qa_prompt_template = f"{qa_prompt_gen_txt}\n\n{self.formatted_schema}\n\n{qa_prompt_template}"
-            #qa_prompt_template = qa_prompt_template + "\n\n**Question:** {query}\n\n**Cypher Query Results:**\n\n```json\n{context}```\n"
+            #qa_prompt_gen_txt = 'You are an expert at answering questions using data from a knowledge graph. You will receive a question and the results of a Cypher query executed against the graph. Your task is to interpret the Cypher query results and provide a concise and informative natural language answer to the original question.'
+            #qa_prompt_template = f"{qa_prompt_gen_txt}\n\n{self.formatted_schema}\n\n{qa_prompt_template}"
             
             # Generate sample queries
             sample_queries_messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Here is the Neo4j schema: {self.formatted_schema}\n\n{sample_queries_instruction}"}
             ]
-            sample_queries_response = self.llm.invoke(sample_queries_messages)
+            sample_queries_response = llm_local.invoke(sample_queries_messages)
             
             # Extract JSON array from response
             try:
@@ -500,7 +544,8 @@ class SchemaAwareGraphAssistant:
                 "db_id": self.db_id,
                 "cypher_prompt": cypher_prompt_template,
                 "qa_prompt": qa_prompt_template,
-                "sample_queries": sample_queries
+                "sample_queries": sample_queries,
+                "sample_cyphers": cypher_queries
             }
             print(f"DEBUG: Created prompts with properly escaped Neo4j property syntax")
             
@@ -853,7 +898,7 @@ class SchemaAwareGraphAssistant:
             print(f"ERROR: Query execution failed: {str(e)}")
             return [{"error": f"Query failed: {str(e)}"}]
 
-    def query(self, question: str) -> Dict[str, Any]:
+    def query(self, question: str, cypher_queries: str) -> Dict[str, Any]:
         """Process user queries against the knowledge graph"""
         try:
             print(f"\n===== DEBUG: PROCESSING QUERY: '{question}' =====")
@@ -939,7 +984,7 @@ class SchemaAwareGraphAssistant:
                     # Fallback to standard chain invocation
                     print("DEBUG: Falling back to standard chain invocation")
                     try:
-                        result = self.chain.invoke({'question': question, 'query': question})
+                        result = self.chain.invoke({'question': question, 'query': question, 'sample_cyphers': cypher_queries})
                     except Exception as chain_error:
                         print(f"DEBUG: Standard chain invocation failed: {str(chain_error)}")
                         # Check if error is related to None Cypher query

@@ -26,6 +26,8 @@ query_history = {}
 OUTPUT_DIR = Path("runtime-data/output/kgdatainsights")
 HISTORY_DIR = OUTPUT_DIR / "history"
 QUERIES_DIR = OUTPUT_DIR / "queries"
+PROMPT_DIR = OUTPUT_DIR / "prompts"
+
 os.makedirs(HISTORY_DIR, exist_ok=True)
 os.makedirs(QUERIES_DIR, exist_ok=True)
 
@@ -228,12 +230,22 @@ async def process_query(
                     timestamp=datetime.now()
                 )
 
+            prompt_file = PROMPT_DIR / f"prompt_{db_id}_{schema_id}.json"
+            cypher_queries = None
+            if prompt_file.exists():
+                with open(prompt_file, 'r') as f:
+                    prompts = json.load(f)
+                    cypher_queries = prompts.get('sample_cyphers')
+
+            print(f"Cypher queries: {cypher_queries}")
+
+            # Fetch or create schema-aware assistant
             print('Fetching schema aware assistant for schema ID ' + schema_id)
             assistant = get_schema_aware_assistant(db_id, schema_id, schema=schema)
             
             # Get the answer from the schema-aware agent
             print('Calling query')
-            result = assistant.query(request.query)
+            result = assistant.query(request.query, cypher_queries)
             print('Returned query result' + str(result))
         else:
             # Initialize the graph if needed

@@ -38,11 +38,6 @@ rsw-deployment.tar.gz
 .idea/
 api/static/*
 .rswvenv/
-.env
-api/.env
-npm
-
-**myenv**
 
 test-results
 db.logs
@@ -57,14 +52,9 @@ playwright-report
 cache.db
 api/db.logs
 api/database.db
-data/
+api/data/
 uploads/
-api/uploads/
-api/db.logs
-runtime-data**
-
-data/*
-api/data/*
-api/uploads/*
+data/
+runtime-data/
 .windsurfrules
-api/kginsights/saved_schemas/*
+api/kginsights/saved_schemas/

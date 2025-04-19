@@ -33,7 +33,8 @@ class LLMConstants:
         # e.g., GPT_4_TURBO = "gpt-4-turbo"
 
     class GoogleModels:
-        DEFAULT = "gemini-2.5-pro-exp-03-25"
+        #DEFAULT = "gemini-2.5-pro-exp-03-25"
+        DEFAULT = 'gemini-2.5-pro-preview-03-25'
         # Add other Google model constants here if needed
         # e.g., GEMINI_1_5_PRO = "gemini-1.5-pro-latest"
 
