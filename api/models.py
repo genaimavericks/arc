@@ -159,6 +159,9 @@ class GraphIngestionJob(Base):
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
     params = Column(Text, nullable=True)  # Store job parameters as JSON string
+    node_count = Column(Integer, default=0)  # Count of nodes created during job execution
+    relationship_count = Column(Integer, default=0)  # Count of relationships created during job execution
+    result = Column(Text, nullable=True)  # Store detailed job results as JSON string
 
     # Relationship to Schema
     schema = relationship("Schema", backref="graph_jobs")

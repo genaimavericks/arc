@@ -157,6 +157,28 @@ async def process_load_data_job(job_id: str, schema_id: int, graph_name: str, dr
             job.completed_at = datetime.now()
             job.progress = 100
             job.message = f"Successfully loaded data for schema ID {schema_id} to graph {graph_name}"
+            
+            # Store node and relationship counts from the result
+            if result and isinstance(result, dict):
+                # Extract the actual result data - handle nested structure
+                result_data = result.get("result", result)
+                
+                # Store counts
+                job.node_count = result_data.get("nodes_created", 0)
+                job.relationship_count = result_data.get("relationships_created", 0)
+                
+                # Store detailed counts as JSON in the result field
+                job_result = {}
+                if "node_counts" in result_data:
+                    job_result["node_counts"] = result_data["node_counts"]
+                if "relationship_counts" in result_data:
+                    job_result["relationship_counts"] = result_data["relationship_counts"]
+                    
+                # Log the counts for debugging
+                print(f"DEBUG: Storing job counts - nodes: {job.node_count}, relationships: {job.relationship_count}")
+                
+                if job_result:
+                    job.result = json.dumps(job_result)
             db.commit()
             
             # TEMP: Generate prompt templates and sample queries after data load
@@ -274,21 +296,38 @@ async def process_clean_data_job(job_id: str, schema_id: int, graph_name: str, d
                     main_job.completed_at = datetime.now()
                     main_job.progress = 100
                     main_job.message = f"Successfully cleaned {total_deleted} nodes from the graph"
+                    
+                    # Reset node and relationship counts to 0
+                    main_job.node_count = 0
+                    main_job.relationship_count = 0
+                    
+                    # Update the result with empty counts
                     main_job.result = json.dumps({
                         "nodes_deleted": total_deleted,
-                        "node_types_cleaned": len(node_labels)
+                        "node_types_cleaned": len(node_labels),
+                        "node_counts": {},
+                        "relationship_counts": {}
                     })
                     db.commit()
                     print(f"DEBUG: Main job status updated to completed in main DB connection")
+                    print(f"DEBUG: Reset node_count and relationship_count to 0")
                 
                 # Also update in the task_db connection
                 job.status = "completed"
                 job.completed_at = datetime.now()
                 job.progress = 100
                 job.message = f"Successfully cleaned {total_deleted} nodes from the graph"
+                
+                # Reset node and relationship counts to 0
+                job.node_count = 0
+                job.relationship_count = 0
+                
+                # Update the result with empty counts
                 job.result = json.dumps({
                     "nodes_deleted": total_deleted,
-                    "node_types_cleaned": len(node_labels)
+                    "node_types_cleaned": len(node_labels),
+                    "node_counts": {},
+                    "relationship_counts": {}
                 })
                 task_db.commit()
                 print(f"DEBUG: Job status updated to completed in task_db connection")

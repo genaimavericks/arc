@@ -53,8 +53,8 @@ function ManageKGraphContent() {
             <SchemaDetail />
           </div>
           
-          {/* Graph visualization */}
-          <div className="flex-1 relative overflow-hidden">
+          {/* Graph visualization - with flex-grow to take available space */}
+          <div className="flex-1 relative overflow-hidden flex flex-col min-h-[400px]">
             <GraphVisualization />
             <GraphControlPanel />
           </div>

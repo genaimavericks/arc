@@ -359,6 +359,16 @@ class DataLoader:
                 
                 # Check if relationships were actually created
                 total_relationships = sum(inspection_result["relationship_counts"].values())
+                total_nodes = sum(inspection_result["node_counts"].values())
+                
+                # Update the status with actual database counts
+                if total_nodes > 0:
+                    self.status["nodes_created"] = total_nodes
+                
+                if total_relationships > 0:
+                    self.status["relationships_created"] = total_relationships
+                
+                # Add warning if there's a discrepancy
                 if total_relationships == 0 and self.status["relationships_created"] > 0:
                     print("Relationship creation reported success but no relationships found in database!")
                     self.status["warnings"].append("Relationship creation reported success but no relationships found in database")
