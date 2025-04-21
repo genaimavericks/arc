@@ -340,18 +340,37 @@ class SchemaAwareGraphAssistant:
         """Generate custom prompts using LLM based on the schema"""
         
         # Define a system prompt for prompt generation
-        system_prompt = """
+        cypher_system_prompt = """
         You are a Knowledge Graph expert tasked with creating optimal prompts for Neo4j graph database interactions. 
         You're being given a Neo4j graph schema in JSON format.
         
-        Your job is to analyze the schema and generate two specialized prompt templates:
-        1. A Cypher query generation prompt that will help an LLM convert natural language questions to Cypher queries
-        2. A QA prompt that will help an LLM interpret Cypher query results and answer user questions
-        3. Do not include any additional text other than the prompt template in required output format
-        4. Do not include duplicate output sections
-        These prompts should be tailored to the specific domain and structure of the knowledge graph as defined in the schema.
+        Your job is to analyze the schema and generate a Cypher query generation prompt that will help an LLM convert natural language questions to Cypher queries
+        1. Do not include any additional text other than the prompt template in required output format
+        2. Do not include duplicate output sections
+        3. The prompts should be tailored to the specific domain and structure of the knowledge graph as defined in the schema.
+        """
+
+        # Define a system prompt for prompt generation
+        qa_system_prompt = """
+        You are a Knowledge Graph expert tasked with creating optimal prompts for Neo4j graph database interactions. 
+        You're being given a Neo4j graph schema in JSON format.
+        
+        Your job is to analyze the schema and generate a QA prompt that will help an LLM interpret Cypher query results and answer user questions
+        1. Do not include any additional text other than the prompt template in required output format
+        2. Do not include duplicate output sections
+        3. The prompts should be tailored to the specific domain and structure of the knowledge graph as defined in the schema.
         """
         
+        sample_queries_system_prompt = """
+        You are a Knowledge Graph expert tasked with creating optimal prompts for Neo4j graph database interactions. 
+        You're being given a Neo4j graph schema in JSON format.
+        
+        Your job is to analyze the schema, given data and generate a sample queries generation prompt that will help an LLM generate sample queries based on the graph schema
+        1. Do not include any additional text other than the prompt template in required output format
+        2. Do not include duplicate output sections
+        3. The prompts should be tailored to the specific domain and structure of the knowledge graph as defined in the schema.
+        """
+
         # Define the prompt for generating the Cypher generation prompt
         # IMPORTANT: Updated to use 'query' instead of 'question' for compatibility with GraphCypherQAChain
         cypher_prompt_instruction = """
@@ -359,7 +378,7 @@ class SchemaAwareGraphAssistant:
         
         The template should:
         1. Be tailored to the specific domain and structure of this knowledge graph
-        2. Include specific node labels, relationship types, and important properties from the schema
+        2. Include specific node labels, relationship types, and properties from the schema
         3. Provide guidance on Neo4j Cypher best practices
         4. Include examples of good question patterns based on this schema
         6. The output must ONLY contain the executable Cypher query string without quotes or backticks around it
@@ -380,10 +399,10 @@ class SchemaAwareGraphAssistant:
         
         10. Do not use generic examples - use the actual node labels, relationship types and properties from the provided schema.
         Keep the prompt concise but comprehensive enough to guide accurate Cypher query generation.
-        Focus on the most important entity types and relationships that would be commonly queried.
         
         11. IMPORTANT: Use {question} (not {{question}} or query) as the placeholder for the user's question, as this is required for compatibility with the GraphCypherQAChain.
         12. Append following critical instructions to **Instructions for Cypher Query Generation:** section:
+            - Cypher query should only include names of node, relationship or properties as per given schema
             - Return ONLY a single raw Cypher query with NO explanations, NO headers, NO numbering, NO query repetition, NO backticks, and NO additional text of any kind
             - The response should be ONLY the executable Cypher query with no additional text. The LLM must not include any of the following in its response:
                 - NO "Simple Query:" or "Medium Query:" or "Complex Query:" headers
@@ -456,7 +475,7 @@ class SchemaAwareGraphAssistant:
         
         # Define the prompt for generating sample queries
         sample_queries_instruction = """
-        Please generate 10-15 sample natural language questions that would be useful and insightful for this specific knowledge graph.
+        Generate 15 sample natural language questions based on provided knowledge graph schema and data from original dataset
         
         The questions should:
         1. Reflect the actual structure and domain of this knowledge graph
@@ -464,6 +483,7 @@ class SchemaAwareGraphAssistant:
         3. Include a mix of simple and complex queries
         4. Focus on questions that would provide meaningful insights
         5. Be organized as a JSON array of strings
+        6. Generate questions using sample data values only
         
         Return ONLY the JSON array of sample questions, nothing else.
         """
@@ -472,8 +492,8 @@ class SchemaAwareGraphAssistant:
             # Generate Cypher prompt template
             print(f"Generating Cypher prompt template for {self.db_id}...")
             cypher_messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Here is the Neo4j schema: {self.formatted_schema}\n\n{cypher_prompt_instruction}"}
+                {"role": "system", "content": cypher_system_prompt},
+                {"role": "user", "content": f"Use this Neo4j schema: {self.formatted_schema} for generating Cypher prompt as per following instructions:\n\n{cypher_prompt_instruction}"}
             ]
             llm_local = LLMProvider.get_llm(provider_name=LLMConstants.Providers.GOOGLE, model_name=LLMConstants.GoogleModels.DEFAULT, temperature=0.0)
             cypher_response = llm_local.invoke(cypher_messages)
@@ -493,8 +513,8 @@ class SchemaAwareGraphAssistant:
             # Generate QA prompt template
             print(f"Generating QA prompt template for {self.db_id}...")
             qa_messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Here is the Neo4j schema: {self.formatted_schema}\n\n{qa_prompt_instruction}"}
+                {"role": "system", "content": qa_system_prompt},
+                {"role": "user", "content": f"Use this Neo4j schema: {self.formatted_schema} for generating QA prompt as per following instructions:\n\n{qa_prompt_instruction}"}
             ]
             qa_response = llm_local.invoke(qa_messages)
             qa_prompt_template = qa_response.content.strip()
@@ -505,10 +525,13 @@ class SchemaAwareGraphAssistant:
             #qa_prompt_gen_txt = 'You are an expert at answering questions using data from a knowledge graph. You will receive a question and the results of a Cypher query executed against the graph. Your task is to interpret the Cypher query results and provide a concise and informative natural language answer to the original question.'
             #qa_prompt_template = f"{qa_prompt_gen_txt}\n\n{self.formatted_schema}\n\n{qa_prompt_template}"
             
+            # Generate sample data JSON
+            sample_data = self._generate_sample_data_json()
+            print(f"Sample data JSON for Queries!!!: {sample_data}")
             # Generate sample queries
             sample_queries_messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Here is the Neo4j schema: {self.formatted_schema}\n\n{sample_queries_instruction}"}
+                {"role": "system", "content": sample_queries_system_prompt},
+                {"role": "user", "content": f"Use this Neo4j schema: {self.formatted_schema} and the data to use: {sample_data} for generating sample questions prompt as per following instruction: \n\n{sample_queries_instruction}"}
             ]
             sample_queries_response = llm_local.invoke(sample_queries_messages)
             
@@ -560,6 +583,36 @@ class SchemaAwareGraphAssistant:
             # This makes debugging easier by exposing the actual error
             raise RuntimeError(f"Failed to generate prompts for schema: {str(e)}")
         
+    def _generate_sample_data_json(self):
+        """Generate a JSON with column names as keys and lists of unique values for each column."""
+        import pandas as pd
+        import json
+        
+        try:
+            # Read only the first 100 rows of the CSV to avoid memory issues with large files
+            df = pd.read_csv(self.csv_file_path, nrows=100)
+            
+            # Create a dictionary to store column names and unique values
+            sample_data = {}
+            
+            # For each column, get up to 10 unique values
+            for column in df.columns:
+                unique_values = df[column].dropna().unique()
+                # Take only up to 10 unique values
+                sample_values = unique_values[:10].tolist()
+                
+                # Convert numpy types to native Python types for JSON serialization
+                sample_values = [
+                    v.item() if hasattr(v, 'item') else v 
+                    for v in sample_values
+                ]
+                
+                sample_data[column] = sample_values
+            
+            return json.dumps(sample_data, indent=2)
+        except Exception as e:
+            print(f"Error generating sample data JSON: {str(e)}")
+            return "{}"
 
     def _escape_neo4j_properties(self, prompt_text: str) -> str:
         """

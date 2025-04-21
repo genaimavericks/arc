@@ -34,7 +34,8 @@ class CsvToCypherGenerator:
     def _load_csv(self) -> Optional[pd.DataFrame]:
         """Loads the data from the CSV file."""
         try:
-            df = pd.read_csv(self.csv_path)
+            #TEMP Load only part instead of full!! else it will brk in
+            df = pd.read_csv(self.csv_path, nrows=100)
             # Convert NaNs or other pandas nulls to None for consistency
             df = df.astype(object).where(pd.notnull(df), None)
             print(f"Successfully loaded CSV: {self.csv_path} with {len(df)} data rows.")
