@@ -413,9 +413,9 @@ async def build_schema_from_source(
                     detail=f"File not found at path: {file_path}. Current OS: {os.name}"
                 )
                 
-            # Validate file is a CSV
-            if not file_path.lower().endswith('.csv'):
-                raise HTTPException(status_code=400, detail="Only CSV files are supported")
+            # Validate file is a CSV or JSON
+            if not (file_path.lower().endswith('.csv') or file_path.lower().endswith('.json')):
+                raise HTTPException(status_code=400, detail="Only CSV and JSON files are supported")
         else:
             # If file_path is not provided, try to get it from the source_id
             print(f"DEBUG: No file path provided, retrieving from source_id: {source_id}")
@@ -575,9 +575,9 @@ async def refine_schema(
                     detail=f"File not found at path: {file_path}. Current OS: {os.name}"
                 )
                 
-            # Validate file is a CSV
-            if not file_path.lower().endswith('.csv'):
-                raise HTTPException(status_code=400, detail="Only CSV files are supported")
+            # Validate file is a CSV or JSON
+            if not (file_path.lower().endswith('.csv') or file_path.lower().endswith('.json')):
+                raise HTTPException(status_code=400, detail="Only CSV and JSON files are supported")
         else:
             # If file_path not provided, get it from the database (legacy approach)
             print(f"DEBUG: No file path provided, retrieving from database")
@@ -635,9 +635,9 @@ async def refine_schema(
                 detail=f"File not found at path: {file_path}. Current OS: {os.name}"
             )
         
-        # Validate file is a CSV
-        if not file_path.lower().endswith('.csv'):
-            raise HTTPException(status_code=400, detail="Only CSV files are supported")
+        # Validate file is a CSV or JSON
+        if not (file_path.lower().endswith('.csv') or file_path.lower().endswith('.json')):
+            raise HTTPException(status_code=400, detail="Only CSV and JSON files are supported")
         
         # Additional debugging for file path
         print(f"DEBUG: File exists check passed for: {file_path}")

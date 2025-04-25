@@ -3366,18 +3366,59 @@ async def preview_file_direct(
         elif file_extension == 'json':
             # Read JSON file
             try:
-                # For large JSON files, we need to be careful about memory usage
-                # Read the file in chunks and only process the beginning
-                with open(temp_path, 'r', encoding='utf-8', errors='replace') as jsonfile:
-                    # Try to parse the JSON data
+                # Import ijson for streaming JSON parsing
+                import ijson
+                
+                preview_records = []
+                max_records = 50  # Limit to first 50 records for preview
+                
+                # Check if the file starts with an array
+                with open(temp_path, 'r', encoding='utf-8', errors='replace') as f:
+                    # Read just enough to determine if it's an array
+                    first_char = f.read(1).strip()
+                
+                # If it's an array (starts with '['), use ijson for streaming parse
+                if first_char == '[':
                     try:
-                        data = json.load(jsonfile)
+                        with open(temp_path, 'rb') as f:
+                            # Use ijson to stream parse the JSON array
+                            parser = ijson.items(f, 'item')
+                            
+                            # Get the first few items for preview
+                            for i, item in enumerate(parser):
+                                if i >= max_records:
+                                    break
+                                preview_records.append(item)
+                    except Exception as e:
+                        logger.error(f"Error streaming JSON file: {str(e)}")
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Error processing JSON file: {str(e)}"
+                        )
+                else:
+                    # If it's not an array, read a limited amount to avoid memory issues
+                    with open(temp_path, 'r', encoding='utf-8', errors='replace') as f:
+                        # Read only the first 1MB of the file
+                        json_data = f.read(1024 * 1024)
+                    
+                    try:
+                        # Try to parse as a single JSON object
+                        data = json.loads(json_data)
+                        preview_records = [data]
                     except json.JSONDecodeError:
                         logger.error("Invalid JSON file")
                         raise HTTPException(
                             status_code=status.HTTP_400_BAD_REQUEST,
                             detail="Invalid JSON file"
                         )
+                
+                # If we didn't get any records, the file might be malformed
+                if not preview_records:
+                    logger.error("Invalid JSON file structure or empty array")
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid JSON file structure or empty array"
+                    )
                 
                 # Function to flatten nested JSON
                 def flatten_json(nested_json, prefix=''):
@@ -3404,20 +3445,13 @@ async def preview_file_direct(
                             flattened[f"{prefix}{key}"] = value
                     return flattened
                 
-                # If it's an array, limit to first 100 items and flatten each item
-                if isinstance(data, list):
-                    limited_data = data[:100]  # Limit to first 100 items
-                    flattened_data = []
-                    for item in limited_data:
-                        if isinstance(item, dict):
-                            flattened_data.append(flatten_json(item))
-                        else:
-                            flattened_data.append({"value": item})
-                # If it's a single object, flatten it
-                elif isinstance(data, dict):
-                    flattened_data = [flatten_json(data)]
-                else:
-                    flattened_data = [{"value": data}]
+                # Convert records to a format suitable for display
+                flattened_data = []
+                for item in preview_records:
+                    if isinstance(item, dict):
+                        flattened_data.append(flatten_json(item))
+                    else:
+                        flattened_data.append({"value": item})
                 
                 # Log activity
                 log_activity(
@@ -3430,10 +3464,13 @@ async def preview_file_direct(
                 # Convert to DataFrame to get headers and rows for consistent display
                 df = pd.DataFrame(flattened_data)
                 
+                # Clean up the temporary file
+                os.unlink(temp_path)
+                
                 # Return data in a format similar to CSV preview
                 return {
-                    "headers": df.columns.tolist(),
-                    "rows": df.values.tolist() if not df.empty else []
+                    "headers": df.columns.tolist() if not df.empty else [],
+                    "rows": df.replace({np.nan: None}).values.tolist() if not df.empty else []
                 }
             except Exception as e:
                 logger.error(f"Error processing JSON file: {str(e)}")
