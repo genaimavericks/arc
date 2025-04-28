@@ -118,7 +118,6 @@ def save_ingestion_job(db, job_id, job_data):
             end_time=datetime.fromisoformat(job_data['end_time']) if job_data.get('end_time') else None,
             details=job_data.get('details'),
             error=job_data.get('error'),
-            duration=job_data.get('duration'),
             config=config_json
         )
         db.add(new_job)
@@ -182,7 +181,6 @@ class JobStatus(BaseModel):
     end_time: Optional[str] = None
     details: str
     error: Optional[str] = None
-    duration: Optional[str] = None
     config: Optional[Dict[str, Any]] = None
 
 # New models for ingestion history
@@ -611,7 +609,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                                     return
                                     
                                 # Estimate progress based on batches processed
-                                progress = min(int((batch_number * 10 * 1024 * 1024 / file_size) * 100), 99)
+                                progress = int((batch_number * 10 * 1024 * 1024 / file_size) * 100)
                                 job.progress = progress
                                 job.details = f"Processing batch {batch_number} ({progress}% complete)"
                                 db_session.commit()
@@ -625,7 +623,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                             raise ValueError("No data was read from the CSV file")
                         
                         # Final update
-                        job.progress = 99
+                        job.progress = 100
                         job.details = f"Finalizing file processing..."
                         db_session.commit()
                         
@@ -677,7 +675,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                     processed_rows += len(first_chunk)
                     
                     # Update progress
-                    job.progress = min(int((processed_rows / total_rows) * 100), 99)
+                    job.progress = int((processed_rows / total_rows) * 100)
                     db_session.commit()
                     
                     # Process remaining chunks more efficiently
@@ -720,7 +718,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                         processed_rows += len(chunk)
                         
                         # Update progress
-                        job.progress = min(int((processed_rows / total_rows) * 100), 99)
+                        job.progress = int((processed_rows / total_rows) * 100)
                         job.details = f"Processed {processed_rows} of {total_rows} rows ({job.progress}%)"
                         db_session.commit()
                         
@@ -839,7 +837,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                                         pq.write_table(combined_table, output_file, compression='snappy')
                                     
                                     # Update progress
-                                    progress = min(int((processed_items / total_items_estimate) * 100), 99)
+                                    progress = int((processed_items / total_items_estimate) * 100)
                                     job.progress = progress
                                     job.details = f"Processed {processed_items} items ({progress}% estimated)"
                                     db_session.commit()
@@ -906,7 +904,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                         logger.info(f"Job {job_id} was cancelled before finalizing JSON processing, stopping")
                         return
                         
-                    job.progress = 99
+                    job.progress = 100
                     job.details = f"Finalizing JSON processing..."
                     db_session.commit()
                 else:
@@ -996,7 +994,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                     df.to_parquet(output_file, index=False, compression='snappy')
                     
                     # Update progress in a single step without sleep
-                    job.progress = 99
+                    job.progress = 100
                     job.details = "JSON processing completed"
                     db_session.commit()
             except Exception as e:
@@ -1012,12 +1010,6 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
         job.status = "completed"
         job.progress = 100
         job.end_time = datetime.now()
-        
-        # Calculate duration
-        start_time = job.start_time
-        end_time = job.end_time
-        duration = end_time - start_time
-        job.duration = str(duration)
         
         db_session.commit()
         
@@ -1074,7 +1066,7 @@ def process_db_ingestion_with_db(job_id, db_type, db_config, chunk_size, db):
             
             while offset < total_rows:
                 # Update progress
-                job.progress = min(int((processed_rows / total_rows) * 100), 99)
+                job.progress = int((processed_rows / total_rows) * 100)
                 db_session.commit()
                 
                 # Read chunk
@@ -1106,12 +1098,6 @@ def process_db_ingestion_with_db(job_id, db_type, db_config, chunk_size, db):
             job.status = "completed"
             job.progress = 100
             job.end_time = datetime.now()
-            
-            # Calculate duration
-            start_time = job.start_time
-            end_time = job.end_time
-            duration = end_time - start_time
-            job.duration = str(duration)
             
             db_session.commit()
             
@@ -1394,7 +1380,6 @@ async def ingest_file(
             "end_time": None,
             "details": f"File: {file_name}",
             "error": None,
-            "duration": None,
             "config": {
                 "file_id": file_id,
                 "chunk_size": chunk_size
@@ -1457,7 +1442,6 @@ async def ingest_database(
             "end_time": None,
             "details": f"DB: {db_config['database']}.{db_config['table']}",
             "error": None,
-            "duration": None,
             "config": {
                 "type": db_type,
                 "database": db_config["database"],
@@ -1511,7 +1495,6 @@ async def get_job_status(
         end_time=job.end_time.isoformat() if job.end_time else None,
         details=job.details,
         error=job.error,
-        duration=job.duration,
         config=config
     )
 
@@ -1550,12 +1533,6 @@ async def cancel_job(
     job.error = None  # Remove error message since cancellation is not an error
     job.details = f"{job.details} (Cancelled by user)"  # Add cancellation info to details
     job.end_time = datetime.now()
-    
-    # Calculate duration
-    start_time = job.start_time
-    end_time = job.end_time
-    duration = end_time - start_time
-    job.duration = str(duration)
     
     # Delete any associated data files
     try:
@@ -1602,7 +1579,6 @@ async def cancel_job(
         end_time=job.end_time.isoformat() if job.end_time else None,
         details=job.details,
         error=job.error,
-        duration=job.duration,
         config=config
     )
 
@@ -1808,19 +1784,14 @@ async def get_ingestion_preview(
                             if pd.isna(value):
                                 clean_record[key] = None
                             elif isinstance(value, (np.integer, np.floating)):
-                                clean_record[key] = float(value)
+                                clean_record[key] = value.item()  # Convert NumPy scalar to Python native type
                             elif isinstance(value, np.bool_):
-                                clean_record[key] = bool(value)
+                                clean_record[key] = bool(value)  # Convert NumPy boolean to Python boolean
                             elif isinstance(value, (dict, list)):
                                 # Ensure nested objects are properly serialized
                                 clean_record[key] = json.loads(json.dumps(value))
                             else:
-                                # Convert any other complex types to strings
-                                try:
-                                    json.dumps(value)  # Test if serializable
-                                    clean_record[key] = value
-                                except (TypeError, OverflowError):
-                                    clean_record[key] = str(value)
+                                clean_record[key] = value
                         records.append(clean_record)
                 except Exception as e:
                     # Fallback - if any error occurs, create a simpler structure
@@ -2175,23 +2146,6 @@ async def get_ingestion_statistics(
         
         # Get processing time from job
         processing_time = "Unknown"
-        if job.duration:
-            try:
-                # Parse duration string like "0:00:05.123456"
-                duration_parts = job.duration.split(":")
-                if len(duration_parts) >= 3:
-                    hours = int(duration_parts[0])
-                    minutes = int(duration_parts[1])
-                    seconds = float(duration_parts[2])
-                    
-                    if hours > 0:
-                        processing_time = f"{hours}h {minutes}m {seconds:.1f}s"
-                    elif minutes > 0:
-                        processing_time = f"{minutes}m {seconds:.1f}s"
-                    else:
-                        processing_time = f"{seconds:.1f}s"
-            except:
-                pass
         
         # Calculate data density (rows per KB)
         data_density = (row_count / (memory_usage_bytes / 1024)) if memory_usage_bytes > 0 else 0
@@ -2410,7 +2364,6 @@ async def get_data_metrics(
     total_records = 0
     processed_records = 0
     failed_records = 0
-    processing_time = 0.0
     
     # Query jobs
     completed_jobs = db.query(IngestionJob).filter(IngestionJob.status == "completed").all()
@@ -2427,27 +2380,6 @@ async def get_data_metrics(
             total_records += 5000
             processed_records += 5000
         
-        # Calculate processing time
-        if job.duration:
-            try:
-                # Parse duration string like "0:00:05.123456"
-                duration_parts = job.duration.split(":")
-                if len(duration_parts) >= 3:
-                    hours = int(duration_parts[0])
-                    minutes = int(duration_parts[1])
-                    seconds = float(duration_parts[2])
-                    
-                    if hours > 0:
-                        job_time = hours * 3600 + minutes * 60 + seconds
-                    elif minutes > 0:
-                        job_time = minutes * 60 + seconds
-                    else:
-                        job_time = seconds
-                    
-                    processing_time += job_time
-            except:
-                pass
-    
     # Estimate failed records
     for job in failed_jobs:
         if job.type == "file":
@@ -2470,7 +2402,7 @@ async def get_data_metrics(
         total_records=total_records,
         processed_records=processed_records,
         failed_records=failed_records,
-        processing_time=round(processing_time, 2)
+        processing_time=0.0
     )
 
 @router.get("/activities", response_model=List[Activity])
@@ -3161,7 +3093,7 @@ async def cancel_chunked_upload(
             # Remove all chunks
             shutil.rmtree(chunks_dir)
             
-            # Create a cancellation marker file to prevent further processing
+            # Create a cancellation marker file to signal to any ongoing processes that they should stop
             # This will be checked by the complete_chunked_upload endpoint
             cancel_marker = UPLOAD_DIR / f"cancel_{upload_id}"
             with open(cancel_marker, 'w') as f:
@@ -3239,7 +3171,6 @@ class CreateJobRequest(BaseModel):
     name: Optional[str] = None
     progress: Optional[int] = 100
     error: Optional[str] = None
-    duration: Optional[str] = None
     config: Optional[Dict] = None
 
 @router.post("/create-job", status_code=status.HTTP_201_CREATED)
@@ -3263,7 +3194,6 @@ async def create_job(
             "end_time": now if request.status == "completed" else None,
             "details": json.dumps(request.details) if request.details else None,
             "error": request.error,
-            "duration": request.duration,
             "config": request.config
         }
         
@@ -3380,15 +3310,14 @@ async def preview_file_direct(
                 # If it's an array (starts with '['), use ijson for streaming parse
                 if first_char == '[':
                     try:
-                        with open(temp_path, 'rb') as f:
-                            # Use ijson to stream parse the JSON array
-                            parser = ijson.items(f, 'item')
-                            
-                            # Get the first few items for preview
-                            for i, item in enumerate(parser):
-                                if i >= max_records:
-                                    break
-                                preview_records.append(item)
+                        # Use ijson to stream parse the JSON array
+                        parser = ijson.items(f, 'item')
+                        
+                        # Get the first few items for preview
+                        for i, item in enumerate(parser):
+                            if i >= max_records:
+                                break
+                            preview_records.append(item)
                     except Exception as e:
                         logger.error(f"Error streaming JSON file: {str(e)}")
                         raise HTTPException(

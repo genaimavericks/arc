@@ -28,7 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { SchemaChat } from "@/components/kginsights/generate/schema-chat"
+import { SchemaChat, SchemaChatRef } from "@/components/kginsights/generate/schema-chat"
 
 // Import Cytoscape as a client component to avoid SSR issues
 const CytoscapeGraph = dynamic(
@@ -94,7 +94,9 @@ function GenerateGraphContent() {
   const [savedSchemaInfo, setSavedSchemaInfo] = useState<{name: string, path: string}>({name: "", path: ""})
   const [showErrorDialog, setShowErrorDialog] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
+  const [showDomainError, setShowDomainError] = useState(false)
   const successMessageTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const chatRef = useRef<SchemaChatRef>(null)
   const { toast } = useToast()
 
   // Fetch data sources on component mount
@@ -147,13 +149,31 @@ function GenerateGraphContent() {
       if (description) {
         setKgDescription(description)
       }
+      
+      // Show notification to select data domain if not already selected
+      setTimeout(() => {
+        if (!domain) {
+          toast({
+            title: "Data Domain Required",
+            description: "Please select a data domain to generate a knowledge graph.",
+            duration: 5000,
+          })
+        }
+      }, 1500)
     }
-  }, [searchParams, toast])
+  }, [searchParams, toast, domain])
 
   const handleSourceChange = (value: string) => {
     const source = sources.find(s => s.id === value)
     setSelectedSource(value)
     setSelectedSourceName(source?.name || "")
+  }
+
+  const handleDomainChange = (value: string) => {
+    setDomain(value)
+    if (value) {
+      setShowDomainError(false)
+    }
   }
 
   const generateSchema = async () => {
@@ -166,8 +186,29 @@ function GenerateGraphContent() {
       return
     }
 
+    if (!domain) {
+      setShowDomainError(true)
+      toast({
+        title: "Error",
+        description: "Please select a data domain",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setShowDomainError(false)
+
     // Focus on the chat input
-    document.getElementById('schema-chat-input')?.focus()
+    const chatInput = document.getElementById('schema-chat-input') as HTMLTextAreaElement
+    if (chatInput) {
+      chatInput.focus()
+      
+      // If there's text in the input, use the chat's handleSendMessage method
+      if (chatInput.value.trim() && chatRef.current) {
+        // Let the chat component handle the message
+        await chatRef.current.handleSendMessage()
+      }
+    }
   }
 
   // Handle schema generated from chat
@@ -425,6 +466,28 @@ function GenerateGraphContent() {
                   className="w-full bg-background/70 backdrop-blur-sm border-primary/30 shadow-sm transition-all duration-300 hover:border-primary/50 h-11"
                 />
               </div>
+              
+              <div className="w-full md:w-64">
+                <Label htmlFor="domain-select" className="mb-2 block text-foreground font-medium text-base">
+                  Data Domain: <span className="text-red-500">*</span>
+                </Label>
+                <Select
+                  value={domain}
+                  onValueChange={handleDomainChange}
+                  disabled={loading}
+                >
+                  <SelectTrigger id="domain-select" className={`w-full bg-background/70 backdrop-blur-sm border-primary/30 shadow-sm transition-all duration-300 hover:border-primary/50 h-11 ${showDomainError && !domain ? 'border-red-300 ring-1 ring-red-300' : ''}`}>
+                    <SelectValue placeholder="Select domain" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-card/95 backdrop-blur-md border-primary/20">
+                    <SelectItem value="telecom_churn">Telecom Churn</SelectItem>
+                    <SelectItem value="foam_factory">Foam Factory</SelectItem>
+                  </SelectContent>
+                </Select>
+                {showDomainError && !domain && (
+                  <p className="text-xs text-red-500 mt-1">Required for generating schema</p>
+                )}
+              </div>
             </div>
 
             <div className="flex gap-3 self-end md:self-auto">
@@ -432,7 +495,7 @@ function GenerateGraphContent() {
                 <Button
                   className="bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-2 shadow-md transition-all duration-300 hover:shadow-lg px-6 py-6 h-11 font-medium"
                   onClick={generateSchema}
-                  disabled={!selectedSource || loading}
+                  disabled={!selectedSource || !domain || loading}
                 >
                   <MessageSquare className="h-5 w-5" />
                   {loading ? "Generating..." : "Generate Schema"}
@@ -446,7 +509,7 @@ function GenerateGraphContent() {
                       savingStatus === 'success' ? 'bg-green-500 hover:bg-green-600 text-white' : 
                       'bg-accent hover:bg-accent/90 text-accent-foreground'}`}
                   onClick={handleSaveSchema}
-                  disabled={loading || (!schema && !selectedSource) || savingStatus === 'saving'}
+                  disabled={loading || !schema || savingStatus === 'saving'}
                 >
                   {savingStatus === 'saving' ? (
                     <>
@@ -472,23 +535,6 @@ function GenerateGraphContent() {
                 </Button>
               </motion.div>
             </div>
-            
-            <div className="w-full md:w-64">
-              <Label htmlFor="domain-select" className="mb-2 block text-primary/80 font-medium">Data Domain:</Label>
-              <Select
-                value={domain}
-                onValueChange={setDomain}
-                disabled={loading}
-              >
-                <SelectTrigger id="domain-select" className="w-full bg-card/50 backdrop-blur-sm border-primary/20 shadow-sm">
-                  <SelectValue placeholder="Select domain" />
-                </SelectTrigger>
-                <SelectContent className="bg-card/95 backdrop-blur-md border-primary/20">
-                  <SelectItem value="telecom_churn">Telecom Churn</SelectItem>
-                  <SelectItem value="foam_factory">Foam Factory</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
           </div>
         </motion.div>
 
@@ -513,6 +559,7 @@ function GenerateGraphContent() {
                 </div>
                 <div className="h-[calc(100vh-280px)] relative bg-background/40 rounded-lg border border-primary/10">
                   <SchemaChat 
+                    ref={chatRef}
                     selectedSource={selectedSource}
                     selectedSourceName={selectedSourceName}
                     domain={domain}

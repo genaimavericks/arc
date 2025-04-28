@@ -1206,7 +1206,7 @@ export function HistoryTab() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between gap-4 mb-6">
-        <div className="flex-1 relative">
+        <div className="relative md:w-1/3">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
           <Input
             placeholder="Search files by name or uploader..."
@@ -1263,9 +1263,22 @@ export function HistoryTab() {
             </SelectContent>
           </Select>
 
-          <Button variant="outline" onClick={fetchFileHistory} className="flex items-center gap-2">
-            <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
-            Refresh
+          <Button 
+            variant="outline" 
+            onClick={fetchFileHistory} 
+            className="h-10 rounded-md border border-input bg-background"
+            style={{ minWidth: '80px' }}
+            title="Refresh"
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <div className="flex items-center gap-1">
+                <RefreshCw className="h-3 w-3 animate-spin" />
+                <span>Refresh</span>
+              </div>
+            ) : (
+              "Refresh"
+            )}
           </Button>
         </div>
       </div>

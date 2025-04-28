@@ -460,7 +460,7 @@ export function FileUpload({
                   // Create a job for profile generation in the UI
                   onJobCreated({
                     id: profileData.id, // Using profile ID as job ID
-                    name: `Profile: ${file.name}`,
+                    name: `${file.name}`,
                     type: "profile",
                     status: "completed", // Since profiling is synchronous, it's already completed
                     progress: 100,
@@ -472,7 +472,7 @@ export function FileUpload({
                   // Also add to global context
                   addJob({
                     id: profileData.id, // Using profile ID as job ID
-                    name: `Profile: ${file.name}`,
+                    name: `${file.name}`,
                     type: "profile",
                     status: "completed", // Since profiling is synchronous, it's already completed
                     progress: 100,
@@ -693,7 +693,7 @@ export function FileUpload({
                   // Create a job for profile generation in the UI
                   onJobCreated({
                     id: profileData.id, // Using profile ID as job ID
-                    name: `Profile: ${file.name}`,
+                    name: `${file.name}`,
                     type: "profile",
                     status: "completed", // Since profiling is synchronous, it's already completed
                     progress: 100,
@@ -705,7 +705,7 @@ export function FileUpload({
                   // Also add to global context
                   addJob({
                     id: profileData.id, // Using profile ID as job ID
-                    name: `Profile: ${file.name}`,
+                    name: `${file.name}`,
                     type: "profile",
                     status: "completed", // Since profiling is synchronous, it's already completed
                     progress: 100,
