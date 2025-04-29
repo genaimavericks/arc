@@ -12,6 +12,7 @@ from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 import json
 import os
+import re
 
 class AgentState(TypedDict):
     """Type definition for agent state."""
@@ -99,39 +100,71 @@ class GraphSchemaAgent:
         print(f"DEBUG: Validation complete. Valid: {validation['is_valid']}, Warnings: {len(validation['warnings'])}, Errors: {len(validation['errors'])}")
         return validation
 
-    def _analyze_csv_data(self, csv_path: str) -> Dict:
-        """Analyze CSV data for schema inference."""
-        print(f"DEBUG: Analyzing CSV file at path: {csv_path}")
-        print(f"DEBUG: File exists: {os.path.exists(csv_path)}")
-        print(f"DEBUG: File size: {os.path.getsize(csv_path) if os.path.exists(csv_path) else 'N/A'} bytes")
+    def _analyze_data(self, file_path: str) -> Dict:
+        """Analyze data for schema inference from CSV or JSON files."""
+        print(f"DEBUG: Analyzing file at path: {file_path}")
+        print(f"DEBUG: File exists: {os.path.exists(file_path)}")
+        print(f"DEBUG: File size: {os.path.getsize(file_path) if os.path.exists(file_path) else 'N/A'} bytes")
         
         try:
-            # Try different encodings if the default fails
-            encodings = ['utf-8', 'latin1', 'cp1252', 'ISO-8859-1']
-            df = None
-            exception = None
+            # Determine file type based on extension
+            is_json = file_path.lower().endswith('.json')
             
-            for encoding in encodings:
-                try:
-                    print(f"DEBUG: Attempting to read CSV with encoding: {encoding}")
-                    df = pd.read_csv(csv_path, encoding=encoding)
-                    print(f"DEBUG: Successfully read CSV with encoding: {encoding}")
-                    break
-                except Exception as e:
-                    print(f"DEBUG: Failed to read CSV with encoding {encoding}: {str(e)}")
-                    exception = e
+            if is_json:
+                # Handle JSON file
+                print(f"DEBUG: Processing JSON file")
+                # Try different encodings if the default fails
+                encodings = ['utf-8', 'latin1', 'cp1252', 'ISO-8859-1']
+                df = None
+                exception = None
+                
+                for encoding in encodings:
+                    try:
+                        print(f"DEBUG: Attempting to read JSON with encoding: {encoding}")
+                        df = pd.read_json(file_path, encoding=encoding)
+                        print(f"DEBUG: Successfully read JSON with encoding: {encoding}")
+                        break
+                    except Exception as e:
+                        print(f"DEBUG: Failed to read JSON with encoding {encoding}: {str(e)}")
+                        # Try to read as JSON lines format if regular JSON fails
+                        try:
+                            print(f"DEBUG: Attempting to read JSON lines with encoding: {encoding}")
+                            df = pd.read_json(file_path, lines=True, encoding=encoding)
+                            print(f"DEBUG: Successfully read JSON lines with encoding: {encoding}")
+                            break
+                        except Exception as e2:
+                            print(f"DEBUG: Failed to read JSON lines with encoding {encoding}: {str(e2)}")
+                            exception = e2
+            else:
+                # Handle CSV file
+                print(f"DEBUG: Processing CSV file")
+                # Try different encodings if the default fails
+                encodings = ['utf-8', 'latin1', 'cp1252', 'ISO-8859-1']
+                df = None
+                exception = None
+                
+                for encoding in encodings:
+                    try:
+                        print(f"DEBUG: Attempting to read CSV with encoding: {encoding}")
+                        df = pd.read_csv(file_path, encoding=encoding)
+                        print(f"DEBUG: Successfully read CSV with encoding: {encoding}")
+                        break
+                    except Exception as e:
+                        print(f"DEBUG: Failed to read CSV with encoding {encoding}: {str(e)}")
+                        exception = e
             
             if df is None:
-                print(f"ERROR: Failed to read CSV with all attempted encodings")
+                file_type = "JSON" if is_json else "CSV"
+                print(f"ERROR: Failed to read {file_type} with all attempted encodings")
                 return {
                     "is_valid": False,
-                    "error": f"Failed to read CSV file: {str(exception)}",
+                    "error": f"Failed to read {file_type} file: {str(exception)}",
                     "num_columns": 0,
                     "num_rows": 0,
-                    "validation": {"warnings": [], "errors": [f"Failed to read CSV file: {str(exception)}"]}
+                    "validation": {"warnings": [], "errors": [f"Failed to read {file_type} file: {str(exception)}"]}
                 }
             
-            print(f"DEBUG: Successfully loaded CSV with shape: {df.shape}")
+            print(f"DEBUG: Successfully loaded data with shape: {df.shape}")
             
             # Basic validation
             validation = self._validate_csv_data(df)
@@ -151,7 +184,8 @@ class GraphSchemaAgent:
                 "data_types": {
                     col: str(dtype) for col, dtype in df.dtypes.items()
                 },
-                "validation": validation
+                "validation": validation,
+                "file_type": "json" if is_json else "csv"
             }
             
             return data_info
@@ -162,6 +196,9 @@ class GraphSchemaAgent:
                 "error": str(e),
                 "validation": {"warnings": []}
             }
+
+    # Backward compatibility alias
+    _analyze_csv_data = _analyze_data
 
     def _transform_schema_format(self, schema):
         """
@@ -287,7 +324,7 @@ class GraphSchemaAgent:
         """Analyze CSV data and prepare for schema inference."""
         print("\nAnalyzing CSV data...")
         csv_path = state["csv_path"]
-        data_info = self._analyze_csv_data(csv_path)
+        data_info = self._analyze_data(csv_path)
         
         if not data_info.get("is_valid", True):
             error_msg = data_info.get("error", "Unknown error during CSV analysis")
