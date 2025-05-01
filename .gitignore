@@ -58,3 +58,8 @@ data/
 runtime-data/
 .windsurfrules
 api/kginsights/saved_schemas/
+app/.DS_Store
+app/.DS_Store
+components/.DS_Store
+lib/.DS_Store
+app/.DS_Store

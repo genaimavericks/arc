@@ -117,6 +117,7 @@ export function DataDashboard() {
       // Fetch metrics
       try {
         const metrics = await fetchWithAuth("/api/datapuur/metrics")
+        console.log("API Response - Metrics:", metrics)
         setDataMetrics(metrics)
       } catch (error) {
         console.error("Error fetching metrics:", error)
@@ -125,6 +126,7 @@ export function DataDashboard() {
       // Fetch activities
       try {
         const activitiesData = await fetchWithAuth("/api/datapuur/activities")
+        console.log("API Response - Activities:", activitiesData)
         setActivities(activitiesData)
       } catch (error) {
         console.error("Error fetching activities:", error)
@@ -133,7 +135,14 @@ export function DataDashboard() {
       // Fetch dashboard data
       try {
         const dashboardData = await fetchWithAuth("/api/datapuur/dashboard")
+        console.log("API Response - Dashboard:", dashboardData)
         setDashboardData(dashboardData)
+        
+        // Log specific parts of the dashboard data for easier comparison
+        console.log("Dashboard - metrics:", dashboardData.metrics)
+        console.log("Dashboard - chart_data:", dashboardData.chart_data)
+        console.log("Dashboard - recent_activities:", dashboardData.recent_activities)
+        console.log("Dashboard - userRole:", dashboardData.userRole)
       } catch (error) {
         console.error("Error fetching dashboard data:", error)
       }

@@ -29,7 +29,7 @@ fi
 echo "Creating default .env configuration..."
 cat > package/config/.env << EOF
 # Default configuration - Edit as needed
-NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+NEXT_PUBLIC_API_URL=http://172.105.77.119:9090
 DB_TYPE=sqlite
 DB_HOST=localhost
 DB_PORT=5432
@@ -38,6 +38,7 @@ DB_PASSWORD=
 DB_NAME=rsw
 EOF
 
+NEXT_PUBLIC_API_URL=http://172.105.77.119:9090
 echo "Using API URL for build: ${NEXT_PUBLIC_API_URL}"
 
 # Copy .env.production.sample if it exists
