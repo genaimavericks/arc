@@ -425,11 +425,11 @@ Instructions:
 7. Use the information provided in the domain metadata to guide the schema generation. This will be used to generate graphs and gather insights from the data.
 8. Include a "changes" array that describes what modifications were made based on the feedback
 9. For each node, include an "id_property" field with the name of the primary identifier property
-10. If no single ID property is available, provide a "composite_id" in format "[prop1]_[prop2]" with the most unique properties. 
-11. Follow format for composite_id strictly. Especially the brackets should be added to the composite_id to separate the properties.
-12. For relationships, include "source_id" and "target_id" fields with the ID properties of the source and target nodes
-
-Return ONLY a valid JSON object with this exact structure (no explanation, just the JSON):
+10. If no single ID property is available, provide a "id_template" in format "[prop1]_[prop2]" with the most unique properties.
+11. Include only one of id_property or id_template in the schema. Do not include both. Do not add values with null. 
+12. Follow format for id_template strictly. Especially the brackets should be added to the id_template to separate the properties.
+13. For each relationship, include a "startNode" and "endNode" field with the label of the source and target nodes.
+14. Return ONLY a valid JSON object with this exact structure (no explanation, just the JSON):
 
 {{
     "nodes": [
@@ -438,8 +438,8 @@ Return ONLY a valid JSON object with this exact structure (no explanation, just 
             "properties": [
                 {{"name": "string", "type": "string", "constraints": ["string"]}}
             ],
-            "id_property": "string",
-            "composite_id": "string"
+            "id_column": "string",
+            "id_template": "string"
         }}
     ],
     "relationships": [
@@ -450,8 +450,8 @@ Return ONLY a valid JSON object with this exact structure (no explanation, just 
             "properties": [
                 {{"name": "string", "type": "string"}}
             ],
-            "source_id": "string",
-            "target_id": "string"
+            "startNode": "string",
+            "endNode": "string"
         }}
     ],
     "indexes": [
@@ -531,11 +531,12 @@ Instructions:
 6. Recommend indexes for frequently queried properties
 7. Use the information provided in the domain metadata to guide the schema generation. This will be used to generate graphs and gather insights from the data.
 8. For each node, include an "id_property" field with the name of the primary identifier property
-9. If no single ID property is available, provide a "composite_id" in format "[prop1]_[prop2]" with the most unique properties. 
-10. Follow format for composite_id strictly. Especially the brackets should be added to the composite_id to separate the properties.
-11. For relationships, include "source_id" and "target_id" fields with the ID properties of the source and target nodes
+9. If no single ID property is available, provide a "id_template" in format "[prop1]_[prop2]" with the most unique properties.
+10. Include only one of id_property or id_template in the schema. Do not include both. Do not add values with null. 
+11. Follow format for id_template strictly. Especially the brackets should be added to the id_template to separate the properties.
+12. For each relationship, include a "startNode" and "endNode" field with the label of the source and target nodes.
+13. Return ONLY a valid JSON object with this exact structure (no explanation, just the JSON):
 
-Return ONLY a valid JSON object with this exact structure (no explanation, just the JSON):
 {{
     "nodes": [
         {{
@@ -543,8 +544,8 @@ Return ONLY a valid JSON object with this exact structure (no explanation, just 
             "properties": [
                 {{"name": "string", "type": "string", "constraints": ["string"]}}
             ],
-            "id_property": "string",
-            "composite_id": "string"
+            "id_column": "string",
+            "id_template": "string"
         }}
     ],
     "relationships": [
@@ -555,8 +556,8 @@ Return ONLY a valid JSON object with this exact structure (no explanation, just 
             "properties": [
                 {{"name": "string", "type": "string"}}
             ],
-            "source_id": "string",
-            "target_id": "string"
+            "startNode": "string",
+            "endNode": "string"
         }}
     ],
     "indexes": [
