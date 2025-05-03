@@ -420,17 +420,26 @@ Instructions:
 2. Make the requested modifications to the schema
 3. Ensure the modified schema still accurately represents the data
 4. Maintain appropriate relationships between entities
-5. Keep any useful elements from the original schema that weren't mentioned in the feedback
-6. Use the information provided in the domain metadata to guide the schema generation. This will be used to generate graphs and gather insights from the data.
+5. Ensure that only relationships are created only on the nodes identified.
+6. Keep any useful elements from the original schema that weren't mentioned in the feedback
+7. Use the information provided in the domain metadata to guide the schema generation. This will be used to generate graphs and gather insights from the data.
+8. Include a "changes" array that describes what modifications were made based on the feedback
+9. For each node, include an "id_property" field with the name of the primary identifier property
+10. If no single ID property is available, provide a "composite_id" in format "[prop1]_[prop2]" with the most unique properties. 
+11. Follow format for composite_id strictly. Especially the brackets should be added to the composite_id to separate the properties.
+12. For relationships, include "source_id" and "target_id" fields with the ID properties of the source and target nodes
 
 Return ONLY a valid JSON object with this exact structure (no explanation, just the JSON):
+
 {{
     "nodes": [
         {{
             "label": "string",
             "properties": [
                 {{"name": "string", "type": "string", "constraints": ["string"]}}
-            ]
+            ],
+            "id_property": "string",
+            "composite_id": "string"
         }}
     ],
     "relationships": [
@@ -440,7 +449,9 @@ Return ONLY a valid JSON object with this exact structure (no explanation, just 
             "target": "string",
             "properties": [
                 {{"name": "string", "type": "string"}}
-            ]
+            ],
+            "source_id": "string",
+            "target_id": "string"
         }}
     ],
     "indexes": [
@@ -515,9 +526,14 @@ Instructions:
 1. Analyze the CSV structure and identify potential entities (nodes) based on the columns
 2. Identify columns that could be unique identifiers for each entity
 3. Determine meaningful relationships between the entities
-4. Consider appropriate data types and constraints for properties
-5. Recommend indexes for frequently queried properties
-6. Use the information provided in the domain metadata to guide the schema generation. This will be used to generate graphs and gather insights from the data.
+4. Ensure that only relationships are created only on the nodes identified.
+5. Consider appropriate data types and constraints for properties
+6. Recommend indexes for frequently queried properties
+7. Use the information provided in the domain metadata to guide the schema generation. This will be used to generate graphs and gather insights from the data.
+8. For each node, include an "id_property" field with the name of the primary identifier property
+9. If no single ID property is available, provide a "composite_id" in format "[prop1]_[prop2]" with the most unique properties. 
+10. Follow format for composite_id strictly. Especially the brackets should be added to the composite_id to separate the properties.
+11. For relationships, include "source_id" and "target_id" fields with the ID properties of the source and target nodes
 
 Return ONLY a valid JSON object with this exact structure (no explanation, just the JSON):
 {{
@@ -526,7 +542,9 @@ Return ONLY a valid JSON object with this exact structure (no explanation, just 
             "label": "string",
             "properties": [
                 {{"name": "string", "type": "string", "constraints": ["string"]}}
-            ]
+            ],
+            "id_property": "string",
+            "composite_id": "string"
         }}
     ],
     "relationships": [
@@ -536,7 +554,9 @@ Return ONLY a valid JSON object with this exact structure (no explanation, just 
             "target": "string",
             "properties": [
                 {{"name": "string", "type": "string"}}
-            ]
+            ],
+            "source_id": "string",
+            "target_id": "string"
         }}
     ],
     "indexes": [
