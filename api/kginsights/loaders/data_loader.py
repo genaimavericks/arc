@@ -18,6 +18,7 @@ from ..database_api import get_database_config, parse_connection_params
 from ...db_config import SessionLocal
 from ...models import Schema
 from neo4j import GraphDatabase
+import time
 
 class DataLoader:
     """
@@ -240,7 +241,10 @@ class DataLoader:
             
             print(f"Generating Neo4j import files from {self.data_path} using schema {schema_path}")
             # Generate CSV files
+            start = time.time()
             create_neo4j_import_files(schema_path, self.data_path, self.temp_dir)
+            end = time.time()
+            print(f"Generated CSV files in {end - start:.2f} seconds")
             
             # Verify files were created
             node_files = [f for f in os.listdir(self.temp_dir) if f.endswith('_nodes.csv')]

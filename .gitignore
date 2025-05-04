@@ -60,3 +60,5 @@ runtime-data/
 api/kginsights/saved_schemas/
 api/samples/TelecomChurn_Large_300.csv
 .ubuntuenv/
+testdata/
+api/samples/*.csv
