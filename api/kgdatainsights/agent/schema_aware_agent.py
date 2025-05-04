@@ -412,7 +412,7 @@ class SchemaAwareGraphAssistant:
                 - NO examples of multiple queries - just one single executable query
                 - NO "Here's a Cypher query that..." text
                 - NO "This query will..." explanatory text
-            - For Date properties, in where clause or in filter queries, cast 'Date' attribute to date type and value to date type e.g. WHERE date(d.Date) = date('2020-01-03')
+            - For Date properties, in where clause or in filter queries, cast 'Date' attribute to datetime type and value to datetime type e.g. WHERE datetime(d.Date) = datetime('2020-01-03')
             - If no cypher query could be generated for given query then return None or empty. DO NOT RETURN text with explaination.
         13. Do not alter **Sample Cyphers used for node/relationship creation** section
         14. Output Format:
@@ -1038,7 +1038,7 @@ class SchemaAwareGraphAssistant:
                     # Fallback to standard chain invocation
                     print("DEBUG: Falling back to standard chain invocation")
                     try:
-                        result = self.chain.invoke({'question': question, 'query': question, 'sample_cyphers': cypher_queries})
+                        result = self.chain.invoke({'question': question, 'query': question})
                     except Exception as chain_error:
                         print(f"DEBUG: Standard chain invocation failed: {str(chain_error)}")
                         # Check if error is related to None Cypher query

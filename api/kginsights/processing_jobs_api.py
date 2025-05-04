@@ -179,6 +179,13 @@ async def process_load_data_job(job_id: str, schema_id: int, graph_name: str, dr
                 
                 if job_result:
                     job.result = json.dumps(job_result)
+            
+            # Update schema record to indicate data has been loaded
+            schema_db = db.query(Schema).filter(Schema.id == schema_id).first()
+            if schema_db:
+                schema_db.db_loaded = "yes"
+                print(f"Updated schema record {schema_id} with db_loaded=yes")
+            
             db.commit()
             
             # TEMP: Generate prompt templates and sample queries after data load
@@ -331,6 +338,12 @@ async def process_clean_data_job(job_id: str, schema_id: int, graph_name: str, d
                 })
                 task_db.commit()
                 print(f"DEBUG: Job status updated to completed in task_db connection")
+                
+                # Update schema record to indicate data has been cleaned
+                schema_db = db.query(Schema).filter(Schema.id == schema_id).first()
+                if schema_db:
+                    schema_db.db_loaded = "no"
+                    print(f"Updated schema record {schema_id} with db_loaded=no")
             
             driver.close()
         finally:
