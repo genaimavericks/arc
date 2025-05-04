@@ -230,14 +230,31 @@ async def get_schema_status(
         raise HTTPException(status_code=404, detail=f"Schema with ID {schema_id} not found")
     
     # Get Neo4j stats directly from the database
+    # Get Neo4j stats directly from the database
     neo4j_stats = get_neo4j_stats(schema_id, db)
+    print(f"Neo4j stats: {neo4j_stats}")
     print(f"Neo4j stats: {neo4j_stats}")
     # Get active jobs
     active_jobs = get_schema_jobs(schema_id, db)
     print(f"Active jobs: {active_jobs}")
+    print(f"Active jobs: {active_jobs}")
     
     # Get last update time from job history
+    # Get last update time from job history
     last_update = get_last_successful_job(schema_id, db)
+    print(f"Last update: {last_update}")
+    
+    # Determine if schema has data based on Neo4j stats
+    has_data = neo4j_stats.get("has_data", False)
+    
+    # Get node and relationship counts directly from Neo4j
+    node_count = neo4j_stats.get("node_count", 0)
+    relationship_count = neo4j_stats.get("relationship_count", 0)
+    node_counts = neo4j_stats.get("node_counts", {})
+    relationship_counts = neo4j_stats.get("relationship_counts", {})
+    
+    # Determine if data was cleaned based on job history
+    # Check if there's a successful clean job after the last load
     print(f"Last update: {last_update}")
     
     # Determine if schema has data based on Neo4j stats
@@ -261,8 +278,16 @@ async def get_schema_status(
     was_cleaned = False
     if last_load_job:
         last_clean_job = db.query(GraphIngestionJob)\
+    if last_load_job:
+        last_clean_job = db.query(GraphIngestionJob)\
             .filter(GraphIngestionJob.schema_id == schema_id,
                    GraphIngestionJob.status == "completed",
+                   GraphIngestionJob.job_type == "clean_data",
+                   GraphIngestionJob.updated_at > last_load_job.updated_at)\
+            .order_by(GraphIngestionJob.updated_at.desc())\
+            .first()
+        
+        was_cleaned = last_clean_job is not None
                    GraphIngestionJob.job_type == "clean_data",
                    GraphIngestionJob.updated_at > last_load_job.updated_at)\
             .order_by(GraphIngestionJob.updated_at.desc())\
