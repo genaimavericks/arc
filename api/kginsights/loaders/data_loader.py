@@ -14,7 +14,7 @@ from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 from pathlib import Path
 
-from ..database_api import get_database_config, parse_connection_params
+from ..neo4j_config import get_neo4j_connection_params
 from ...db_config import SessionLocal
 from ...models import Schema
 from neo4j import GraphDatabase
@@ -173,19 +173,11 @@ class DataLoader:
             True if initialization successful, False otherwise
         """
         try:
-            # Get database configuration
-            db_config = get_database_config()
-            if not db_config:
-                print("Failed to get database configuration")
-                self.status["errors"].append("Failed to get database configuration")
-                return False
-                
-            # Parse connection parameters for the specified graph
-            graph_config = db_config.get(self.graph_name, {})
-            self.connection_params = parse_connection_params(graph_config)
+            # Get connection parameters directly from the centralized configuration
+            self.connection_params = get_neo4j_connection_params(self.graph_name)
             if not self.connection_params:
-                print(f"Failed to parse connection parameters for graph: {self.graph_name}")
-                self.status["errors"].append(f"Failed to parse connection parameters for graph: {self.graph_name}")
+                print(f"Failed to get connection parameters for graph: {self.graph_name}")
+                self.status["errors"].append(f"Failed to get connection parameters for graph: {self.graph_name}")
                 return False
             
             # Set Neo4j paths based on OS

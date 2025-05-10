@@ -7,6 +7,7 @@ from ..db_config import SessionLocal, get_db
 import json
 import os
 from pathlib import Path
+from .neo4j_config import get_neo4j_config, get_neo4j_connection_params
 
 # Models
 class DatabaseConnectionParams(BaseModel):
@@ -29,12 +30,22 @@ class ErrorResponse(BaseModel):
 # Router
 router = APIRouter(prefix="/graph", tags=["graph"])
 
-# Helper function to read the JSON config file
+# Helper function to get database configuration
 def get_database_config():
     try:
-        json_path = Path(__file__).parent / "neo4j.databases.json"
-        with open(json_path, 'r') as file:
-            return json.load(file)
+        # Use the centralized configuration module
+        # This returns a dictionary with all graph configurations
+        all_configs = {}
+        
+        # Get default graph configuration
+        default_config = get_neo4j_config("default_graph")
+        if default_config:
+            all_configs["default_graph"] = default_config
+            
+        # Add any other graph configurations if needed
+        # For now, we're only using the default graph
+        
+        return all_configs
     except Exception as e:
         raise HTTPException(
             status_code=500, 
@@ -49,6 +60,19 @@ def parse_connection_params(params_dict):
     # JSON format already has the correct structure
     # Just return the dictionary directly
     return params_dict
+
+# New function that directly uses the centralized configuration
+def get_connection_params_for_graph(graph_name="default_graph"):
+    """
+    Get connection parameters for a specific graph using the centralized configuration.
+    
+    Args:
+        graph_name: Name of the graph to get connection parameters for
+        
+    Returns:
+        Dictionary containing the connection parameters for the specified graph
+    """
+    return get_neo4j_connection_params(graph_name)
 
 # API Routes
 

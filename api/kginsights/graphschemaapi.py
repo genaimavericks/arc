@@ -16,7 +16,7 @@ from ..auth import has_any_permission
 from ..models import User
 from ..db_config import SessionLocal
 from neo4j import GraphDatabase
-from .database_api import get_database_config, parse_connection_params
+from .neo4j_config import get_neo4j_connection_params
 from .loaders.data_loader import DataLoader
 from .loaders.neo4j_loader import Neo4jLoader
 import traceback
@@ -893,16 +893,11 @@ async def apply_schema_to_neo4j(
             print(f"ERROR: Exception traceback: {traceback.format_exc()}")
             raise HTTPException(status_code=500, detail=f"Failed to parse schema JSON: {e}")
         
-        # Load Neo4j configuration
-        print("DEBUG: Loading Neo4j configuration")
-        config = get_database_config()
-        print(f"DEBUG: Neo4j configuration loaded. Available graphs: {list(config.keys())}")
-        
-        # Get connection parameters for the specified graph
+        # Get connection parameters directly from the centralized configuration
         graph_name = 'default_graph'
-        print(f"DEBUG: Parsing connection parameters for graph: {graph_name}")
+        print(f"DEBUG: Getting connection parameters for graph: {graph_name}")
         
-        connection_params = parse_connection_params(config.get(graph_name, {}))
+        connection_params = get_neo4j_connection_params(graph_name)
         print(f"DEBUG: Connection params type: {type(connection_params)}")
         print(f"DEBUG: Connection params: {connection_params}")
         

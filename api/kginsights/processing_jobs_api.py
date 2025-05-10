@@ -13,6 +13,7 @@ import traceback
 from ..models import get_db, GraphIngestionJob, Schema, User
 from ..auth import has_any_permission
 from .graphschemaapi import load_data_from_schema as graphschema_load_data
+from .neo4j_config import get_neo4j_connection_params
 
 # Models
 class JobStatus(BaseModel):
@@ -247,22 +248,20 @@ async def process_clean_data_job(job_id: str, schema_id: int, graph_name: str, d
             if not schema:
                 raise ValueError(f"Schema with ID {schema_id} not found")
             
-            # Get Neo4j connection details from configuration
-            from .database_api import get_database_config, parse_connection_params
-            db_config = get_database_config()
-            
-            # Get the default graph configuration
-            default_graph = db_config.get("default_graph", {})
-            
-            # Connect to Neo4j using the default graph configuration
+            # Get Neo4j connection details from centralized configuration
             from neo4j import GraphDatabase
+            
+            # Get connection parameters directly from the centralized configuration
+            connection_params = get_neo4j_connection_params("default_graph")
+            
+            # Connect to Neo4j using the connection parameters
             driver = GraphDatabase.driver(
-                default_graph.get("uri", ""),
-                auth=(default_graph.get("username", ""), default_graph.get("password", ""))
+                connection_params.get("uri", ""),
+                auth=(connection_params.get("username", ""), connection_params.get("password", ""))
             )
             
             # Clean data
-            with driver.session(database=default_graph.get("database", None)) as session:
+            with driver.session(database=connection_params.get("database", "neo4j")) as session:
                 # Parse schema to get node labels
                 schema_json = json.loads(schema.schema)
                 node_labels = [node["label"] for node in schema_json.get("nodes", [])]

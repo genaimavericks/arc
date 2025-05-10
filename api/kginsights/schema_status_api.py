@@ -5,10 +5,11 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 import json
 from neo4j import GraphDatabase
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from ..models import get_db, Schema, GraphIngestionJob, User
 from ..auth import has_any_permission
-from .database_api import get_database_config, parse_connection_params
+from .neo4j_config import get_neo4j_connection_params
 
 # Models
 class SchemaStatus(BaseModel):
@@ -54,30 +55,12 @@ def get_neo4j_stats(schema_id: int, db: Session):
         # Parse schema data
         schema_data = json.loads(schema_record.schema)
         
-        # Get database connection info - only if data is loaded
-        db_config = get_database_config()
-        
         # Get the graph name from the schema if available
         graph_name = schema_data.get("graph_name", "default_graph")
         print(f"Using graph name: {graph_name}")
         
-        # Get connection parameters for the specific graph
-        graph_config = db_config.get(graph_name, {})
-        if not graph_config:
-            print(f"No config found for graph {graph_name}, trying default_graph")
-            graph_config = db_config.get("default_graph", {})
-            
-        if not graph_config:
-            print(f"Available graph configurations: {list(db_config.keys())}")
-            return {
-                "has_data": False,
-                "node_count": 0,
-                "relationship_count": 0,
-                "error": f"No configuration found for graph {graph_name} or default_graph"
-            }
-        
-        # Connect to Neo4j
-        connection_params = parse_connection_params(graph_config)
+        # Get connection parameters for the specific graph using the centralized configuration
+        connection_params = get_neo4j_connection_params(graph_name)
         if not connection_params:
             return {
                 "has_data": False,
