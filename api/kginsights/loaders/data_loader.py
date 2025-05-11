@@ -16,7 +16,7 @@ from pathlib import Path
 
 from ..neo4j_config import get_neo4j_connection_params
 from ...db_config import SessionLocal
-from ...models import Schema
+from ...models import Schema, GraphIngestionJob
 from neo4j import GraphDatabase
 import time
 
@@ -494,6 +494,88 @@ class DataLoader:
         except Exception as e:
             print(f"Error cleaning up temporary files: {str(e)}")
             self.status["warnings"].append(f"Error cleaning up temporary files: {str(e)}")
+            
+    async def _start_neo4j(self) -> bool:
+        """
+        Start Neo4j service after import to ensure the database is available.
+        
+        Returns:
+            True if start successful, False otherwise
+        """
+        try:
+            system = platform.system()
+            start_cmd = None
+            
+            if system == "Windows":
+                # For Windows, try to use the Neo4j batch file or service commands
+                neo4j_bin_path = os.path.join(self.neo4j_home, "bin", "neo4j.bat")
+                if os.path.exists(neo4j_bin_path):
+                    # Use neo4j.bat start
+                    start_cmd = [neo4j_bin_path, "start"]
+                else:
+                    # Fallback to Windows service commands
+                    start_cmd = ["powershell", "-Command", "Start-Service neo4j"]
+            elif system == "Linux":
+                # For Linux, use systemctl if available
+                start_cmd = ["sudo", "systemctl", "start", "neo4j"]
+            elif system == "Darwin":  # macOS
+                # For macOS with Homebrew
+                start_cmd = ["brew", "services", "start", "neo4j"]
+            
+            if not start_cmd:
+                print("Could not determine how to start Neo4j on this platform")
+                self.status["warnings"].append("Could not start Neo4j automatically")
+                return False
+                
+            print(f"Starting Neo4j service with command: {' '.join(start_cmd)}")
+            process = subprocess.Popen(
+                start_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            stdout, stderr = process.communicate()
+            
+            if process.returncode != 0:
+                print(f"Neo4j start failed with code {process.returncode}")
+                for line in stderr.splitlines():
+                    print(f"Start error: {line}")
+                    self.status["warnings"].append(f"Neo4j start error: {line}")
+                print("Database was imported successfully, but you may need to start Neo4j manually")
+                return False
+            
+            # Wait for Neo4j to fully start (important for database recognition)
+            print("Waiting for Neo4j to fully start...")
+            await asyncio.sleep(15)  # Give Neo4j time to start (increased to 15 seconds for reliability)
+            
+            # Verify Neo4j is actually running by attempting a simple connection
+            try:
+                uri = self.connection_params.get("uri")
+                username = self.connection_params.get("username")
+                password = self.connection_params.get("password")
+                
+                print(f"Verifying Neo4j is running at {uri}...")
+                driver = GraphDatabase.driver(uri, auth=(username, password))
+                with driver.session() as session:
+                    # Simple query to verify connection
+                    result = session.run("RETURN 1 as test")
+                    test_value = result.single()["test"]
+                    if test_value == 1:
+                        print("Neo4j connection verified successfully")
+                driver.close()
+                return True
+            except Exception as conn_err:
+                print(f"Neo4j connection verification failed: {str(conn_err)}")
+                print("Neo4j may not be fully started yet. You may need to start it manually.")
+                self.status["warnings"].append(f"Neo4j connection verification failed: {str(conn_err)}")
+                return False
+        except Exception as e:
+            print(f"Error starting Neo4j: {str(e)}")
+            print(traceback.format_exc())
+            self.status["warnings"].append(f"Error starting Neo4j: {str(e)}")
+            print("Database was imported successfully, but you may need to start Neo4j manually")
+            return False
 
         
     # The _initialize_loaders method has been removed as it's no longer needed with the neo4j-admin approach
@@ -568,6 +650,14 @@ class DataLoader:
                 self.status["status"] = "failed"
                 self.status["end_time"] = datetime.now().isoformat()
                 return self.status
+                
+            # Start Neo4j to ensure the database is available
+            print("Starting Neo4j service to make the imported database available...")
+            neo4j_started = await self._start_neo4j()  # We continue even if start fails
+            
+            if not neo4j_started:
+                print("WARNING: Neo4j may not have started properly. You might need to start it manually.")
+                self.status["warnings"].append("Neo4j may not have started properly. Consider restarting it manually.")
             
             # Get database statistics
             print("Inspecting database after data loading...")
@@ -578,6 +668,60 @@ class DataLoader:
             self.status["relationships_created"] = stats.get("relationship_count", 0)
             self.status["node_counts"] = stats.get("node_counts", {})
             self.status["relationship_counts"] = stats.get("relationship_counts", {})
+            
+            # Update the schema record in the database if data was loaded successfully
+            if stats.get("has_data", False) and self.schema_id:
+                try:
+                    # Get the schema record
+                    schema_record = db.query(Schema).filter(Schema.id == self.schema_id).first()
+                    if schema_record:
+                        # Update the db_loaded flag
+                        old_value = schema_record.db_loaded
+                        schema_record.db_loaded = 'yes'
+                        
+                        # Find and update any running jobs for this schema
+                        running_jobs = db.query(GraphIngestionJob).filter(
+                            GraphIngestionJob.schema_id == self.schema_id,
+                            GraphIngestionJob.status == "running",
+                            GraphIngestionJob.job_type == "load_data"
+                        ).all()
+                        
+                        if running_jobs:
+                            for job in running_jobs:
+                                print(f"Updating job {job.id} status to 'completed'")
+                                job.status = "completed"
+                                job.completed_at = datetime.now()
+                                job.progress = 100
+                                job.message = f"Successfully loaded data for schema ID {self.schema_id}"
+                                
+                                # Store node and relationship counts in the job result
+                                job.node_count = self.status["nodes_created"]
+                                job.relationship_count = self.status["relationships_created"]
+                                
+                                # Store detailed counts as JSON in the result field
+                                job_result = {}
+                                if "node_counts" in self.status:
+                                    job_result["node_counts"] = self.status["node_counts"]
+                                if "relationship_counts" in self.status:
+                                    job_result["relationship_counts"] = self.status["relationship_counts"]
+                                    
+                                if job_result:
+                                    job.result = json.dumps(job_result)
+                                    
+                            print(f"Updated {len(running_jobs)} jobs to 'completed' status")
+                        
+                        db.commit()
+                        print(f"Updated schema record {self.schema_id}: db_loaded changed from '{old_value}' to 'yes'")
+                    else:
+                        print(f"Schema record with ID {self.schema_id} not found for updating db_loaded flag")
+                        self.status["warnings"].append(f"Could not update schema record: record with ID {self.schema_id} not found")
+                except Exception as db_err:
+                    print(f"Error updating schema record or jobs: {str(db_err)}")
+                    self.status["warnings"].append(f"Error updating schema record or jobs: {str(db_err)}")
+                    db.rollback()
+            elif not stats.get("has_data", False) and self.schema_id:
+                print(f"No data was loaded into Neo4j, not updating db_loaded flag")
+                self.status["warnings"].append("No data was loaded into Neo4j")
             
             # Clean up temporary files
             self._cleanup_temp_files()

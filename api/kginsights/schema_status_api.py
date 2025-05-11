@@ -144,9 +144,12 @@ def get_neo4j_stats(schema_id: int, db: Session):
         print(f"Node counts: {node_counts}")
         print(f"Relationship counts: {relationship_counts}")
         
-        # Return with has_data based on schema record, not node count
+        # Return with has_data based on both schema record and actual node/relationship counts
+        # Only consider has_data=true if db_loaded='yes' AND there are actual nodes or relationships
+        actual_has_data = has_data and (total_nodes > 0 or total_relationships > 0)
+        
         return {
-            "has_data": has_data,  # Now using db_loaded attribute instead of node count
+            "has_data": actual_has_data,
             "node_count": total_nodes,
             "relationship_count": total_relationships,
             "node_counts": node_counts,
@@ -162,8 +165,10 @@ def get_neo4j_stats(schema_id: int, db: Session):
         except Exception:
             has_data = False
             
+        # For error cases, we should be consistent and only report has_data=true if there are actual nodes
+        # Since we can't verify node counts in an error case, we should report has_data=false
         return {
-            "has_data": has_data,  # Use db_loaded attribute if available
+            "has_data": False,  # Set to false in error cases since we can't verify actual data
             "node_count": 0,
             "relationship_count": 0,
             "error": str(e)
