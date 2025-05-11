@@ -33,7 +33,8 @@ class DataLoader:
         data_path: str = None,
         graph_name: str = "default",
         batch_size: int = 1000,
-        drop_existing: bool = False
+        drop_existing: bool = False,
+        job_id: str = None
     ):
         """
         Initialize the data loader.
@@ -45,6 +46,7 @@ class DataLoader:
             graph_name: Name of the Neo4j graph to load data into
             batch_size: Number of records to process in each batch (not used with neo4j-admin)
             drop_existing: Whether to drop existing data before loading
+            job_id: ID of the job associated with this data loading operation
         """
         self.schema_id = schema_id
         self.schema_data = schema_data
@@ -52,6 +54,7 @@ class DataLoader:
         self.graph_name = graph_name
         self.batch_size = batch_size
         self.drop_existing = drop_existing
+        self.job_id = job_id
         self.logger = logging.getLogger(__name__)
         
         # Neo4j configuration (will be set during initialization)
@@ -435,6 +438,7 @@ class DataLoader:
             
             driver = GraphDatabase.driver(uri, auth=(username, password))
             
+            print("Connected to Neo4j uri: ", uri)
             node_counts = {}
             relationship_counts = {}
             total_nodes = 0
@@ -679,39 +683,91 @@ class DataLoader:
                         old_value = schema_record.db_loaded
                         schema_record.db_loaded = 'yes'
                         
-                        # Find and update any running jobs for this schema
-                        running_jobs = db.query(GraphIngestionJob).filter(
-                            GraphIngestionJob.schema_id == self.schema_id,
-                            GraphIngestionJob.status == "running",
-                            GraphIngestionJob.job_type == "load_data"
-                        ).all()
-                        
-                        if running_jobs:
-                            for job in running_jobs:
-                                print(f"Updating job {job.id} status to 'completed'")
-                                job.status = "completed"
-                                job.completed_at = datetime.now()
-                                job.progress = 100
-                                job.message = f"Successfully loaded data for schema ID {self.schema_id}"
-                                
-                                # Store node and relationship counts in the job result
-                                job.node_count = self.status["nodes_created"]
-                                job.relationship_count = self.status["relationships_created"]
-                                
-                                # Store detailed counts as JSON in the result field
-                                job_result = {}
-                                if "node_counts" in self.status:
-                                    job_result["node_counts"] = self.status["node_counts"]
-                                if "relationship_counts" in self.status:
-                                    job_result["relationship_counts"] = self.status["relationship_counts"]
-                                    
-                                if job_result:
-                                    job.result = json.dumps(job_result)
-                                    
-                            print(f"Updated {len(running_jobs)} jobs to 'completed' status")
-                        
+                        # Update the schema record first and commit it
                         db.commit()
                         print(f"Updated schema record {self.schema_id}: db_loaded changed from '{old_value}' to 'yes'")
+                        
+                        # Now handle job updates in a separate transaction
+                        try:
+                            # Update job status - use specific job_id if available, otherwise find all running jobs
+                            if self.job_id:
+                                # Update the specific job associated with this data loading operation
+                                job = db.query(GraphIngestionJob).filter(
+                                    GraphIngestionJob.id == self.job_id
+                                ).first()
+                                
+                                if job and job.status == "running":
+                                    print(f"Updating specific job {job.id} status to 'completed'")
+                                    job.status = "completed"
+                                    job.completed_at = datetime.now()
+                                    job.progress = 100
+                                    job.message = f"Successfully loaded data for schema ID {self.schema_id}"
+                                    
+                                    # Store node and relationship counts in the job result
+                                    job.node_count = self.status["nodes_created"]
+                                    job.relationship_count = self.status["relationships_created"]
+                                    
+                                    # Store detailed counts as JSON in the result field
+                                    job_result = {}
+                                    if "node_counts" in self.status:
+                                        job_result["node_counts"] = self.status["node_counts"]
+                                    if "relationship_counts" in self.status:
+                                        job_result["relationship_counts"] = self.status["relationship_counts"]
+                                        
+                                    if job_result:
+                                        job.result = json.dumps(job_result)
+                                    
+                                    # Commit the job update immediately
+                                    db.commit()
+                                    print(f"Updated job {job.id} to 'completed' status")
+                                elif job:
+                                    print(f"Job {job.id} is in {job.status} status, not updating")
+                                else:
+                                    print(f"Warning: Job with ID {self.job_id} not found")
+                        except Exception as job_err:
+                            print(f"Error updating job: {str(job_err)}")
+                            self.status["warnings"].append(f"Error updating job: {str(job_err)}")
+                            # Only rollback the job update, not the schema update
+                            db.rollback()
+                        else:
+                            try:
+                                # Fallback to finding all running jobs for this schema
+                                running_jobs = db.query(GraphIngestionJob).filter(
+                                    GraphIngestionJob.schema_id == self.schema_id,
+                                    GraphIngestionJob.status == "running",
+                                    GraphIngestionJob.job_type == "load_data"
+                                ).all()
+                                
+                                if running_jobs:
+                                    for job in running_jobs:
+                                        print(f"Updating job {job.id} status to 'completed'")
+                                        job.status = "completed"
+                                        job.completed_at = datetime.now()
+                                        job.progress = 100
+                                        job.message = f"Successfully loaded data for schema ID {self.schema_id}"
+                                        
+                                        # Store node and relationship counts in the job result
+                                        job.node_count = self.status["nodes_created"]
+                                        job.relationship_count = self.status["relationships_created"]
+                                        
+                                        # Store detailed counts as JSON in the result field
+                                        job_result = {}
+                                        if "node_counts" in self.status:
+                                            job_result["node_counts"] = self.status["node_counts"]
+                                        if "relationship_counts" in self.status:
+                                            job_result["relationship_counts"] = self.status["relationship_counts"]
+                                            
+                                        if job_result:
+                                            job.result = json.dumps(job_result)
+                                    
+                                    # Commit all job updates
+                                    db.commit()
+                                    print(f"Updated {len(running_jobs)} jobs to 'completed' status")
+                            except Exception as fallback_err:
+                                print(f"Error updating fallback jobs: {str(fallback_err)}")
+                                self.status["warnings"].append(f"Error updating fallback jobs: {str(fallback_err)}")
+                                # Only rollback the job updates
+                                db.rollback()
                     else:
                         print(f"Schema record with ID {self.schema_id} not found for updating db_loaded flag")
                         self.status["warnings"].append(f"Could not update schema record: record with ID {self.schema_id} not found")

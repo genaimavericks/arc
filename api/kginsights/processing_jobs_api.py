@@ -150,44 +150,61 @@ async def process_load_data_job(job_id: str, schema_id: int, graph_name: str, dr
                 graph_name=graph_name,
                 drop_existing=drop_existing,
                 db=task_db,  # Pass the new session
-                current_user=None  # We're in a background task, no user context
+                current_user=None,  # We're in a background task, no user context
+                job_id=job_id  # Pass the job_id to track the specific job
             )
             
-            # Update job with success
-            job.status = "completed"
-            job.completed_at = datetime.now()
-            job.progress = 100
-            job.message = f"Successfully loaded data for schema ID {schema_id} to graph {graph_name}"
+            # Get a fresh instance of the job from the database instead of refreshing
+            # This prevents the 'not persistent within this Session' error
+            job = db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first()
+            if not job:
+                print(f"Error: Job with ID {job_id} not found after data loading")
+                return
             
-            # Store node and relationship counts from the result
-            if result and isinstance(result, dict):
-                # Extract the actual result data - handle nested structure
-                result_data = result.get("result", result)
+            # Only update the job if it's still in running status
+            # This prevents overwriting updates made by the DataLoader
+            if job.status == "running":
+                print(f"Job {job_id} still in running status, updating to completed")
+                # Update job with success
+                job.status = "completed"
+                job.completed_at = datetime.now()
+                job.progress = 100
+                job.message = f"Successfully loaded data for schema ID {schema_id} to graph {graph_name}"
                 
-                # Store counts
-                job.node_count = result_data.get("nodes_created", 0)
-                job.relationship_count = result_data.get("relationships_created", 0)
-                
-                # Store detailed counts as JSON in the result field
-                job_result = {}
-                if "node_counts" in result_data:
-                    job_result["node_counts"] = result_data["node_counts"]
-                if "relationship_counts" in result_data:
-                    job_result["relationship_counts"] = result_data["relationship_counts"]
+                # Store node and relationship counts from the result
+                if result and isinstance(result, dict):
+                    # Extract the actual result data - handle nested structure
+                    result_data = result.get("result", result)
                     
-                # Log the counts for debugging
-                print(f"DEBUG: Storing job counts - nodes: {job.node_count}, relationships: {job.relationship_count}")
+                    # Store counts
+                    job.node_count = result_data.get("nodes_created", 0)
+                    job.relationship_count = result_data.get("relationships_created", 0)
+                    
+                    # Store detailed counts as JSON in the result field
+                    job_result = {}
+                    if "node_counts" in result_data:
+                        job_result["node_counts"] = result_data["node_counts"]
+                    if "relationship_counts" in result_data:
+                        job_result["relationship_counts"] = result_data["relationship_counts"]
+                        
+                    if job_result:
+                        job.result = json.dumps(job_result)
                 
-                if job_result:
-                    job.result = json.dumps(job_result)
-            
-            # Update schema record to indicate data has been loaded
-            schema_db = db.query(Schema).filter(Schema.id == schema_id).first()
-            if schema_db:
-                schema_db.db_loaded = "yes"
-                print(f"Updated schema record {schema_id} with db_loaded=yes")
-            
-            db.commit()
+                # Update schema record to indicate data has been loaded
+                schema_db = db.query(Schema).filter(Schema.id == schema_id).first()
+                if schema_db:
+                    schema_db.db_loaded = "yes"
+                    print(f"Updated schema record {schema_id} with db_loaded=yes")
+                
+                db.commit()
+            else:
+                print(f"Job {job_id} already in {job.status} status, not updating")
+                # Still commit any schema updates if needed
+                schema_db = db.query(Schema).filter(Schema.id == schema_id).first()
+                if schema_db and schema_db.db_loaded != "yes":
+                    schema_db.db_loaded = "yes"
+                    print(f"Updated schema record {schema_id} with db_loaded=yes")
+                    db.commit()
             
             # TEMP: Generate prompt templates and sample queries after data load
             try:
@@ -379,9 +396,11 @@ async def get_jobs(
     """
     Get all KGInsights processing jobs, optionally filtered by schema ID or job type
     """
-    print(f"DEBUG: get_jobs endpoint called with schema_id={schema_id}, job_type={job_type}")
+    # Removed debug output to reduce log verbosity
+    # print(f"DEBUG: get_jobs endpoint called with schema_id={schema_id}, job_type={job_type}")
     jobs = get_all_jobs(db, schema_id, job_type)
-    print(f"DEBUG: Found {len(jobs)} jobs")
+    # Removed debug output to reduce log verbosity
+    # print(f"DEBUG: Found {len(jobs)} jobs")
     return [format_job_response(job) for job in jobs]
 
 @router.get("/{job_id}", response_model=JobStatus)

@@ -1,7 +1,9 @@
 import uvicorn
 import os
 import sys
+import logging
 from pathlib import Path
+from api.logging_config import configure_uvicorn_logging
 
 def check_static_files():
     static_dir = Path(__file__).parent / "static"
@@ -24,5 +26,15 @@ if __name__ == "__main__":
         print(f"Frontend will be served at http://{host}:{port}")
     print(f"API will be available at http://{host}:{port}/api")
     
+    # Configure custom logging for Uvicorn
+    access_logger = configure_uvicorn_logging()
+    print("Configured custom logging to filter out access logs for specific URLs")
+    
     # Run the FastAPI app with uvicorn
-    uvicorn.run("api.main:app", host=host, port=port, reload=True)
+    uvicorn.run(
+        "api.main:app", 
+        host=host, 
+        port=port, 
+        reload=True,
+        log_level="info"
+    )

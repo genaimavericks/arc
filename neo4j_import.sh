@@ -170,6 +170,20 @@ function start_neo4j {
     sleep 10
 }
 
+# Function to restart Neo4j service based on platform
+function restart_neo4j {
+    echo "Restarting Neo4j service to ensure all changes are applied..."
+    if [[ "$PLATFORM" == "linux" ]]; then
+        sudo systemctl restart neo4j
+    elif [[ "$PLATFORM" == "mac" ]]; then
+        brew services restart neo4j
+    fi
+    
+    # Wait for Neo4j to fully restart
+    echo "Waiting for Neo4j to restart completely..."
+    sleep 15
+}
+
 # Function to check if database directory exists
 function check_database {
     DB_DIR="$NEO4J_HOME/data/databases/$DATABASE_NAME"
@@ -358,6 +372,9 @@ set_default_database
 
 # Start Neo4j service
 start_neo4j
+
+# Restart Neo4j service to ensure all changes are applied
+restart_neo4j
 
 echo "=== Import completed successfully ==="
 echo "You can now access your data at http://localhost:7474/"

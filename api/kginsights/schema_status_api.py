@@ -57,7 +57,7 @@ def get_neo4j_stats(schema_id: int, db: Session):
         
         # Get the graph name from the schema if available
         graph_name = schema_data.get("graph_name", "default_graph")
-        print(f"Using graph name: {graph_name}")
+        # print(f"Using graph name: {graph_name}")  # Removed excessive logging
         
         # Get connection parameters for the specific graph using the centralized configuration
         connection_params = get_neo4j_connection_params(graph_name)
@@ -139,10 +139,11 @@ def get_neo4j_stats(schema_id: int, db: Session):
         finally:
             driver.close()
             
-        print(f"Total nodes: {total_nodes}")
-        print(f"Total relationships: {total_relationships}")
-        print(f"Node counts: {node_counts}")
-        print(f"Relationship counts: {relationship_counts}")
+        # Debug output removed to reduce log verbosity
+        # print(f"Total nodes: {total_nodes}")
+        # print(f"Total relationships: {total_relationships}")
+        # print(f"Node counts: {node_counts}")
+        # print(f"Relationship counts: {relationship_counts}")
         
         # Return with has_data based on both schema record and actual node/relationship counts
         # Only consider has_data=true if db_loaded='yes' AND there are actual nodes or relationships
@@ -219,15 +220,12 @@ async def get_schema_status(
     
     # Get Neo4j stats directly from the database
     neo4j_stats = get_neo4j_stats(schema_id, db)
-    print(f"Neo4j stats: {neo4j_stats}")
     
     # Get active jobs
     active_jobs = get_schema_jobs(schema_id, db)
-    print(f"Active jobs: {active_jobs}")
     
     # Get last update time from job history
     last_update = get_last_successful_job(schema_id, db)
-    print(f"Last update: {last_update}")
     
     # Determine if schema has data based on Neo4j stats
     has_data = neo4j_stats.get("has_data", False)

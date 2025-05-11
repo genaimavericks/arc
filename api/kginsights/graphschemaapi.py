@@ -1678,7 +1678,8 @@ async def load_data_from_schema(
     graph_name: str = "default",
     drop_existing: bool = False,
     current_user: User = Depends(has_any_permission(["kginsights:write"])),
-    db: SessionLocal = Depends(get_db)
+    db: SessionLocal = Depends(get_db),
+    job_id: str = None
 ):
     """
     Load data directly from a schema's associated file path.
@@ -1714,7 +1715,8 @@ async def load_data_from_schema(
             data_path=schema.csv_file_path,
             graph_name=graph_name,
             batch_size=1000,  # Default batch size
-            drop_existing=drop_existing
+            drop_existing=drop_existing,
+            job_id=job_id  # Pass the job_id for direct job updates
         )
         
         # Load data
