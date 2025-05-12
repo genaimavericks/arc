@@ -138,10 +138,18 @@ fi
 function stop_neo4j {
     echo "Stopping Neo4j service..."
     if [[ "$PLATFORM" == "linux" ]]; then
-        if systemctl is-active --quiet neo4j; then
-            sudo systemctl stop neo4j
+        # Use direct neo4j command instead of systemctl
+        sudo neo4j stop
+        
+        # Verify Neo4j has stopped
+        if pgrep -f "neo4j" > /dev/null; then
+            echo "Neo4j is still running. Waiting a bit longer..."
+            sleep 5
+            if pgrep -f "neo4j" > /dev/null; then
+                echo "Warning: Neo4j may still be running"
+            fi
         else
-            echo "Neo4j service is not running"
+            echo "Neo4j has been stopped successfully"
         fi
     elif [[ "$PLATFORM" == "mac" ]]; then
         if brew services list | grep neo4j | grep started > /dev/null; then
@@ -153,35 +161,56 @@ function stop_neo4j {
     
     # Wait for Neo4j to fully stop
     echo "Waiting for Neo4j to stop completely..."
-    sleep 5
+    sleep 10
 }
 
 # Function to start Neo4j service based on platform
 function start_neo4j {
     echo "Starting Neo4j service..."
     if [[ "$PLATFORM" == "linux" ]]; then
-        sudo systemctl start neo4j
+        # Use direct neo4j command instead of systemctl
+        sudo neo4j start
+        
+        # Verify Neo4j has started
+        sleep 5
+        if ! pgrep -f "neo4j" > /dev/null; then
+            echo "Warning: Neo4j may not have started properly"
+        else
+            echo "Neo4j has been started successfully"
+        fi
     elif [[ "$PLATFORM" == "mac" ]]; then
         brew services start neo4j
     fi
     
     # Wait for Neo4j to fully start
     echo "Waiting for Neo4j to start completely..."
-    sleep 10
+    sleep 15
 }
 
 # Function to restart Neo4j service based on platform
 function restart_neo4j {
     echo "Restarting Neo4j service to ensure all changes are applied..."
     if [[ "$PLATFORM" == "linux" ]]; then
-        sudo systemctl restart neo4j
+        # Use direct neo4j command instead of systemctl
+        sudo neo4j restart
+        
+        # Verify Neo4j has restarted
+        sleep 5
+        if ! pgrep -f "neo4j" > /dev/null; then
+            echo "Warning: Neo4j may not have restarted properly"
+            echo "Attempting to start Neo4j explicitly..."
+            sudo neo4j start
+            sleep 5
+        else
+            echo "Neo4j has been restarted successfully"
+        fi
     elif [[ "$PLATFORM" == "mac" ]]; then
         brew services restart neo4j
     fi
     
     # Wait for Neo4j to fully restart
     echo "Waiting for Neo4j to restart completely..."
-    sleep 15
+    sleep 20
 }
 
 # Function to check if database directory exists

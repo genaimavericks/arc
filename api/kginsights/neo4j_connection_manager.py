@@ -108,57 +108,172 @@ class Neo4jConnectionManager:
         
         try:
             system = platform.system()
-            restart_cmd = None
+            stop_cmd = None
+            start_cmd = None
             
             if system == "Windows":
                 # For Windows, try to use the Neo4j batch file or service commands
                 if neo4j_home:
                     neo4j_bin_path = os.path.join(neo4j_home, "bin", "neo4j.bat")
                     if os.path.exists(neo4j_bin_path):
-                        # Use neo4j.bat restart
-                        restart_cmd = [neo4j_bin_path, "restart"]
+                        # Use separate stop and start commands instead of restart
+                        stop_cmd = [neo4j_bin_path, "stop"]
+                        start_cmd = [neo4j_bin_path, "start"]
                     else:
                         # Fallback to Windows service commands
-                        restart_cmd = ["powershell", "-Command", "Restart-Service neo4j"]
+                        stop_cmd = ["powershell", "-Command", "Stop-Service neo4j"]
+                        start_cmd = ["powershell", "-Command", "Start-Service neo4j"]
                 else:
-                    restart_cmd = ["powershell", "-Command", "Restart-Service neo4j"]
+                    stop_cmd = ["powershell", "-Command", "Stop-Service neo4j"]
+                    start_cmd = ["powershell", "-Command", "Start-Service neo4j"]
             elif system == "Linux":
-                # For Linux, use systemctl if available
-                restart_cmd = ["sudo", "systemctl", "restart", "neo4j"]
+                # For Linux, use the direct neo4j command-line tool instead of systemctl
+                stop_cmd = ["sudo", "neo4j", "stop"]
+                start_cmd = ["sudo", "neo4j", "start"]
             elif system == "Darwin":  # macOS
                 # For macOS with Homebrew
-                restart_cmd = ["brew", "services", "restart", "neo4j"]
+                stop_cmd = ["brew", "services", "stop", "neo4j"]
+                start_cmd = ["brew", "services", "start", "neo4j"]
             
-            if not restart_cmd:
+            if not stop_cmd or not start_cmd:
                 print("Could not determine how to restart Neo4j on this platform")
                 return False
-                
-            print(f"Restarting Neo4j service with command: {' '.join(restart_cmd)}")
-            process = subprocess.Popen(
-                restart_cmd,
+            
+            # First stop Neo4j
+            print(f"Stopping Neo4j service with command: {' '.join(stop_cmd)}")
+            stop_process = subprocess.Popen(
+                stop_cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True
             )
             
-            stdout, stderr = process.communicate()
+            stop_stdout, stop_stderr = stop_process.communicate()
             
-            if process.returncode != 0:
-                print(f"Neo4j restart failed with code {process.returncode}")
-                for line in stderr.splitlines():
-                    print(f"Restart error: {line}")
-                return False
+            if stop_process.returncode != 0:
+                print(f"Neo4j stop failed with code {stop_process.returncode}")
+                for line in stop_stderr.splitlines():
+                    print(f"Stop error: {line}")
+                # Continue anyway, as we'll try to start it
             
-            # Wait for Neo4j to fully restart
-            print("Waiting for Neo4j to fully restart...")
-            time.sleep(15)  # Give Neo4j time to restart
+            # Wait for Neo4j to fully stop
+            print("Waiting for Neo4j to fully stop...")
+            time.sleep(10)  # Give Neo4j time to stop
+            
+            # For Linux, we'll use a more gentle approach instead of SIGKILL
+            if system == "Linux" or system == "Darwin":
+                try:
+                    # Check if Neo4j is still running
+                    check_process = subprocess.run(
+                        ["pgrep", "-f", "neo4j"],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True
+                    )
+                    if check_process.returncode == 0 and check_process.stdout.strip():
+                        print("Neo4j is still running after stop command. Trying direct restart instead...")
+                        # Instead of force killing, we'll try a full restart with the direct command
+                        restart_cmd = ["sudo", "neo4j", "restart"]
+                        print(f"Running full service restart: {' '.join(restart_cmd)}")
+                        restart_process = subprocess.run(
+                            restart_cmd,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True,
+                            check=False
+                        )
+                        # Wait longer after a full restart
+                        time.sleep(10)
+                        # Set start_cmd to None to skip the regular start command
+                        # since we've already tried to restart
+                        if restart_process.returncode == 0:
+                            start_cmd = None
+                except Exception as check_err:
+                    print(f"Error checking if Neo4j is still running: {str(check_err)}")
+            
+            # Now start Neo4j if we haven't already done a full restart
+            if start_cmd is not None:
+                print(f"Starting Neo4j service with command: {' '.join(start_cmd)}")
+                start_process = subprocess.Popen(
+                    start_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                
+                start_stdout, start_stderr = start_process.communicate()
+                
+                if start_process.returncode != 0:
+                    print(f"Neo4j start failed with code {start_process.returncode}")
+                    for line in start_stderr.splitlines():
+                        print(f"Start error: {line}")
+                    return False
+            else:
+                print("Skipping explicit start command as we've already attempted a full restart")
+            
+            # Wait for Neo4j to fully start - increased wait time for reliability
+            print("Waiting for Neo4j to fully start...")
+            time.sleep(30)  # Give Neo4j more time to start (increased to 30 seconds)
             
             # Refresh all connections
             self.refresh_connections()
             
+            # Verify Neo4j is actually running
+            if system == "Linux" or system == "Darwin":
+                try:
+                    # First check if the process is running
+                    check_process = subprocess.run(
+                        ["pgrep", "-f", "neo4j"],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True
+                    )
+                    if check_process.returncode != 0 or not check_process.stdout.strip():
+                        print("Neo4j does not appear to be running after start attempt")
+                        # Try one more restart as a last resort
+                        print("Attempting one final restart as a last resort...")
+                        last_restart_cmd = ["sudo", "neo4j", "restart"]
+                        subprocess.run(last_restart_cmd, check=False)
+                        time.sleep(30)  # Wait longer for the final restart
+                        # Check again
+                        check_process = subprocess.run(
+                            ["pgrep", "-f", "neo4j"],
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True
+                        )
+                        if check_process.returncode != 0 or not check_process.stdout.strip():
+                            print("Neo4j still not running after final restart attempt")
+                            return False
+                    print(f"Neo4j is running with PID(s): {check_process.stdout.strip()}")
+                    
+                    # Now verify the port is actually accepting connections
+                    print("Verifying Neo4j port is accepting connections...")
+                    # Try to connect to the Neo4j port
+                    for i in range(3):  # Try 3 times
+                        try:
+                            import socket
+                            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                            sock.settimeout(5)
+                            result = sock.connect_ex(('localhost', 7687))
+                            sock.close()
+                            if result == 0:
+                                print("Neo4j port 7687 is open and accepting connections")
+                                break
+                            else:
+                                print(f"Neo4j port check attempt {i+1}: Port 7687 is not open yet")
+                                time.sleep(5)  # Wait before trying again
+                        except Exception as port_err:
+                            print(f"Error checking Neo4j port: {str(port_err)}")
+                            time.sleep(5)  # Wait before trying again
+                    
+                except Exception as check_err:
+                    print(f"Error checking if Neo4j is running: {str(check_err)}")
+            
             return True
         except Exception as e:
             print(f"Error restarting Neo4j: {str(e)}")
+            print(traceback.format_exc())
             return False
 
 # Create a singleton instance

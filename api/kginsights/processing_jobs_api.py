@@ -14,6 +14,38 @@ from ..models import get_db, GraphIngestionJob, Schema, User
 from ..auth import has_any_permission
 from .graphschemaapi import load_data_from_schema as graphschema_load_data
 from .neo4j_config import get_neo4j_connection_params
+from ..db_config import SessionLocal
+
+
+async def generate_prompts_async(schema_id: int):
+    """
+    Asynchronous function to generate prompt templates and sample queries.
+    This runs in a background task to avoid blocking API calls.
+    
+    Args:
+        schema_id: ID of the schema to generate prompts for
+    """
+    # Create a new database session specifically for this background task
+    task_db = SessionLocal()
+    try:
+        print(f"Starting async prompt generation for schema_id={schema_id}")
+        schema_db = task_db.query(Schema).filter(Schema.id == schema_id).first()
+        
+        if schema_db and schema_db.schema and schema_db.db_id:
+            from api.kgdatainsights.data_insights_api import get_schema_aware_assistant
+            assistant = get_schema_aware_assistant(schema_db.db_id, schema_id, schema_db.schema)
+            assistant._ensure_prompt()
+            print(f"Prompt templates and queries generated for schema_id={schema_id}")
+        else:
+            print(f"Could not generate prompts: Schema record not found or incomplete for schema_id={schema_id}")
+    except Exception as e:
+        print(f"Error generating prompts after data load for schema_id={schema_id}: {e}")
+        print(traceback.format_exc())
+    finally:
+        # Always close the database session when done
+        task_db.close()
+        print(f"Completed async prompt generation task for schema_id={schema_id}")
+
 
 # Models
 class JobStatus(BaseModel):
@@ -207,18 +239,16 @@ async def process_load_data_job(job_id: str, schema_id: int, graph_name: str, dr
                     print(f"Updated schema record {schema_id} with db_loaded=yes")
                     db.commit()
             
-            # TEMP: Generate prompt templates and sample queries after data load
-            try:
-                schema_db = db.query(Schema).filter(Schema.id == schema_id).first()
-                if schema_db and schema_db.schema and schema_db.db_id:
-                    from api.kgdatainsights.data_insights_api import get_schema_aware_assistant
-                    assistant = get_schema_aware_assistant(schema_db.db_id, schema_id, schema_db.schema)
-                    assistant._ensure_prompt()
-                    print(f"Prompt templates and queries generated for schema_id={schema_id}")
-                else:
-                    print(f"Could not generate prompts: Schema record not found or incomplete for schema_id={schema_id}")
-            except Exception as e:
-                print(f"Error generating prompts after data load for schema_id={schema_id}: {e}")
+            # Start prompt template generation as a background task
+            background_tasks = BackgroundTasks()
+            background_tasks.add_task(
+                generate_prompts_async,
+                schema_id=schema_id
+            )
+            # Run the background task
+            asyncio.create_task(background_tasks())
+            print(f"Started async prompt template generation for schema_id={schema_id}")
+            
         
         finally:
             # Make sure to close the new session
