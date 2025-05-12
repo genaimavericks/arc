@@ -58,15 +58,20 @@ export function InsightsChatInput({
 
   return (
     <div className="flex items-end gap-2">
-      <Textarea
-        ref={textareaRef}
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder="Ask a question about your knowledge graph..."
-        className="flex-grow resize-none min-h-[60px] max-h-[200px] overflow-y-auto"
-        disabled={loading}
-      />
+      <div className="relative flex-grow">
+        <div className="absolute right-3 bottom-3 text-xs text-muted-foreground pointer-events-none bg-background/80 px-1 rounded">
+          Shift+Enter for new line
+        </div>
+        <Textarea
+          ref={textareaRef}
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Ask a question about your knowledge graph..."
+          className="flex-grow resize-none min-h-[60px] max-h-[200px] overflow-y-auto"
+          disabled={loading}
+        />
+      </div>
       <Button
         className="flex-shrink-0"
         onClick={handleSendMessage}

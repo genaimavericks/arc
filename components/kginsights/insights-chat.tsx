@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 
 // Extend Window interface to include our schema mapping
 declare global {
@@ -850,21 +851,26 @@ export default function InsightsChat() {
             </Button>
             
             <div className="flex-1 flex items-center gap-2 relative">
-              <Input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault()
-                    if (input.trim()) {
-                      handleSendMessage(input)
-                      setInput("")
+              <div className="relative w-full">
+                <div className="absolute right-12 bottom-2 text-xs text-muted-foreground bg-card/80 px-1.5 py-0.5 rounded-sm z-10">
+                  Shift+Enter for new line
+                </div>
+                <Textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      if (input.trim()) {
+                        handleSendMessage(input)
+                        setInput("")
+                      }
                     }
-                  }
-                }}
-                placeholder="Ask a question about your knowledge graph..."
-                className="flex-1 h-9 text-sm bg-card/50 backdrop-blur-sm border-primary/20 shadow-sm focus-visible:ring-primary pl-4 pr-10 transition-all duration-300"
-              />
+                  }}
+                  placeholder="Ask a question about your knowledge graph..."
+                  className="flex-1 w-full min-h-[60px] max-h-[120px] text-sm bg-card/50 backdrop-blur-sm border-primary/20 shadow-sm focus-visible:ring-primary pl-4 pr-24 py-2 transition-all duration-300 resize-none overflow-y-auto"
+                />
+              </div>
               
               <Button 
                 onClick={() => {

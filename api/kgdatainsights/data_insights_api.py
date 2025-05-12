@@ -363,7 +363,7 @@ async def record_query_history(schema_id: str, response: QueryResponse):
 @router.get("/{schema_id}/query/history", response_model=QueryHistoryResponse)
 async def get_query_history(
     schema_id: str, 
-    limit: int = Query(10, ge=1, le=100),
+    limit: int = Query(5, ge=1, le=100),
     current_user: User = Depends(has_any_permission(["kginsights:read"]))
 ):
     """
@@ -371,7 +371,7 @@ async def get_query_history(
     
     Args:
         schema_id: The ID of the schema to use
-        limit: Maximum number of queries to return (default: 10, max: 100)
+        limit: Maximum number of queries to return (default: 5, max: 100)
         
     Returns:
         QueryHistoryResponse: The query history for the schema_id
