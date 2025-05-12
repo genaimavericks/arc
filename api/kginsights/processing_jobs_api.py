@@ -154,6 +154,7 @@ async def process_load_data_job(job_id: str, schema_id: int, graph_name: str, dr
                 job_id=job_id  # Pass the job_id to track the specific job
             )
             
+            print(f"Data loading result: {result}")
             # Get a fresh instance of the job from the database instead of refreshing
             # This prevents the 'not persistent within this Session' error
             job = db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first()

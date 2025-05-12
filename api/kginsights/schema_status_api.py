@@ -1,14 +1,14 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from datetime import datetime
 import json
 from neo4j import GraphDatabase
-from fastapi import APIRouter, Depends, HTTPException, status
 
 from ..models import get_db, Schema, GraphIngestionJob, User
 from ..auth import has_any_permission
+from .neo4j_connection_manager import neo4j_connection_manager
 from .neo4j_config import get_neo4j_connection_params
 
 # Models
@@ -86,8 +86,11 @@ def get_neo4j_stats(schema_id: int, db: Session):
         total_nodes = 0
         total_relationships = 0
         
-        # Test connection first before running queries
-        driver = GraphDatabase.driver(uri, auth=(username, password))
+        # Force refresh connections before getting stats to ensure we have the latest data
+        neo4j_connection_manager.refresh_connections()
+        
+        # Get a fresh connection from the connection manager
+        driver = neo4j_connection_manager.get_driver(uri, username, password)
         try:
             # Verify connection is working with a simple query
             with driver.session() as session:

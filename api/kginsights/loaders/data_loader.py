@@ -3,22 +3,24 @@ Data Loader for loading data from CSV files into Neo4j using neo4j-admin import.
 """
 import os
 import json
-import logging
+import time
+import platform
 import asyncio
 import traceback
+import subprocess
+import logging
 import tempfile
 import shutil
-import platform
-import subprocess
-from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
-from pathlib import Path
+from typing import Dict, Any, List, Optional, Tuple
 
-from ..neo4j_config import get_neo4j_connection_params
-from ...db_config import SessionLocal
-from ...models import Schema, GraphIngestionJob
 from neo4j import GraphDatabase
-import time
+from sqlalchemy.orm import Session as SQLAlchemySession
+
+from api.kginsights.neo4j_connection_manager import neo4j_connection_manager
+from api.kginsights.neo4j_config import get_neo4j_connection_params
+from api.db_config import SessionLocal
+from api.models import Schema, GraphIngestionJob
 
 class DataLoader:
     """
@@ -426,17 +428,20 @@ class DataLoader:
     async def _get_database_stats(self) -> Dict[str, Any]:
         """
         Get statistics about nodes and relationships in the database.
+        Uses the Neo4jConnectionManager to ensure a fresh connection.
         
         Returns:
             Dict with database statistics
         """
         try:
-            # Connect to Neo4j
+            # Connect to Neo4j using the connection manager
             uri = self.connection_params.get("uri")
             username = self.connection_params.get("username")
             password = self.connection_params.get("password")
             
-            driver = GraphDatabase.driver(uri, auth=(username, password))
+            # Force refresh connections before getting stats
+            neo4j_connection_manager.refresh_connections()
+            driver = neo4j_connection_manager.get_driver(uri, username, password)
             
             print("Connected to Neo4j uri: ", uri)
             node_counts = {}
@@ -502,52 +507,65 @@ class DataLoader:
     async def _start_neo4j(self) -> bool:
         """
         Start Neo4j service after import to ensure the database is available.
+        Uses the Neo4jConnectionManager to restart Neo4j and refresh all connections.
         
         Returns:
             True if start successful, False otherwise
         """
         try:
-            system = platform.system()
-            start_cmd = None
+            print("Starting Neo4j service and refreshing all connections...")
+            # Use the connection manager to restart Neo4j and refresh connections
+            restart_success = await neo4j_connection_manager.restart_neo4j(self.neo4j_home)
             
-            if system == "Windows":
-                # For Windows, try to use the Neo4j batch file or service commands
-                neo4j_bin_path = os.path.join(self.neo4j_home, "bin", "neo4j.bat")
-                if os.path.exists(neo4j_bin_path):
-                    # Use neo4j.bat start
-                    start_cmd = [neo4j_bin_path, "start"]
-                else:
-                    # Fallback to Windows service commands
-                    start_cmd = ["powershell", "-Command", "Start-Service neo4j"]
-            elif system == "Linux":
-                # For Linux, use systemctl if available
-                start_cmd = ["sudo", "systemctl", "start", "neo4j"]
-            elif system == "Darwin":  # macOS
-                # For macOS with Homebrew
-                start_cmd = ["brew", "services", "start", "neo4j"]
-            
-            if not start_cmd:
-                print("Could not determine how to start Neo4j on this platform")
-                self.status["warnings"].append("Could not start Neo4j automatically")
-                return False
+            if not restart_success:
+                print("Neo4j restart through connection manager failed")
+                self.status["warnings"].append("Neo4j restart failed, falling back to manual restart")
                 
-            print(f"Starting Neo4j service with command: {' '.join(start_cmd)}")
-            process = subprocess.Popen(
-                start_cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            
-            stdout, stderr = process.communicate()
-            
-            if process.returncode != 0:
-                print(f"Neo4j start failed with code {process.returncode}")
-                for line in stderr.splitlines():
-                    print(f"Start error: {line}")
-                    self.status["warnings"].append(f"Neo4j start error: {line}")
-                print("Database was imported successfully, but you may need to start Neo4j manually")
-                return False
+                # Fall back to the original restart method
+                system = platform.system()
+                start_cmd = None
+                
+                if system == "Windows":
+                    # For Windows, try to use the Neo4j batch file or service commands
+                    neo4j_bin_path = os.path.join(self.neo4j_home, "bin", "neo4j.bat")
+                    if os.path.exists(neo4j_bin_path):
+                        # Use neo4j.bat restart instead of just start
+                        start_cmd = [neo4j_bin_path, "restart"]
+                    else:
+                        # Fallback to Windows service commands
+                        start_cmd = ["powershell", "-Command", "Restart-Service neo4j"]
+                elif system == "Linux":
+                    # For Linux, use systemctl if available
+                    start_cmd = ["sudo", "systemctl", "restart", "neo4j"]
+                elif system == "Darwin":  # macOS
+                    # For macOS with Homebrew
+                    start_cmd = ["brew", "services", "restart", "neo4j"]
+                
+                if not start_cmd:
+                    print("Could not determine how to restart Neo4j on this platform")
+                    self.status["warnings"].append("Could not restart Neo4j automatically")
+                    return False
+                    
+                print(f"Restarting Neo4j service with command: {' '.join(start_cmd)}")
+                process = subprocess.Popen(
+                    start_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                
+                stdout, stderr = process.communicate()
+                
+                if process.returncode != 0:
+                    print(f"Neo4j restart failed with code {process.returncode}")
+                    for line in stderr.splitlines():
+                        print(f"Restart error: {line}")
+                        self.status["warnings"].append(f"Neo4j restart error: {line}")
+                    print("Database was imported successfully, but you may need to restart Neo4j manually")
+                    return False
+                
+                # Force refresh all Neo4j connections
+                neo4j_connection_manager.refresh_connections()
             
             # Wait for Neo4j to fully start (important for database recognition)
             print("Waiting for Neo4j to fully start...")
@@ -560,14 +578,14 @@ class DataLoader:
                 password = self.connection_params.get("password")
                 
                 print(f"Verifying Neo4j is running at {uri}...")
-                driver = GraphDatabase.driver(uri, auth=(username, password))
+                # Use the connection manager to get a fresh driver
+                driver = neo4j_connection_manager.get_driver(uri, username, password)
                 with driver.session() as session:
                     # Simple query to verify connection
                     result = session.run("RETURN 1 as test")
                     test_value = result.single()["test"]
                     if test_value == 1:
                         print("Neo4j connection verified successfully")
-                driver.close()
                 return True
             except Exception as conn_err:
                 print(f"Neo4j connection verification failed: {str(conn_err)}")
