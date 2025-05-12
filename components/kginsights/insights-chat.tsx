@@ -298,7 +298,7 @@ export default function InsightsChat() {
       
       const schemaId = window.schemaIdMap?.[sourceId] || -1
       // Try the API endpoint with proper authorization header
-      const apiUrl = `/api/datainsights/${schemaId}/query/history?limit=50`
+      const apiUrl = `/api/datainsights/${schemaId}/query/history?limit=5`
       console.log("Fetching from:", apiUrl)
       
       const response = await fetch(apiUrl, {

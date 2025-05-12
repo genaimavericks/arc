@@ -2,7 +2,7 @@
 
 # Default values
 HOST=${HOST:-127.0.0.1}
-PORT=${PORT:-9090}
+PORT=${PORT:-19090}
 BUILD_FRONTEND=${BUILD_FRONTEND:-yes}
 
 # Parse command line arguments
