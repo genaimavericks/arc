@@ -50,6 +50,15 @@ if [ -d scripts ]; then
   cp -r scripts package/scripts
 fi
 
+# Copy neo4j_import.sh to package root if it exists
+if [ -f neo4j_import.sh ]; then
+  echo "Copying neo4j_import.sh to package..."
+  cp neo4j_import.sh package/
+  chmod +x package/neo4j_import.sh
+else
+  echo "WARNING: neo4j_import.sh not found. Knowledge Graph import functionality may be limited."
+fi
+
 
 # Copy frontend assets
 echo "Copying frontend assets..."

@@ -872,23 +872,43 @@ export default function InsightsChat() {
                 />
               </div>
               
-              <Button 
-                onClick={() => {
-                  if (input.trim()) {
-                    handleSendMessage(input)
-                    setInput("")
-                  }
-                }}
-                size="sm" 
-                className="h-9 px-3 absolute right-0 rounded-l-none bg-primary hover:bg-primary/90 text-primary-foreground transition-all duration-300 hover:shadow"
-                disabled={loading || !input.trim()}
-              >
-                {loading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
-              </Button>
+              <div className="absolute right-0 flex">                
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button 
+                        onClick={handleClearChat}
+                        size="sm" 
+                        variant="ghost"
+                        className="h-9 px-2 mr-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all duration-300"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Clear chat</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+
+                <Button 
+                  onClick={() => {
+                    if (input.trim()) {
+                      handleSendMessage(input)
+                      setInput("")
+                    }
+                  }}
+                  size="sm" 
+                  className="h-9 px-3 rounded-l-none bg-primary hover:bg-primary/90 text-primary-foreground transition-all duration-300 hover:shadow"
+                  disabled={loading || !input.trim()}
+                >
+                  {loading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
             </div>
           </div>
           
