@@ -26,6 +26,7 @@ import { motion } from "framer-motion"
 import { formatDistanceToNow, format } from "date-fns"
 import { AlertCircle } from "lucide-react"
 import { getApiBaseUrl } from "@/lib/config"
+import { useAdminLogout } from "@/components/admin-logout-fix"
 
 // Update the FileHistoryItem interface to include schema and statistics
 interface FileHistoryItem {
@@ -70,6 +71,9 @@ export function HistoryTab() {
   const [totalPages, setTotalPages] = useState(1)
   const [itemsPerPage] = useState(10)
 
+  // Existing state declarations...
+  const logout = useAdminLogout()
+
   // Track expanded items
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({})
   // Track which tab is active for each expanded item
@@ -103,6 +107,13 @@ export function HistoryTab() {
           },
         },
       )
+
+         // Check specifically for authentication errors
+    if (response.status === 401 || response.status === 403) {
+      console.error("Authentication failed. Redirecting to login page.")
+      logout()
+      return
+    }
 
       if (!response.ok) {
         throw new Error("Failed to fetch ingestion history")
