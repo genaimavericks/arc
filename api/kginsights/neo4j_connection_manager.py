@@ -255,10 +255,10 @@ class Neo4jConnectionManager:
                             import socket
                             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                             sock.settimeout(5)
-                            result = sock.connect_ex(('localhost', 7687))
+                            result = sock.connect_ex(('localhost', 7787))
                             sock.close()
                             if result == 0:
-                                print("Neo4j port 7687 is open and accepting connections")
+                                print("Neo4j port 7787 is open and accepting connections")
                                 break
                             else:
                                 print(f"Neo4j port check attempt {i+1}: Port 7687 is not open yet")
