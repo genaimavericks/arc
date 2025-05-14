@@ -276,7 +276,7 @@ function KGraphDashboardContent() {
 
   // Function to handle insights
   const handleInsights = (graphId: string) => {
-    router.push(`/kginsights/insights/${graphId}`)
+    router.push(`/kginsights/insights/`)
   }
 
   // Function to handle new knowledge graph
