@@ -1,19 +1,21 @@
 """
 Neo4j Loader for loading data from CSV files into Neo4j.
+This is a minimal implementation that maintains compatibility with existing code.
+The actual loading is now handled by neo4j-admin import utility.
 """
 import os
 import json
 import logging
 import traceback
 from typing import Dict, List, Any, Optional, Tuple
-from neo4j import GraphDatabase, Driver, Session, Transaction
-from ..database_api import get_database_config, parse_connection_params
+from neo4j import GraphDatabase
+from ..neo4j_config import get_neo4j_connection_params
 
 class Neo4jLoader:
     """
-    Handles loading data into Neo4j from processed CSV records.
-    Manages Neo4j connections, transactions, and Cypher execution.
-    Provides methods for database management including cleaning and data loading.
+    Minimal implementation of Neo4jLoader that maintains compatibility with existing code.
+    The actual data loading is now handled by neo4j-admin import utility.
+    This class provides only the necessary methods for compatibility.
     """
     
     def __init__(self, graph_name: str = "default"):
@@ -36,20 +38,11 @@ class Neo4jLoader:
             True if connection successful, False otherwise
         """
         try:
-            # Get database configuration
-            db_config = get_database_config()
-            print(f"Database configuration: {db_config}")  # Debug output
-            if not db_config:
-                print("Failed to get database configuration")
-                return False
-                
-            # Parse connection parameters for the specified graph
-            graph_config = db_config.get(self.graph_name, {})
-            print(f"Graph configuration: {graph_config}")  # Debug output
+            # Get connection parameters directly from the centralized configuration
             print(f"Graph name: {self.graph_name}")  # Debug output
-            self.connection_params = parse_connection_params(graph_config)
+            self.connection_params = get_neo4j_connection_params(self.graph_name)
             if not self.connection_params:
-                print(f"Failed to parse connection parameters for graph: {self.graph_name}")
+                print(f"Failed to get connection parameters for graph: {self.graph_name}")
                 return False
                 
             # Create Neo4j driver
@@ -79,6 +72,161 @@ class Neo4jLoader:
             print(f"Error connecting to Neo4j: {str(e)}")
             print(traceback.format_exc())
             return False
+            
+    def close(self):
+        """Close the Neo4j driver connection."""
+        if self.driver:
+            self.driver.close()
+            print("Neo4j connection closed")
+            
+    async def clean_database(self) -> Dict[str, Any]:
+        """
+        Clean the database by removing all nodes and relationships.
+        
+        Returns:
+            Dict with results of database cleaning
+        """
+        if not self.driver:
+            raise ValueError("Neo4j driver not initialized. Call connect() first.")
+            
+        result = {
+            "constraints_dropped": 0,
+            "indexes_dropped": 0,
+            "nodes_deleted": 0,
+            "success": False,
+            "errors": []
+        }
+        
+        try:
+            with self.driver.session() as session:
+                # Delete all nodes and relationships
+                delete_query = "MATCH (n) DETACH DELETE n"
+                delete_result = session.run(delete_query)
+                result["nodes_deleted"] = delete_result.consume().counters.nodes_deleted
+                
+                print(f"Deleted {result['nodes_deleted']} nodes and their relationships")
+                result["success"] = True
+                
+        except Exception as e:
+            error_msg = f"Error cleaning database: {str(e)}"
+            print(error_msg)
+            print(traceback.format_exc())
+            result["errors"].append(error_msg)
+            
+        return result
+        
+    async def inspect_database(self, schema: Dict[str, Any] = None) -> Dict[str, Any]:
+        """
+        Inspect the database to check for nodes and relationships.
+        
+        Args:
+            schema: Optional schema to check specific node labels and relationship types
+            
+        Returns:
+            Dict with inspection results
+        """
+        if not self.driver:
+            raise ValueError("Neo4j driver not initialized. Call connect() first.")
+            
+        result = {
+            "node_counts": {},
+            "relationship_counts": {},
+            "sample_nodes": {},
+            "sample_relationships": []
+        }
+        
+        try:
+            with self.driver.session() as session:
+                # Get all node labels
+                if schema and "nodes" in schema:
+                    node_labels = [node.get("label") for node in schema.get("nodes", []) if node.get("label")]
+                else:
+                    label_query = "CALL db.labels() YIELD label RETURN label"
+                    label_records = session.run(label_query)
+                    node_labels = [record["label"] for record in label_records]
+                
+                # Get counts for each node label
+                total_nodes = 0
+                for label in node_labels:
+                    count_query = f"MATCH (n:{label}) RETURN count(n) as count"
+                    count_record = session.run(count_query).single()
+                    count = count_record["count"] if count_record else 0
+                    result["node_counts"][label] = count
+                    total_nodes += count
+                    
+                    # Get sample node if count > 0
+                    if count > 0:
+                        sample_query = f"MATCH (n:{label}) RETURN n LIMIT 1"
+                        sample_record = session.run(sample_query).single()
+                        if sample_record:
+                            result["sample_nodes"][label] = dict(sample_record["n"])
+                
+                # Get all relationship types
+                if schema and "relationships" in schema:
+                    rel_types = []
+                    for rel in schema.get("relationships", []):
+                        rel_type = rel.get("type")
+                        source = rel.get("source") or rel.get("startNode") or rel.get("from_node")
+                        target = rel.get("target") or rel.get("endNode") or rel.get("to_node")
+                        if all([rel_type, source, target]):
+                            rel_types.append((source, rel_type, target))
+                else:
+                    rel_query = "CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType"
+                    rel_records = session.run(rel_query)
+                    rel_types_raw = [record["relationshipType"] for record in rel_records]
+                    rel_types = []
+                    for rel_type in rel_types_raw:
+                        # Get source and target labels for each relationship type
+                        meta_query = f"""
+                        MATCH (a)-[r:{rel_type}]->(b)
+                        RETURN DISTINCT labels(a)[0] as source, labels(b)[0] as target
+                        LIMIT 1
+                        """
+                        meta_record = session.run(meta_query).single()
+                        if meta_record:
+                            rel_types.append((meta_record["source"], rel_type, meta_record["target"]))
+                
+                # Get counts for each relationship type
+                total_relationships = 0
+                for source, rel_type, target in rel_types:
+                    count_query = f"MATCH (a:{source})-[r:{rel_type}]->(b:{target}) RETURN count(r) as count"
+                    count_record = session.run(count_query).single()
+                    count = count_record["count"] if count_record else 0
+                    result["relationship_counts"][f"{source}-{rel_type}->{target}"] = count
+                    total_relationships += count
+                    
+                    # Get sample relationship if count > 0
+                    if count > 0 and len(result["sample_relationships"]) < 5:
+                        sample_query = f"""
+                        MATCH (a:{source})-[r:{rel_type}]->(b:{target})
+                        RETURN a, r, b LIMIT 1
+                        """
+                        sample_record = session.run(sample_query).single()
+                        if sample_record:
+                            result["sample_relationships"].append({
+                                "source": dict(sample_record["a"]),
+                                "target": dict(sample_record["b"]),
+                                "type": rel_type,
+                                "properties": dict(sample_record["r"])
+                            })
+            
+            return result
+            
+        except Exception as e:
+            print(f"Error inspecting database: {str(e)}")
+            print(traceback.format_exc())
+            return result
+    
+    # Stub methods to maintain compatibility
+    async def load_nodes(self, records: List[Dict[str, Any]], schema: Dict[str, Any], column_mapping: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+        """Stub method for compatibility. Not used with neo4j-admin import."""
+        print("Warning: load_nodes is not used with neo4j-admin import approach")
+        return {"nodes_created": 0, "errors": []}
+    
+    async def load_relationships(self, records: List[Dict[str, Any]], schema: Dict[str, Any], column_mapping: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, Any]:
+        """Stub method for compatibility. Not used with neo4j-admin import."""
+        print("Warning: load_relationships is not used with neo4j-admin import approach")
+        return {"relationships_created": 0, "errors": []}
             
     def close(self):
         """Close the Neo4j driver connection."""

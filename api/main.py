@@ -30,6 +30,7 @@ from api.kginsights.graphschemaapi import router as graphschema_router, build_sc
 from api.profiler import router as profiler_router
 from api.admin import router as admin_router
 from api.middleware import ActivityLoggerMiddleware
+from api.log_filter_middleware import LogFilterMiddleware
 
 
 # # Run database migrations
@@ -58,6 +59,7 @@ app.add_middleware(
 
 # Add middlewares - order matters in FastAPI (first added = outermost in the chain)
 #app.add_middleware(APIDebugMiddleware)  # Add debug middleware first so it logs all requests
+app.add_middleware(LogFilterMiddleware)  # Add log filter middleware first to mark requests for log filtering
 app.add_middleware(ActivityLoggerMiddleware)
 
 # Direct datainsights API endpoint routes with authentication - must be defined before including the router

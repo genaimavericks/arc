@@ -13,6 +13,39 @@ import traceback
 from ..models import get_db, GraphIngestionJob, Schema, User
 from ..auth import has_any_permission
 from .graphschemaapi import load_data_from_schema as graphschema_load_data
+from .neo4j_config import get_neo4j_connection_params
+from ..db_config import SessionLocal
+
+
+async def generate_prompts_async(schema_id: int):
+    """
+    Asynchronous function to generate prompt templates and sample queries.
+    This runs in a background task to avoid blocking API calls.
+    
+    Args:
+        schema_id: ID of the schema to generate prompts for
+    """
+    # Create a new database session specifically for this background task
+    task_db = SessionLocal()
+    try:
+        print(f"Starting async prompt generation for schema_id={schema_id}")
+        schema_db = task_db.query(Schema).filter(Schema.id == schema_id).first()
+        
+        if schema_db and schema_db.schema and schema_db.db_id:
+            from api.kgdatainsights.data_insights_api import get_schema_aware_assistant
+            assistant = get_schema_aware_assistant(schema_db.db_id, schema_id, schema_db.schema)
+            assistant._ensure_prompt()
+            print(f"Prompt templates and queries generated for schema_id={schema_id}")
+        else:
+            print(f"Could not generate prompts: Schema record not found or incomplete for schema_id={schema_id}")
+    except Exception as e:
+        print(f"Error generating prompts after data load for schema_id={schema_id}: {e}")
+        print(traceback.format_exc())
+    finally:
+        # Always close the database session when done
+        task_db.close()
+        print(f"Completed async prompt generation task for schema_id={schema_id}")
+
 
 # Models
 class JobStatus(BaseModel):
@@ -149,50 +182,73 @@ async def process_load_data_job(job_id: str, schema_id: int, graph_name: str, dr
                 graph_name=graph_name,
                 drop_existing=drop_existing,
                 db=task_db,  # Pass the new session
-                current_user=None  # We're in a background task, no user context
+                current_user=None,  # We're in a background task, no user context
+                job_id=job_id  # Pass the job_id to track the specific job
             )
             
-            # Update job with success
-            job.status = "completed"
-            job.completed_at = datetime.now()
-            job.progress = 100
-            job.message = f"Successfully loaded data for schema ID {schema_id} to graph {graph_name}"
+            print(f"Data loading result: {result}")
+            # Get a fresh instance of the job from the database instead of refreshing
+            # This prevents the 'not persistent within this Session' error
+            job = db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first()
+            if not job:
+                print(f"Error: Job with ID {job_id} not found after data loading")
+                return
             
-            # Store node and relationship counts from the result
-            if result and isinstance(result, dict):
-                # Extract the actual result data - handle nested structure
-                result_data = result.get("result", result)
+            # Only update the job if it's still in running status
+            # This prevents overwriting updates made by the DataLoader
+            if job.status == "running":
+                print(f"Job {job_id} still in running status, updating to completed")
+                # Update job with success
+                job.status = "completed"
+                job.completed_at = datetime.now()
+                job.progress = 100
+                job.message = f"Successfully loaded data for schema ID {schema_id} to graph {graph_name}"
                 
-                # Store counts
-                job.node_count = result_data.get("nodes_created", 0)
-                job.relationship_count = result_data.get("relationships_created", 0)
-                
-                # Store detailed counts as JSON in the result field
-                job_result = {}
-                if "node_counts" in result_data:
-                    job_result["node_counts"] = result_data["node_counts"]
-                if "relationship_counts" in result_data:
-                    job_result["relationship_counts"] = result_data["relationship_counts"]
+                # Store node and relationship counts from the result
+                if result and isinstance(result, dict):
+                    # Extract the actual result data - handle nested structure
+                    result_data = result.get("result", result)
                     
-                # Log the counts for debugging
-                print(f"DEBUG: Storing job counts - nodes: {job.node_count}, relationships: {job.relationship_count}")
+                    # Store counts
+                    job.node_count = result_data.get("nodes_created", 0)
+                    job.relationship_count = result_data.get("relationships_created", 0)
+                    
+                    # Store detailed counts as JSON in the result field
+                    job_result = {}
+                    if "node_counts" in result_data:
+                        job_result["node_counts"] = result_data["node_counts"]
+                    if "relationship_counts" in result_data:
+                        job_result["relationship_counts"] = result_data["relationship_counts"]
+                        
+                    if job_result:
+                        job.result = json.dumps(job_result)
                 
-                if job_result:
-                    job.result = json.dumps(job_result)
-            db.commit()
-            
-            # TEMP: Generate prompt templates and sample queries after data load
-            try:
+                # Update schema record to indicate data has been loaded
                 schema_db = db.query(Schema).filter(Schema.id == schema_id).first()
-                if schema_db and schema_db.schema and schema_db.db_id:
-                    from api.kgdatainsights.data_insights_api import get_schema_aware_assistant
-                    assistant = get_schema_aware_assistant(schema_db.db_id, schema_id, schema_db.schema)
-                    assistant._ensure_prompt()
-                    print(f"Prompt templates and queries generated for schema_id={schema_id}")
-                else:
-                    print(f"Could not generate prompts: Schema record not found or incomplete for schema_id={schema_id}")
-            except Exception as e:
-                print(f"Error generating prompts after data load for schema_id={schema_id}: {e}")
+                if schema_db:
+                    schema_db.db_loaded = "yes"
+                    print(f"Updated schema record {schema_id} with db_loaded=yes")
+                
+                db.commit()
+            else:
+                print(f"Job {job_id} already in {job.status} status, not updating")
+                # Still commit any schema updates if needed
+                schema_db = db.query(Schema).filter(Schema.id == schema_id).first()
+                if schema_db and schema_db.db_loaded != "yes":
+                    schema_db.db_loaded = "yes"
+                    print(f"Updated schema record {schema_id} with db_loaded=yes")
+                    db.commit()
+            
+            # Start prompt template generation as a background task
+            background_tasks = BackgroundTasks()
+            background_tasks.add_task(
+                generate_prompts_async,
+                schema_id=schema_id
+            )
+            # Run the background task
+            asyncio.create_task(background_tasks())
+            print(f"Started async prompt template generation for schema_id={schema_id}")
+            
         
         finally:
             # Make sure to close the new session
@@ -240,22 +296,20 @@ async def process_clean_data_job(job_id: str, schema_id: int, graph_name: str, d
             if not schema:
                 raise ValueError(f"Schema with ID {schema_id} not found")
             
-            # Get Neo4j connection details from configuration
-            from .database_api import get_database_config, parse_connection_params
-            db_config = get_database_config()
-            
-            # Get the default graph configuration
-            default_graph = db_config.get("default_graph", {})
-            
-            # Connect to Neo4j using the default graph configuration
+            # Get Neo4j connection details from centralized configuration
             from neo4j import GraphDatabase
+            
+            # Get connection parameters directly from the centralized configuration
+            connection_params = get_neo4j_connection_params("default_graph")
+            
+            # Connect to Neo4j using the connection parameters
             driver = GraphDatabase.driver(
-                default_graph.get("uri", ""),
-                auth=(default_graph.get("username", ""), default_graph.get("password", ""))
+                connection_params.get("uri", ""),
+                auth=(connection_params.get("username", ""), connection_params.get("password", ""))
             )
             
             # Clean data
-            with driver.session(database=default_graph.get("database", None)) as session:
+            with driver.session(database=connection_params.get("database", "neo4j")) as session:
                 # Parse schema to get node labels
                 schema_json = json.loads(schema.schema)
                 node_labels = [node["label"] for node in schema_json.get("nodes", [])]
@@ -331,6 +385,12 @@ async def process_clean_data_job(job_id: str, schema_id: int, graph_name: str, d
                 })
                 task_db.commit()
                 print(f"DEBUG: Job status updated to completed in task_db connection")
+                
+                # Update schema record to indicate data has been cleaned
+                schema_db = db.query(Schema).filter(Schema.id == schema_id).first()
+                if schema_db:
+                    schema_db.db_loaded = "no"
+                    print(f"Updated schema record {schema_id} with db_loaded=no")
             
             driver.close()
         finally:
@@ -367,9 +427,11 @@ async def get_jobs(
     """
     Get all KGInsights processing jobs, optionally filtered by schema ID or job type
     """
-    print(f"DEBUG: get_jobs endpoint called with schema_id={schema_id}, job_type={job_type}")
+    # Removed debug output to reduce log verbosity
+    # print(f"DEBUG: get_jobs endpoint called with schema_id={schema_id}, job_type={job_type}")
     jobs = get_all_jobs(db, schema_id, job_type)
-    print(f"DEBUG: Found {len(jobs)} jobs")
+    # Removed debug output to reduce log verbosity
+    # print(f"DEBUG: Found {len(jobs)} jobs")
     return [format_job_response(job) for job in jobs]
 
 @router.get("/{job_id}", response_model=JobStatus)
