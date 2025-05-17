@@ -24,6 +24,7 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { motion } from "framer-motion"
 import { formatDistanceToNow, format } from "date-fns"
+import { AlertCircle } from "lucide-react"
 import { getApiBaseUrl } from "@/lib/config"
 import { useAdminLogout } from "@/components/admin-logout-fix"
 
@@ -52,6 +53,7 @@ interface FileHistoryItem {
     memory_usage: string
     processing_time: string
   }
+  error?: string // Store error message if ingestion failed
 }
 
 // Update the component to include expanded view functionality
@@ -76,11 +78,13 @@ export function HistoryTab() {
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({})
   // Track which tab is active for each expanded item
   const [activeTabs, setActiveTabs] = useState<Record<string, string>>({})
+  // Track showing error details
+  const [showErrorDetails, setShowErrorDetails] = useState<Record<string, boolean>>({})
 
   // Add state for storing fetched data and loading states
-  const [itemData, setItemData] = useState<Record<string, { preview: any; schema: any; stats: any }>>({})
+  const [itemData, setItemData] = useState<Record<string, { preview: any; schema: any; stats: any; error?: string }>>({})
   const [tabLoadingStates, setTabLoadingStates] = useState<
-    Record<string, { preview: boolean; schema: boolean; stats: boolean }>
+    Record<string, { preview: boolean; schema: boolean; stats: boolean; error?: boolean }>
   >({})
 
   // Add state for table pagination
@@ -116,8 +120,21 @@ export function HistoryTab() {
       }
 
       const data = await response.json()
-      setFiles(data.items)
-      setFilteredFiles(data.items)
+      
+      // Process items to ensure error details are properly handled
+      const processedItems = data.items.map((item: FileHistoryItem) => {
+        // If the item has an error but it's not properly formatted, fix it
+        if (item.status === "failed" && !item.error) {
+          return {
+            ...item,
+            error: "Processing failed. No specific error details available."
+          }
+        }
+        return item
+      })
+      
+      setFiles(processedItems)
+      setFilteredFiles(processedItems)
       setTotalPages(Math.ceil(data.total / itemsPerPage))
     } catch (err) {
       console.error("Error fetching ingestion history:", err)
@@ -177,22 +194,107 @@ export function HistoryTab() {
 
   // Add a function to fetch statistics for a specific ingestion
   const fetchStatisticsData = async (ingestionId: string) => {
+    if (!ingestionId) {
+      console.warn("Cannot fetch statistics without a valid ingestion ID")
+      return null
+    }
+
+    // Safety checks
+    const token = localStorage.getItem("token")
+    if (!token) {
+      console.warn("Authentication token not found. Skipping statistics data fetch.")
+      return null
+    }
+
     try {
+      // Mark the statistics tab as loading
+      setTabLoadingStates((prev) => ({
+        ...prev,
+        [ingestionId]: { ...prev[ingestionId], stats: true },
+      }))
+
       const apiBaseUrl = getApiBaseUrl()
       const response = await fetch(`${apiBaseUrl}/api/datapuur/ingestion-statistics/${ingestionId}`, {
         headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
+          Authorization: `Bearer ${token}`,
         },
       })
 
       if (!response.ok) {
-        throw new Error("Failed to fetch statistics data")
+        throw new Error(`Failed to fetch statistics for ingestion ID: ${ingestionId}`)
       }
 
-      return await response.json()
-    } catch (err) {
-      console.error(`Error fetching statistics for ingestion ${ingestionId}:`, err)
+      const data = await response.json()
+      setItemData((prev) => ({
+        ...prev,
+        [ingestionId]: { ...prev[ingestionId], stats: data },
+      }))
+
+      return data
+    } catch (error) {
+      console.error("Error fetching statistics data:", error)
       return null
+    } finally {
+      // Mark the statistics tab as no longer loading
+      setTabLoadingStates((prev) => ({
+        ...prev,
+        [ingestionId]: { ...prev[ingestionId], stats: false },
+      }))
+    }
+  }
+  
+  // Add a function to fetch error details for a failed ingestion
+  const fetchErrorDetails = async (ingestionId: string) => {
+    if (!ingestionId) {
+      console.warn("Cannot fetch error details without a valid ingestion ID")
+      return null
+    }
+
+    // Safety checks
+    const token = localStorage.getItem("token")
+    if (!token) {
+      console.warn("Authentication token not found. Skipping error details fetch.")
+      return null
+    }
+
+    try {
+      // Mark error details as loading
+      setTabLoadingStates((prev) => ({
+        ...prev,
+        [ingestionId]: { ...prev[ingestionId], error: true },
+      }))
+
+      // Get error details from the job status endpoint
+      const apiBaseUrl = getApiBaseUrl()
+      const response = await fetch(`${apiBaseUrl}/api/datapuur/job-status/${ingestionId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch error details for ingestion ID: ${ingestionId}`)
+      }
+
+      const data = await response.json()
+      const errorDetails = data.error || "No specific error details available."
+      
+      // Save the error details to state
+      setItemData((prev) => ({
+        ...prev,
+        [ingestionId]: { ...prev[ingestionId], error: errorDetails },
+      }))
+
+      return errorDetails
+    } catch (error) {
+      console.error("Error fetching error details:", error)
+      return "Failed to retrieve error details. Please check the logs for more information."
+    } finally {
+      // Mark error details as no longer loading
+      setTabLoadingStates((prev) => ({
+        ...prev,
+        [ingestionId]: { ...prev[ingestionId], error: false },
+      }))
     }
   }
 
@@ -743,6 +845,32 @@ export function HistoryTab() {
     }
   }, [page, searchQuery, fileTypeFilter, sourceTypeFilter, statusFilter, sortOrder])
 
+  // Parse timestamp to ensure consistent handling
+  const parseTimestamp = (timestamp: string): Date => {
+    if (!timestamp) {
+      console.warn("Invalid timestamp received", { timestamp })
+      return new Date() // Return current date as fallback
+    }
+    
+    try {
+      // Create a date object from the timestamp
+      // This correctly handles ISO 8601 strings with timezone information
+      // If server sends UTC timestamps (without timezone info), local timezone is applied
+      const date = new Date(timestamp)
+      
+      // Check if the date is valid
+      if (isNaN(date.getTime())) {
+        console.warn("Invalid date created from timestamp", { timestamp })
+        return new Date() // Return current date as fallback
+      }
+      
+      return date
+    } catch (error) {
+      console.error("Error parsing timestamp", { timestamp, error })
+      return new Date() // Return current date as fallback
+    }
+  }
+
   // Format file size for display
   const formatFileSize = (bytes: number): string => {
     if (bytes < 1024) return bytes + " B"
@@ -753,31 +881,36 @@ export function HistoryTab() {
 
   // Update the toggleExpand function to fetch data when expanding an item
   const toggleExpand = async (id: string) => {
-    const newExpandedState = !expandedItems[id]
-
+    // Toggle the expanded state
+    const isExpanding = !expandedItems[id]
     setExpandedItems((prev) => ({
       ...prev,
-      [id]: newExpandedState,
+      [id]: isExpanding,
     }))
 
-    // Set default active tab if not already set
-    if (!activeTabs[id]) {
+    // If we're expanding the item and no tab is active, set "preview" as the default
+    if (isExpanding && !activeTabs[id]) {
       setActiveTabs((prev) => ({
         ...prev,
         [id]: "preview",
       }))
-    }
 
-    // Initialize preview page if not already set
-    if (!previewPage[id]) {
-      setPreviewPage((prev) => ({
-        ...prev,
-        [id]: 1,
-      }))
+      // Find the file item by ID
+      const file = files.find((f) => f.id === id)
+
+      if (!file) {
+        console.warn(`File with ID ${id} not found`)
+        return
+      }
+      
+      // If the file has failed status, fetch error details preemptively
+      if (file.status === "failed" && !itemData[id]?.error) {
+        fetchErrorDetails(id)
+      }
     }
 
     // If we're expanding and we need to fetch data
-    if (newExpandedState) {
+    if (isExpanding) {
       const file = files.find((f) => f.id === id)
       if (file) {
         // Set loading states for each tab
@@ -1346,8 +1479,13 @@ export function HistoryTab() {
                 <div className="col-span-3 flex items-center text-muted-foreground">
                   <Calendar className="h-3 w-3 mr-1 flex-shrink-0" />
                   <div>
-                    <div>{formatDistanceToNow(new Date(file.uploaded_at), { addSuffix: true })}</div>
-                    <div className="text-xs">{format(new Date(file.uploaded_at), "MMM d, yyyy")}</div>
+                    <div className="font-medium">{formatDistanceToNow(parseTimestamp(file.uploaded_at), { addSuffix: true })}</div>
+                    <div className="text-xs flex items-center gap-1">
+                      <span>{format(parseTimestamp(file.uploaded_at), "MMM d, yyyy, HH:mm")}</span>
+                      <span className="text-muted-foreground opacity-70 text-[10px]">
+                        {Intl.DateTimeFormat().resolvedOptions().timeZone.replace(/\//g, ' ')}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
@@ -1443,8 +1581,59 @@ export function HistoryTab() {
                           Download
                         </Button>
                       )}
+                      
+                      {file.status === "failed" && (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // If error details are shown, hide them. Otherwise fetch and show them
+                            if (showErrorDetails[file.id]) {
+                              setShowErrorDetails((prev) => ({
+                                ...prev,
+                                [file.id]: false
+                              }));
+                            } else {
+                              // Fetch error details if not available
+                              if (!itemData[file.id]?.error) {
+                                fetchErrorDetails(file.id);
+                              }
+                              setShowErrorDetails((prev) => ({
+                                ...prev,
+                                [file.id]: true
+                              }));
+                            }
+                          }}
+                          className="flex items-center"
+                        >
+                          <AlertCircle className="h-4 w-4 mr-1" />
+                          View Error
+                        </Button>
+                      )}
                     </div>
                   </div>
+                  
+                  {/* Error details section */}
+                  {showErrorDetails[file.id] && (
+                    <div className="mt-4 p-3 bg-destructive/10 border border-destructive rounded-md">
+                      <div className="flex items-start gap-2">
+                        <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
+                        <div className="w-full">
+                          <h4 className="font-medium text-destructive">Error Details</h4>
+                          {tabLoadingStates[file.id]?.error ? (
+                            <div className="flex justify-center items-center h-12">
+                              <RefreshCw className="h-4 w-4 animate-spin text-destructive" />
+                            </div>
+                          ) : (
+                            <p className="text-sm mt-1 whitespace-pre-wrap">
+                              {itemData[file.id]?.error || file.error || "An error occurred during processing."}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </motion.div>
