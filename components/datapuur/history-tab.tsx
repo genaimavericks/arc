@@ -214,7 +214,7 @@ export function HistoryTab() {
       }))
 
       const apiBaseUrl = getApiBaseUrl()
-      const response = await fetch(`${apiBaseUrl}/api/datapuur/statistics/${ingestionId}`, {
+      const response = await fetch(`${apiBaseUrl}/api/datapuur/ingestion-statistics/${ingestionId}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
