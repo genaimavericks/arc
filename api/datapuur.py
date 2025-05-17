@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional, Union
 from fastapi.responses import FileResponse
 import random
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import json
 import csv
 import os
@@ -22,7 +22,7 @@ import pandas as pd
 import numpy as np
 from pydantic import BaseModel, Field
 
-from .models import User, get_db, ActivityLog, Role, UploadedFile, IngestionJob
+from .models import User, get_db, ActivityLog, Role, UploadedFile, IngestionJob, DatabaseConnection
 from .auth import get_current_active_user, has_role, has_permission, log_activity, has_any_permission
 from .data_models import DataSource, DataMetrics, Activity, DashboardData
 from .models import get_db, SessionLocal
@@ -456,11 +456,24 @@ def get_db_schema(db_type, config, chunk_size=1000):
         
         # Get table columns
         columns = inspector.get_columns(config["table"])
+        column_names = [col["name"] for col in columns]
         
         # Get sample data
         with engine.connect() as connection:
-            result = connection.execute(f"SELECT * FROM {config['table']} LIMIT 1").fetchone()
-            sample_data = dict(result) if result else {}
+            query = sqlalchemy.text(f"SELECT * FROM {config['table']} LIMIT 1")
+            result = connection.execute(query).fetchone()
+            
+            # Manual conversion using column names - most reliable method
+            sample_data = {}
+            if result:
+                for i, value in enumerate(result):
+                    if i < len(column_names):
+                        col_name = column_names[i]
+                        # Convert datetime objects to strings for JSON serialization
+                        if isinstance(value, (datetime, date)):
+                            sample_data[col_name] = value.isoformat()
+                        else:
+                            sample_data[col_name] = value
         
         schema = {
             "name": config["table"],
@@ -487,11 +500,14 @@ def get_db_schema(db_type, config, chunk_size=1000):
             else:
                 field_type = "string"
             
+            # Get sample value, ensuring it's JSON serializable
+            sample_value = sample_data.get(col_name) if col_name in sample_data else None
+            
             schema["fields"].append({
                 "name": col_name,
                 "type": field_type,
                 "nullable": not column.get("nullable", True),
-                "sample": sample_data.get(col_name) if col_name in sample_data else None
+                "sample": sample_value
             })
         
         return schema
@@ -509,6 +525,127 @@ def create_connection_string(db_type, config):
         return f"mssql+pyodbc://{config['username']}:{config['password']}@{config['host']}:{config['port']}/{config['database']}?driver=ODBC+Driver+17+for+SQL+Server"
     else:
         raise ValueError(f"Unsupported database type: {db_type}")
+
+# Database Connection Endpoints
+
+@router.get("/db-connections", status_code=status.HTTP_200_OK)
+async def get_database_connections(
+    current_user: User = Depends(has_permission("datapuur:read")),
+    db: Session = Depends(get_db)
+):
+    """Get all saved database connections for the current user"""
+    try:
+        connections = get_db_connections(db, current_user.username)
+        
+        # Convert connections to dict and parse config JSON
+        result = []
+        for conn in connections:
+            conn_dict = {
+                "id": conn.id,
+                "name": conn.name,
+                "type": conn.type,
+                "config": json.loads(conn.config),
+                "username": conn.username,
+                "created_at": conn.created_at.isoformat() if conn.created_at else None,
+                "updated_at": conn.updated_at.isoformat() if conn.updated_at else None
+            }
+            # Mask password for security
+            if "password" in conn_dict["config"]:
+                conn_dict["config"]["password"] = "********"
+            result.append(conn_dict)
+        
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving database connections: {str(e)}"
+        )
+
+@router.post("/db-connections", status_code=status.HTTP_201_CREATED)
+async def create_database_connection(
+    connection: dict,
+    current_user: User = Depends(has_permission("datapuur:write")),
+    db: Session = Depends(get_db)
+):
+    """Save a new database connection"""
+    try:
+        # Validate required fields
+        required_fields = ["name", "type", "config"]
+        for field in required_fields:
+            if field not in connection:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Missing required field: {field}"
+                )
+        
+        # Add username to connection data
+        connection["username"] = current_user.username
+        
+        # Save connection
+        conn = save_db_connection(db, connection)
+        
+        # Log activity
+        log_activity(
+            db=db,
+            username=current_user.username,
+            action="Database connection saved",
+            details=f"Saved connection: {connection['name']} ({connection['type']})"
+        )
+        
+        return {
+            "id": conn.id,
+            "name": conn.name,
+            "message": "Database connection saved successfully"
+        }
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error saving database connection: {str(e)}"
+        )
+
+@router.delete("/db-connections/{connection_id}", status_code=status.HTTP_200_OK)
+async def delete_database_connection(
+    connection_id: str,
+    current_user: User = Depends(has_permission("datapuur:write")),
+    db: Session = Depends(get_db)
+):
+    """Delete a database connection"""
+    try:
+        # Check if connection exists and belongs to user
+        connection = get_db_connection(db, connection_id)
+        if not connection:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Database connection not found"
+            )
+        
+        if connection.username != current_user.username and current_user.role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to delete this connection"
+            )
+        
+        # Delete connection
+        delete_db_connection(db, connection_id)
+        
+        # Log activity
+        log_activity(
+            db=db,
+            username=current_user.username,
+            action="Database connection deleted",
+            details=f"Deleted connection: {connection.name} ({connection.type})"
+        )
+        
+        return {"message": "Database connection deleted successfully"}
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting database connection: {str(e)}"
+        )
 
 # Process file ingestion with database
 def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
@@ -1043,71 +1180,238 @@ def process_db_ingestion_with_db(job_id, db_type, db_config, chunk_size, db):
         job = get_ingestion_job(db_session, job_id)
         job.status = "running"
         job.progress = 0
+        job.details = "Initializing SQL database connection"
         db_session.commit()
+        
+        # Function to check if job is cancelled
+        def check_job_cancelled():
+            # Refresh job from database to get latest status
+            nonlocal job
+            db_session.refresh(job)
+            
+            # Check if job has been marked as cancelled in the database
+            if job.status == "cancelled":
+                logger.info(f"Job {job_id} has been cancelled in the database, stopping processing")
+                return True
+                
+            # Check for cancellation marker file
+            cancel_marker_path = DATA_DIR / f"cancel_{job_id}"
+            if cancel_marker_path.exists():
+                logger.info(f"Cancellation marker found for job {job_id}, stopping processing")
+                # Update job status to cancelled since we found a marker
+                job.status = "cancelled"
+                job.end_time = datetime.now()
+                job.details = f"{job.details} (Cancelled by user)"
+                db_session.commit()
+                return True
+                
+            return False
         
         # Create connection string
         connection_string = create_connection_string(db_type, db_config)
         
+        # Sanitize table name for SQL injection prevention
+        table_name = db_config['table']
+        if not table_name.isalnum() and not all(c.isalnum() or c in ['_', '.'] for c in table_name):
+            raise ValueError(f"Invalid table name: {table_name}. Table names must contain only alphanumeric characters, underscores, or dots.")
+        
         # Create output file path
         output_file = DATA_DIR / f"{job_id}.parquet"
+        
+        # Create temporary directory for parquet chunks
+        temp_dir = DATA_DIR / f"temp_{job_id}"
+        temp_dir.mkdir(exist_ok=True)
+        
+        start_time = time.time()
         
         # Connect to database
         engine = create_engine(connection_string)
         
         try:
-            # Get total row count
-            with engine.connect() as conn:
-                result = conn.execute(f"SELECT COUNT(*) FROM {db_config['table']}")
-                total_rows = result.scalar()
+            # Get total row count (with error handling for different SQL dialects)
+            total_rows = 0
+            row_count_query = ""
             
-            # Read data in chunks
+            job.details = "Calculating total row count"
+            db_session.commit()
+            
+            try:
+                if db_type == "mysql":
+                    row_count_query = f"SELECT COUNT(*) FROM {table_name}"
+                elif db_type == "postgresql":
+                    row_count_query = f"SELECT COUNT(*) FROM {table_name}"
+                elif db_type == "mssql":
+                    row_count_query = f"SELECT COUNT(*) FROM {table_name}"
+                
+                with engine.connect() as conn:
+                    result = conn.execute(sqlalchemy.text(row_count_query))
+                    total_rows = result.scalar()
+                    
+                logger.info(f"Total rows to extract: {total_rows}")
+            except Exception as e:
+                logger.warning(f"Could not get exact row count: {str(e)}")
+                logger.warning("Continuing with extraction without knowing total row count")
+                total_rows = 0  # Will use a different progress calculation
+            
+            # Check if job was cancelled during preparation
+            if check_job_cancelled():
+                logger.info(f"Job {job_id} was cancelled during preparation, stopping")
+                return
+            
+            # Read data in chunks and save directly to parquet files
             offset = 0
             processed_rows = 0
+            chunk_files = []
+            chunk_number = 0
             
-            while offset < total_rows:
+            job.details = "Starting data extraction from SQL database"
+            db_session.commit()
+            
+            # Keep track of schema information from first chunk for consistency
+            schema = None
+            
+            while True:
+                # Check for cancellation
+                if check_job_cancelled():
+                    logger.info(f"Job {job_id} was cancelled during processing, stopping")
+                    
+                    # Clean up temporary files
+                    for chunk_file in chunk_files:
+                        if os.path.exists(chunk_file):
+                            os.unlink(chunk_file)
+                    
+                    if temp_dir.exists():
+                        shutil.rmtree(temp_dir)
+                    
+                    return
+                
                 # Update progress
-                job.progress = int((processed_rows / total_rows) * 100)
+                if total_rows > 0:
+                    progress = int((processed_rows / total_rows) * 100)
+                    job.progress = min(progress, 99)  # Cap at 99% until complete
+                else:
+                    # If total_rows unknown, use a sliding scale
+                    job.progress = min(10 + (chunk_number * 5), 99)  # Cap at 99%
+                
+                job.details = f"Extracting data (offset: {offset}, processed: {processed_rows} rows)"
                 db_session.commit()
                 
-                # Read chunk
-                query = f"SELECT * FROM {db_config['table']} LIMIT {chunk_size} OFFSET {offset}"
-                chunk = pd.read_sql(query, engine)
+                # Construct query with proper handling for different SQL dialects
+                query = ""
+                try:
+                    if db_type == "mysql" or db_type == "postgresql":
+                        query = f"SELECT * FROM {table_name} LIMIT {chunk_size} OFFSET {offset}"
+                    elif db_type == "mssql":
+                        # MSSQL uses different OFFSET/FETCH syntax
+                        query = f"SELECT * FROM {table_name} ORDER BY (SELECT NULL) OFFSET {offset} ROWS FETCH NEXT {chunk_size} ROWS ONLY"
+                    
+                    # Read chunk safely using parameterized query
+                    chunk = pd.read_sql(sqlalchemy.text(query), engine)
+                except Exception as e:
+                    # Try a different approach if the standard approach fails
+                    logger.warning(f"Error with standard query: {str(e)}. Trying alternative approach.")
+                    try:
+                        # Simpler query without OFFSET for compatibility
+                        if chunk_number == 0:
+                            query = f"SELECT TOP {chunk_size} * FROM {table_name}"
+                        else:
+                            # This might not work for all databases, but it's a fallback
+                            query = f"SELECT * FROM {table_name} LIMIT {chunk_size}"
+                        
+                        chunk = pd.read_sql(sqlalchemy.text(query), engine)
+                    except Exception as inner_e:
+                        # If all approaches fail, report and exit
+                        error_msg = f"Failed to extract data: {str(inner_e)}"
+                        logger.error(error_msg)
+                        raise ValueError(error_msg)
                 
-                # Save chunk
-                if offset == 0:
-                    chunk.to_parquet(output_file, index=False)
-                else:
-                    # Read existing parquet file
-                    if os.path.exists(output_file):
-                        existing_df = pd.read_parquet(output_file)
-                        # Concatenate with new chunk
-                        combined_df = pd.concat([existing_df, chunk], ignore_index=True)
-                        # Write back to the file
-                        combined_df.to_parquet(output_file, index=False)
-                    else:
-                        chunk.to_parquet(output_file, index=False)
+                # If no rows returned, we've reached the end
+                if len(chunk) == 0:
+                    break
+                
+                # Save first chunk schema for consistency (but don't depend on it)
+                if chunk_number == 0:
+                    try:
+                        # This might fail depending on pandas version - use simpler approach
+                        schema = str(chunk.dtypes[0])
+                    except Exception as schema_error:
+                        logger.warning(f"Non-critical schema detection error: {str(schema_error)}")
+                        schema = None
+                
+                # Convert datetime columns to string to avoid serialization issues
+                try:
+                    for col in chunk.select_dtypes(include=['datetime64']).columns:
+                        logger.info(f"Converting datetime column '{col}' to string")
+                        chunk[col] = chunk[col].astype(str)
+                except Exception as dt_error:
+                    logger.warning(f"Error handling datetime columns: {str(dt_error)}")
+                
+                # Save chunk to a temporary parquet file
+                chunk_file = temp_dir / f"chunk_{chunk_number}.parquet"
+                chunk.to_parquet(chunk_file, index=False)
+                chunk_files.append(chunk_file)
                 
                 # Update counters
                 processed_rows += len(chunk)
                 offset += chunk_size
+                chunk_number += 1
                 
-                # Simulate processing time
-                time.sleep(0.2)
+                # Add a small delay to prevent database overload
+                time.sleep(0.1)
+            
+            # Check if any data was extracted
+            if not chunk_files:
+                raise ValueError("No data was extracted from the database. The table might be empty.")
+            
+            # Now combine all chunk files into a single parquet file
+            job.details = "Combining extracted data chunks into final parquet file"
+            job.progress = 99
+            db_session.commit()
+            
+            # If only one chunk, just rename it
+            if len(chunk_files) == 1:
+                shutil.move(str(chunk_files[0]), str(output_file))
+            else:
+                # Read and combine all chunks
+                dfs = [pd.read_parquet(chunk_file) for chunk_file in chunk_files]
+                combined_df = pd.concat(dfs, ignore_index=True)
+                combined_df.to_parquet(output_file, index=False)
+                
+                # Clean up temporary files
+                for chunk_file in chunk_files:
+                    if os.path.exists(chunk_file):
+                        os.unlink(chunk_file)
+            
+            # Clean up temporary directory
+            if temp_dir.exists():
+                shutil.rmtree(temp_dir)
+            
+            # Calculate processing time
+            processing_time = time.time() - start_time
             
             # Mark job as completed
             job.status = "completed"
             job.progress = 100
             job.end_time = datetime.now()
+            job.details = f"Completed. Extracted {processed_rows} rows in {processing_time:.2f} seconds."
             
             db_session.commit()
             
-            logger.info(f"Database ingestion completed for job {job_id}")
+            logger.info(f"Database ingestion completed for job {job_id}. Processed {processed_rows} rows.")
         
         finally:
             engine.dispose()
     
     except Exception as e:
         logger.error(f"Error processing database ingestion: {str(e)}")
+        
+        # Clean up temporary directory if it exists
+        temp_dir = DATA_DIR / f"temp_{job_id}"
+        if temp_dir.exists():
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception as cleanup_error:
+                logger.error(f"Error cleaning up temporary directory: {str(cleanup_error)}")
         
         # Update job status to failed
         try:
@@ -1116,12 +1420,60 @@ def process_db_ingestion_with_db(job_id, db_type, db_config, chunk_size, db):
             job.error = str(e)
             job.end_time = datetime.now()
             db_session.commit()
-        except:
-            pass
+        except Exception as update_error:
+            logger.error(f"Error updating job status: {str(update_error)}")
     
     finally:
         # Close the database session
         db_session.close()
+
+# Database Connections Functions
+def get_db_connections(db, username):
+    """Get all saved database connections for a user"""
+    return db.query(DatabaseConnection).filter(DatabaseConnection.username == username).all()
+
+def get_db_connection(db, connection_id):
+    """Get a database connection by ID"""
+    return db.query(DatabaseConnection).filter(DatabaseConnection.id == connection_id).first()
+
+def save_db_connection(db, connection_data):
+    """Save a new database connection"""
+    connection = DatabaseConnection(
+        id=connection_data.get("id", str(uuid.uuid4())),
+        name=connection_data.get("name"),
+        type=connection_data.get("type"),
+        config=json.dumps(connection_data.get("config")),
+        username=connection_data.get("username")
+    )
+    db.add(connection)
+    db.commit()
+    return connection
+
+def update_db_connection(db, connection_id, connection_data):
+    """Update an existing database connection"""
+    connection = get_db_connection(db, connection_id)
+    if not connection:
+        return None
+    
+    if "name" in connection_data:
+        connection.name = connection_data["name"]
+    if "type" in connection_data:
+        connection.type = connection_data["type"]
+    if "config" in connection_data:
+        connection.config = json.dumps(connection_data["config"])
+    
+    db.commit()
+    return connection
+
+def delete_db_connection(db, connection_id):
+    """Delete a database connection"""
+    connection = get_db_connection(db, connection_id)
+    if not connection:
+        return False
+    
+    db.delete(connection)
+    db.commit()
+    return True
 
 # API Routes
 @router.post("/upload", status_code=status.HTTP_200_OK)
@@ -1229,7 +1581,7 @@ async def get_file_schema(
 @router.post("/test-connection", status_code=status.HTTP_200_OK)
 async def test_database_connection(
     connection_info: dict,
-    current_user: User = Depends(has_permission("database:connect")),
+    current_user: User = Depends(has_permission("datapuur:write")),  # Updated permission
     db: Session = Depends(get_db)
 ):
     """Test a database connection"""
@@ -1273,7 +1625,7 @@ async def test_database_connection(
 @router.post("/db-schema", status_code=status.HTTP_200_OK)
 async def get_database_schema(
     connection_info: dict,
-    current_user: User = Depends(has_permission("database:read")),
+    current_user: User = Depends(has_permission("datapuur:read")),  # Updated permission
     db: Session = Depends(get_db)
 ):
     """Get schema from a database table"""

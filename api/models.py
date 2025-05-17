@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, Index
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, Index, JSON
 from sqlalchemy.orm import relationship
 import os
 from datetime import datetime
@@ -166,6 +166,18 @@ class GraphIngestionJob(Base):
     # Relationship to Schema
     schema = relationship("Schema", backref="graph_jobs")
 
+
+class DatabaseConnection(Base):
+    """Database connection model for storing connection configurations"""
+    __tablename__ = "database_connections"
+    
+    id = Column(String, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    type = Column(String, nullable=False)  # mysql, postgresql, mssql
+    config = Column(Text, nullable=False)  # Store connection details as JSON string
+    username = Column(String, index=True, nullable=False)  # User who created this connection
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 # Create tables
 Base.metadata.create_all(bind=engine)

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Database, Play, Save, Trash, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -54,6 +54,11 @@ export function DatabaseConnection({
   }>>([])
   const [error, setError] = useState("")
   const [connectionName, setConnectionName] = useState("")
+  
+  // Load saved connections on component mount
+  useEffect(() => {
+    fetchSavedConnections()
+  }, [])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
@@ -206,6 +211,9 @@ export function DatabaseConnection({
     setProcessingStatus("Starting database ingestion...")
 
     try {
+      // Log attempt with details for debugging
+      console.log(`Attempting to ingest data from ${connectionType} database: ${connectionConfig.host}:${connectionConfig.port}/${connectionConfig.database}.${connectionConfig.table}`)
+
       const apiBaseUrl = getApiBaseUrl()
       const response = await fetch(`${apiBaseUrl}/api/datapuur/ingest-db`, {
         method: "POST",
@@ -223,7 +231,18 @@ export function DatabaseConnection({
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.detail || "Failed to start database ingestion")
+        let errorMessage = errorData.detail || "Failed to start database ingestion"
+        
+        // Provide more specific error messages based on common database errors
+        if (errorMessage.includes("access denied") || errorMessage.includes("permission")) {
+          errorMessage = `Database access denied. Please check your credentials and ensure your user has SELECT permissions on table ${connectionConfig.table}.`
+        } else if (errorMessage.includes("table") && errorMessage.includes("not found")) {
+          errorMessage = `Table '${connectionConfig.table}' not found in database '${connectionConfig.database}'. Please verify the table name.`
+        } else if (errorMessage.includes("connection refused") || errorMessage.includes("could not connect")) {
+          errorMessage = `Could not connect to ${connectionType} server at ${connectionConfig.host}:${connectionConfig.port}. Please check that the server is running and accessible.`
+        }
+        
+        throw new Error(errorMessage)
       }
 
       const data = await response.json()
@@ -232,13 +251,13 @@ export function DatabaseConnection({
       // Create a job object for the UI
       const job: Job = {
         id: data.job_id,
-        name: `Database: ${connectionConfig.database}`,
+        name: `${connectionType.toUpperCase()}: ${connectionConfig.database}.${connectionConfig.table}`,
         type: "database",
         status: "queued",
         progress: 0,
         startTime: new Date().toISOString(),
         endTime: null,
-        details: `Ingesting from ${connectionType} database: ${connectionConfig.host}:${connectionConfig.port}/${connectionConfig.database}`,
+        details: `Ingesting from ${connectionType} database: ${connectionConfig.host}:${connectionConfig.port}/${connectionConfig.database}.${connectionConfig.table}`,
       }
       
       // Add the job to the UI
@@ -247,22 +266,47 @@ export function DatabaseConnection({
       // Also add to global context
       addJob(job)
       
-      onStatusChange(`Database ingestion job started with ID: ${data.job_id}`)
-      setProcessingStatus(`Database ingestion job started with ID: ${data.job_id}`)
+      onStatusChange(`Database ingestion started. Data will be extracted from ${connectionConfig.table} and stored in parquet format.`)
+      setProcessingStatus(`Job ID: ${data.job_id} - Processing started, you can view progress in the History tab.`)
     } catch (error: any) {
       console.error("Error starting ingestion:", error)
       setError(error.message || "Failed to start database ingestion")
-      onStatusChange("")
+      onStatusChange("Database ingestion failed")
+      
       if (onError) onError({ message: error.message || "Failed to start database ingestion" })
       
-      // Also add to global error context
-      addError(`Error starting ingestion from ${connectionType} database at ${connectionConfig.host}:${connectionConfig.port}: ${error.message || "Failed to start database ingestion"}`)
+      // Add to global error context with more detailed information
+      addError(`Error ingesting from ${connectionType} database at ${connectionConfig.host}:${connectionConfig.port}/${connectionConfig.database}.${connectionConfig.table}: ${error.message}`)
     } finally {
       setIsProcessing(false)
     }
   }
 
-  const saveConnection = () => {
+  const fetchSavedConnections = async () => {
+    try {
+      const apiBaseUrl = getApiBaseUrl()
+      const response = await fetch(`${apiBaseUrl}/api/datapuur/db-connections`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error("Error fetching saved connections:", errorData)
+        return
+      }
+
+      const connections = await response.json()
+      setSavedConnections(connections)
+    } catch (error) {
+      console.error("Error fetching saved connections:", error)
+    }
+  }
+
+  const saveConnection = async () => {
     if (!connectionName) {
       setError("Please provide a name for this connection")
       return
@@ -274,19 +318,43 @@ export function DatabaseConnection({
       return
     }
 
-    const newConnection = {
-      id: Date.now().toString(),
-      name: connectionName,
-      type: connectionType,
-      config: { ...connectionConfig, password: "********" }, // Mask password for UI
+    setIsProcessing(true)
+  
+    try {
+      const apiBaseUrl = getApiBaseUrl()
+      const response = await fetch(`${apiBaseUrl}/api/datapuur/db-connections`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: JSON.stringify({
+          name: connectionName,
+          type: connectionType,
+          config: connectionConfig, // Backend will store actual password securely
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.detail || "Failed to save connection")
+      }
+
+      // Refresh the connections list
+      fetchSavedConnections()
+    
+      setConnectionName("")
+      onStatusChange(`Connection "${connectionName}" saved successfully!`)
+    
+      // Clear status after 3 seconds
+      setTimeout(() => onStatusChange(""), 3000)
+    } catch (error: any) {
+      console.error("Error saving connection:", error)
+      setError(error.message || "Failed to save connection")
+      addError(`Error saving database connection: ${error.message || "Unknown error"}`)
+    } finally {
+      setIsProcessing(false)
     }
-
-    setSavedConnections([...savedConnections, newConnection])
-    setConnectionName("")
-    onStatusChange(`Connection "${connectionName}" saved successfully!`)
-
-    // Clear status after 3 seconds
-    setTimeout(() => onStatusChange(""), 3000)
   }
 
   const loadConnection = (connection: {
@@ -307,10 +375,40 @@ export function DatabaseConnection({
       ...connection.config,
       password: "", // Clear password for security
     })
+    setConnectionName(connection.name) // Set the connection name for reference
+    onStatusChange(`Loaded connection "${connection.name}"`)
   }
 
-  const deleteConnection = (id: string) => {
-    setSavedConnections(savedConnections.filter((conn) => conn.id !== id))
+  const deleteConnection = async (id: string) => {
+    setIsProcessing(true)
+    
+    try {
+      const apiBaseUrl = getApiBaseUrl()
+      const response = await fetch(`${apiBaseUrl}/api/datapuur/db-connections/${id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.detail || "Failed to delete connection")
+      }
+
+      // Refresh the connections list
+      fetchSavedConnections()
+      onStatusChange("Connection deleted successfully")
+      
+      // Clear status after 3 seconds
+      setTimeout(() => onStatusChange(""), 3000)
+    } catch (error: any) {
+      console.error("Error deleting connection:", error)
+      setError(error.message || "Failed to delete connection")
+      addError(`Error deleting database connection: ${error.message || "Unknown error"}`)
+    } finally {
+      setIsProcessing(false)
+    }
   }
 
   return (
