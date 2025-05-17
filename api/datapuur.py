@@ -3662,14 +3662,16 @@ async def preview_file_direct(
                 # If it's an array (starts with '['), use ijson for streaming parse
                 if first_char == '[':
                     try:
-                        # Use ijson to stream parse the JSON array
-                        parser = ijson.items(f, 'item')
-                        
-                        # Get the first few items for preview
-                        for i, item in enumerate(parser):
-                            if i >= max_records:
-                                break
-                            preview_records.append(item)
+                        # Reopen the file for streaming parse
+                        with open(temp_path, 'r', encoding='utf-8', errors='replace') as f:
+                            # Use ijson to stream parse the JSON array
+                            parser = ijson.items(f, 'item')
+                            
+                            # Get the first few items for preview
+                            for i, item in enumerate(parser):
+                                if i >= max_records:
+                                    break
+                                preview_records.append(item)
                     except Exception as e:
                         logger.error(f"Error streaming JSON file: {str(e)}")
                         raise HTTPException(
