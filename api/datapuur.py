@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional, Union
 from fastapi.responses import FileResponse
 import random
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 import json
 import csv
 import os
@@ -18,8 +18,6 @@ import asyncio
 import threading
 import time
 import logging
-import traceback
-import logging
 import pandas as pd
 import numpy as np
 from pydantic import BaseModel, Field
@@ -32,85 +30,6 @@ from .models import get_db, SessionLocal
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Create a structured error response
-def create_error_response(error_code, message, details=None, suggestion=None):
-    """
-    Create a structured error response for improved error handling.
-    
-    Args:
-        error_code: Machine-readable error code
-        message: Human-readable short message
-        details: Detailed explanation of the error
-        suggestion: Actionable suggestion for users
-        
-    Returns:
-        Dictionary with structured error information
-    """
-    return {
-        "error": {
-            "code": error_code,
-            "message": message,
-            "details": details,
-            "suggestion": suggestion,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
-    }
-
-# Validate file before processing
-def validate_file_before_processing(file_path, file_type):
-    """
-    Validate file before processing to provide early feedback.
-    
-    Args:
-        file_path: Path to the file to validate
-        file_type: Type of the file (csv, json, etc.)
-        
-    Returns:
-        List of validation errors, empty if the file is valid
-    """
-    errors = []
-    
-    if file_type == "csv":
-        try:
-            # Read just a few rows to validate structure
-            with open(file_path, 'r', encoding='utf-8') as f:
-                header = f.readline().strip()
-                if not header:
-                    errors.append("CSV file appears to be empty")
-                elif header.count(',') == 0:
-                    errors.append("CSV file doesn't contain any commas, might not be properly formatted")
-                
-                # Try to read a few more lines to validate data
-                sample_rows = [f.readline() for _ in range(5) if f.readline()]
-                if not sample_rows and header:
-                    errors.append("CSV file only contains a header row with no data")
-        except UnicodeDecodeError:
-            errors.append("File encoding not recognized. Please use UTF-8 encoding.")
-        except Exception as e:
-            errors.append(f"File validation error: {str(e)}")
-    
-    elif file_type == "json":
-        try:
-            # Check if the file is a valid JSON
-            with open(file_path, 'r', encoding='utf-8') as f:
-                try:
-                    data = json.load(f)
-                    
-                    # Validate JSON structure for data ingestion
-                    if not isinstance(data, list):
-                        errors.append("JSON file must contain an array of objects")
-                    elif len(data) == 0:
-                        errors.append("JSON file contains an empty array")
-                    elif any(not isinstance(item, dict) for item in data[:10]):
-                        errors.append("JSON file must contain an array of objects (dictionaries)")
-                    
-                except json.JSONDecodeError as e:
-                    errors.append(f"Invalid JSON structure: {str(e)}")
-        except Exception as e:
-            errors.append(f"File validation error: {str(e)}")
-    
-    return errors
 
 # Router
 router = APIRouter(prefix="/api/datapuur", tags=["datapuur"])
@@ -153,7 +72,7 @@ def save_uploaded_file(db, file_id, file_data):
             path=file_data['path'],
             type=file_data['type'],
             uploaded_by=file_data['uploaded_by'],
-            uploaded_at=datetime.now(timezone.utc),
+            uploaded_at=datetime.now(),
             chunk_size=file_data.get('chunk_size', 1000),
             schema=schema_json
         )
@@ -607,38 +526,10 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
         # Get file info
         file_info = get_uploaded_file(db_session, file_id)
         if not file_info:
-            error_data = create_error_response(
-                error_code="FILE_NOT_FOUND",
-                message="File not found",
-                details=f"File with ID {file_id} not found in the database",
-                suggestion="Check that the file was properly uploaded before ingestion"
-            )
-            logger.error(f"File with ID {file_id} not found")
-            job.status = "failed"
-            job.error = json.dumps(error_data)
-            job.end_time = datetime.now(timezone.utc)
-            db_session.commit()
-            return error_data
+            raise ValueError(f"File with ID {file_id} not found")
         
         file_path = file_info.path
         file_type = file_info.type
-        
-        # Validate file before processing
-        validation_errors = validate_file_before_processing(file_path, file_type)
-        if validation_errors:
-            error_details = "\n- " + "\n- ".join(validation_errors)
-            error_data = create_error_response(
-                error_code="FILE_VALIDATION_ERROR",
-                message="File validation failed",
-                details=f"The file failed validation checks: {error_details}",
-                suggestion="Please correct the file format and try again"
-            )
-            logger.error(f"File validation failed for {file_path}: {error_details}")
-            job.status = "failed"
-            job.error = json.dumps(error_data)
-            job.end_time = datetime.now(timezone.utc)
-            db_session.commit()
-            return error_data
         
         # Create output file path
         output_file = DATA_DIR / f"{job_id}.parquet"
@@ -1124,106 +1015,18 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
         
         logger.info(f"File ingestion completed for job {job_id}")
     
-    except pd.errors.ParserError as e:
-        # Handle CSV parsing errors
-        logger.error(f"CSV parsing error in job {job_id}: {str(e)}\nTraceback: {traceback.format_exc()}")
-        error_data = create_error_response(
-            error_code="CSV_PARSE_ERROR",
-            message="CSV parsing error",
-            details=f"Could not parse the CSV file: {str(e)}",
-            suggestion="Check that your CSV file is properly formatted with consistent delimiters and valid data."
-        )
-        try:
-            job = get_ingestion_job(db_session, job_id)
-            job.status = "failed"
-            job.error = json.dumps(error_data)
-            job.end_time = datetime.now(timezone.utc)
-            db_session.commit()
-        except Exception as commit_error:
-            logger.error(f"Failed to update job status: {str(commit_error)}")
-    
-    except json.JSONDecodeError as e:
-        # Handle JSON parsing errors
-        logger.error(f"JSON parsing error in job {job_id}: {str(e)}\nTraceback: {traceback.format_exc()}")
-        error_data = create_error_response(
-            error_code="JSON_PARSE_ERROR",
-            message="JSON parsing error",
-            details=f"Could not parse the JSON file: {str(e)}",
-            suggestion="Check that your JSON file contains valid JSON data in the expected format."
-        )
-        try:
-            job = get_ingestion_job(db_session, job_id)
-            job.status = "failed"
-            job.error = json.dumps(error_data)
-            job.end_time = datetime.now(timezone.utc)
-            db_session.commit()
-        except Exception as commit_error:
-            logger.error(f"Failed to update job status: {str(commit_error)}")
-    
-    except MemoryError as e:
-        # Handle memory limitation errors
-        logger.error(f"Memory error in job {job_id}: {str(e)}\nTraceback: {traceback.format_exc()}")
-        error_data = create_error_response(
-            error_code="MEMORY_ERROR",
-            message="Memory limit exceeded",
-            details="The system ran out of memory while processing this file.",
-            suggestion="Try reducing the chunk size or splitting the file into smaller parts."
-        )
-        try:
-            job = get_ingestion_job(db_session, job_id)
-            job.status = "failed"
-            job.error = json.dumps(error_data)
-            job.end_time = datetime.now(timezone.utc)
-            db_session.commit()
-        except Exception as commit_error:
-            logger.error(f"Failed to update job status: {str(commit_error)}")
-    
     except Exception as e:
-        # Handle other general errors with more context
-        error_msg = str(e)
-        logger.error(f"Error processing file ingestion for job {job_id}: {error_msg}\nTraceback: {traceback.format_exc()}")
-        
-        # Categorize common errors by message patterns
-        if "duplicate key" in error_msg.lower():
-            error_data = create_error_response(
-                error_code="DUPLICATE_KEY_ERROR",
-                message="Duplicate data error",
-                details=f"The data contains duplicate keys: {error_msg}",
-                suggestion="Ensure your data has unique identifiers for each row."
-            )
-        elif any(phrase in error_msg.lower() for phrase in ["type conversion", "cannot convert", "invalid literal"]):
-            error_data = create_error_response(
-                error_code="DATA_TYPE_ERROR",
-                message="Data type conversion error",
-                details=f"Could not convert data to appropriate types: {error_msg}",
-                suggestion="Check that your data values match the expected column types."
-            )
-        elif any(phrase in error_msg.lower() for phrase in ["file not found", "no such file", "does not exist"]):
-            error_data = create_error_response(
-                error_code="FILE_ACCESS_ERROR",
-                message="File not accessible",
-                details=f"Could not access the file: {error_msg}",
-                suggestion="Verify that the file exists and is accessible to the application."
-            )
-        else:
-            # Generic fallback with as much detail as possible
-            error_data = create_error_response(
-                error_code="PROCESSING_ERROR",
-                message="Data processing error",
-                details=f"Error details: {error_msg}",
-                suggestion="Check the logs for more information or contact support."
-            )
+        logger.error(f"Error processing file ingestion: {str(e)}")
         
         # Update job status to failed
         try:
             job = get_ingestion_job(db_session, job_id)
             job.status = "failed"
-            job.error = json.dumps(error_data)
-            job.end_time = datetime.now(timezone.utc)
+            job.error = str(e)
+            job.end_time = datetime.now()
             db_session.commit()
-        except Exception as commit_error:
-            logger.error(f"Failed to update job status: {str(commit_error)}")
-
+        except:
+            pass
     
     finally:
         # Close the database session
@@ -1597,17 +1400,9 @@ async def ingest_file(
         
         return {"job_id": job_id, "message": "File ingestion started"}
     except Exception as e:
-        # Create a structured error response with more context
-        error_resp = create_error_response(
-            error_code="INGESTION_INIT_ERROR",
-            message="Error starting ingestion process",
-            details=str(e),
-            suggestion="Check that the file exists and is accessible"
-        )
-        logger.error(f"Error starting ingestion: {str(e)}\nTraceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=error_resp
+            detail=f"Error starting ingestion: {str(e)}"
         )
 
 @router.post("/ingest-db", status_code=status.HTTP_200_OK)
@@ -1867,7 +1662,7 @@ async def get_ingestion_history(
                 "filename": job.name,
                 "type": "database" if job.type == "database" else file_info.type if file_info else "unknown",
                 "size": os.path.getsize(file_info.path) if file_info and os.path.exists(file_info.path) else 0,
-                "uploaded_at": job.start_time.astimezone(timezone.utc).isoformat() if isinstance(job.start_time, datetime) else job.start_time,
+                "uploaded_at": job.start_time.strftime("%Y-%m-%d %H:%M:%S") if isinstance(job.start_time, datetime) else job.start_time,
                 "uploaded_by": current_user.username,
                 "preview_url": f"/api/datapuur/ingestion-preview/{job.id}",
                 "download_url": f"/api/datapuur/ingestion-download/{job.id}",
@@ -2542,7 +2337,7 @@ async def get_source_details(
                 "path": file_info.path,
                 "type": file_info.type,
                 "uploaded_by": file_info.uploaded_by,
-                "uploaded_at": file_info.uploaded_at.astimezone(timezone.utc).isoformat() if isinstance(file_info.uploaded_at, datetime) else file_info.uploaded_at,
+                "uploaded_at": file_info.uploaded_at.isoformat() if isinstance(file_info.uploaded_at, datetime) else file_info.uploaded_at,
                 "chunk_size": file_info.chunk_size,
                 "schema": file_info.schema
             }
@@ -2743,7 +2538,7 @@ async def get_file_history(
                 "filename": file.filename,
                 "type": file.type,
                 "size": os.path.getsize(file.path) if os.path.exists(file.path) else 0,
-                "uploaded_at": file.uploaded_at.astimezone(timezone.utc).isoformat() if isinstance(file.uploaded_at, datetime) else file.uploaded_at,
+                "uploaded_at": file.uploaded_at,
                 "uploaded_by": file.uploaded_by,
                 "preview_url": f"/api/datapuur/preview/{file.id}",
                 "download_url": f"/api/datapuur/download/{file.id}",
@@ -3224,7 +3019,7 @@ async def complete_chunked_upload(
                 "path": str(file_path),
                 "type": file_ext,
                 "uploaded_by": current_user.username,
-                "uploaded_at": datetime.now(timezone.utc),
+                "uploaded_at": datetime.now(),
                 "chunk_size": original_chunk_size
             }
             

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional, Union
 from fastapi.responses import FileResponse, JSONResponse
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 import json
 import os
 import shutil
@@ -541,7 +541,7 @@ async def create_db_connection(
     connection_id = str(uuid.uuid4())
     
     # Create a name for the connection if not provided
-    connection_name = f"{connection.type.value} - {connection.database} ({datetime.now(timezone.utc).strftime('%Y-%m-%d')})"
+    connection_name = f"{connection.type.value} - {connection.database} ({datetime.now().strftime('%Y-%m-%d')})"
     
     # Create a connection config to save
     connection_info = connection.dict()
@@ -552,7 +552,7 @@ async def create_db_connection(
         "path": None,  # No physical file
         "type": "database",
         "uploaded_by": current_user.username,
-        "uploaded_at": datetime.now(timezone.utc),
+        "uploaded_at": datetime.now(),
         "connection_info": connection_info
     }
     
@@ -572,7 +572,7 @@ async def create_db_connection(
         name=connection_name,
         type=SourceType.DATABASE,
         status=SourceStatus.AVAILABLE,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(),
         created_by=current_user.username,
         path=None,
         connection_info=connection_info,
