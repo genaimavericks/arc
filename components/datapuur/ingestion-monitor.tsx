@@ -423,8 +423,6 @@ export function IngestionMonitor({ jobs: propJobs, onJobUpdated, errors: propErr
                   <div className="flex items-center space-x-2">{getStatusBadge(job.status)}</div>
                 </div>
                 <div className="mt-2 text-xs text-muted-foreground flex justify-between">
-                  <span>Completed {formatTime(job.endTime || '')}</span>
-                  <span>Duration: {job.duration || "N/A"}</span>
                 </div>
               </div>
             ))

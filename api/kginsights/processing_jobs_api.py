@@ -13,6 +13,39 @@ import traceback
 from ..models import get_db, GraphIngestionJob, Schema, User
 from ..auth import has_any_permission
 from .graphschemaapi import load_data_from_schema as graphschema_load_data
+from .neo4j_config import get_neo4j_connection_params
+from ..db_config import SessionLocal
+
+
+async def generate_prompts_async(schema_id: int):
+    """
+    Asynchronous function to generate prompt templates and sample queries.
+    This runs in a background task to avoid blocking API calls.
+    
+    Args:
+        schema_id: ID of the schema to generate prompts for
+    """
+    # Create a new database session specifically for this background task
+    task_db = SessionLocal()
+    try:
+        print(f"Starting async prompt generation for schema_id={schema_id}")
+        schema_db = task_db.query(Schema).filter(Schema.id == schema_id).first()
+        
+        if schema_db and schema_db.schema and schema_db.db_id:
+            from api.kgdatainsights.data_insights_api import get_schema_aware_assistant
+            assistant = get_schema_aware_assistant(schema_db.db_id, schema_id, schema_db.schema)
+            assistant._ensure_prompt()
+            print(f"Prompt templates and queries generated for schema_id={schema_id}")
+        else:
+            print(f"Could not generate prompts: Schema record not found or incomplete for schema_id={schema_id}")
+    except Exception as e:
+        print(f"Error generating prompts after data load for schema_id={schema_id}: {e}")
+        print(traceback.format_exc())
+    finally:
+        # Always close the database session when done
+        task_db.close()
+        print(f"Completed async prompt generation task for schema_id={schema_id}")
+
 from ..db_config import engine
 from sqlalchemy.orm import sessionmaker
 
@@ -149,47 +182,78 @@ async def process_load_data_job(job_id: str, schema_id: int, graph_name: str, dr
                 graph_name=graph_name,
                 drop_existing=drop_existing,
                 db=task_db,  # Pass the new session
-                current_user=None  # We're in a background task, no user context
+                current_user=None,  # We're in a background task, no user context
+                job_id=job_id  # Pass the job_id to track the specific job
             )
             
-            # Update job with success
-            job = task_db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first()
-            if job and job.status != "cancelled":  # Only update if job wasn't cancelled
+            print(f"Data loading result: {result}")
+            # Get a fresh instance of the job from the database instead of refreshing
+            # This prevents the 'not persistent within this Session' error
+            job = db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first()
+            if not job:
+                print(f"Error: Job with ID {job_id} not found after data loading")
+                return
+            
+            # Only update the job if it's still in running status
+            # This prevents overwriting updates made by the DataLoader
+            if job.status == "running":
+                print(f"Job {job_id} still in running status, updating to completed")
+                # Update job with success
                 job.status = "completed"
                 job.completed_at = datetime.now()
                 job.progress = 100
                 job.message = f"Successfully loaded data for schema ID {schema_id} to graph {graph_name}"
                 
                 # Store node and relationship counts from the result
-                if "result" in result and result["result"]:
-                    result_data = result["result"]
-                    if "node_count" in result_data:
-                        job.node_count = result_data["node_count"]
-                    if "relationship_count" in result_data:
-                        job.relationship_count = result_data["relationship_count"]
+                if result and isinstance(result, dict):
+                    # Extract the actual result data - handle nested structure
+                    result_data = result.get("result", result)
+                    
+                    # Store counts
+                    job.node_count = result_data.get("nodes_created", 0)
+                    job.relationship_count = result_data.get("relationships_created", 0)
+                    
+                    # Store detailed counts as JSON in the result field
+                    job_result = {}
+                    if "node_counts" in result_data:
+                        job_result["node_counts"] = result_data["node_counts"]
+                    if "relationship_counts" in result_data:
+                        job_result["relationship_counts"] = result_data["relationship_counts"]
                         
-                    # Store the full result as JSON
-                    job.result = json.dumps(result_data)
+                    if job_result:
+                        job.result = json.dumps(job_result)
                 
-                task_db.commit()
-                print(f"Job {job_id} completed successfully")
-            else:
-                print(f"Job {job_id} was cancelled or not found, not updating to completed")
+                # Update schema record to indicate data has been loaded
+                schema_db = db.query(Schema).filter(Schema.id == schema_id).first()
+                if schema_db:
+                    schema_db.db_loaded = "yes"
+                    print(f"Updated schema record {schema_id} with db_loaded=yes")
                 
-        except Exception as e:
-            # Update job with failure
-            job = task_db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first()
-            if job and job.status != "cancelled":  # Only update if job wasn't cancelled
-                job.status = "failed"
-                job.completed_at = datetime.now()
-                job.progress = 0
-                job.message = f"Failed to load data: {str(e)}"
-                job.error = str(e)
-                task_db.commit()
-                print(f"Job {job_id} failed: {str(e)}")
-                print(traceback.format_exc())
+                db.commit()
             else:
-                print(f"Job {job_id} was cancelled or not found, not updating to failed")
+                print(f"Job {job_id} already in {job.status} status, not updating")
+                # Still commit any schema updates if needed
+                schema_db = db.query(Schema).filter(Schema.id == schema_id).first()
+                if schema_db and schema_db.db_loaded != "yes":
+                    schema_db.db_loaded = "yes"
+                    print(f"Updated schema record {schema_id} with db_loaded=yes")
+                    db.commit()
+            
+            # Start prompt template generation as a background task
+            background_tasks = BackgroundTasks()
+            background_tasks.add_task(
+                generate_prompts_async,
+                schema_id=schema_id
+            )
+            # Run the background task
+            asyncio.create_task(background_tasks())
+            print(f"Started async prompt template generation for schema_id={schema_id}")
+            
+        
+        finally:
+            # Make sure to close the new session
+            task_db.close()
+        
     except Exception as e:
         print(f"Error in process_load_data_job: {str(e)}")
         print(traceback.format_exc())
@@ -224,53 +288,53 @@ async def process_clean_data_job(job_id: str, schema_id: int, graph_name: str, d
             schema = task_db.query(Schema).filter(Schema.id == schema_id).first()
             if not schema:
                 raise ValueError(f"Schema with ID {schema_id} not found")
-                
-            # Get database connection info
-            from .database_api import get_database_config, parse_connection_params
-            db_config = get_database_config()
-            uri, username, password = parse_connection_params(db_config)
             
-            # Parse schema data
-            schema_data = json.loads(schema.schema)
-            
-            # Connect to Neo4j
+            # Get Neo4j connection details from centralized configuration
             from neo4j import GraphDatabase
-            driver = GraphDatabase.driver(uri, auth=(username, password))
             
-            # Update job progress
-            job = task_db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first()
-            if job and job.status == "cancelled":
-                driver.close()
-                return
+            # Get connection parameters directly from the centralized configuration
+            connection_params = get_neo4j_connection_params("default_graph")
+            
+            # Connect to Neo4j using the connection parameters
+            driver = GraphDatabase.driver(
+                connection_params.get("uri", ""),
+                auth=(connection_params.get("username", ""), connection_params.get("password", ""))
+            )
+            
+            # Clean data
+            with driver.session(database=connection_params.get("database", "neo4j")) as session:
+                # Parse schema to get node labels
+                schema_json = json.loads(schema.schema)
+                node_labels = [node["label"] for node in schema_json.get("nodes", [])]
                 
-            job.progress = 10
-            job.message = "Connected to Neo4j, preparing to clean data"
-            task_db.commit()
-            
-            # Get node and relationship counts before cleaning
-            with driver.session() as session:
-                # Count total nodes
-                result = session.run("MATCH (n) RETURN count(n) as count")
-                total_nodes_before = result.single()["count"]
+                # Update job progress
+                job.progress = 20
+                job.message = f"Identified {len(node_labels)} node types to clean"
+                task_db.commit()
+                print(f"DEBUG: Starting clean job for {len(node_labels)} node types")
                 
-                # Count total relationships
-                result = session.run("MATCH ()-[r]->() RETURN count(r) as count")
-                total_relationships_before = result.single()["count"]
-            
-            # Update job progress
-            job = task_db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first()
-            if job and job.status == "cancelled":
-                driver.close()
-                return
+                total_deleted = 0
+                for i, label in enumerate(node_labels):
+                    # Update progress for each node type
+                    progress_percent = 20 + int((i / max(1, len(node_labels))) * 70)
+                    job.progress = progress_percent
+                    job.message = f"Cleaning nodes with label '{label}'"
+                    task_db.commit()
+                    print(f"DEBUG: Cleaning nodes with label '{label}', progress: {progress_percent}%")
+                    
+                    try:
+                        # Execute the deletion query
+                        result = session.run(f"MATCH (n:{label}) DETACH DELETE n")
+                        summary = result.consume()
+                        nodes_deleted = summary.counters.nodes_deleted
+                        total_deleted += nodes_deleted
+                        print(f"DEBUG: Deleted {nodes_deleted} nodes with label '{label}'")
+                    except Exception as e:
+                        print(f"ERROR deleting nodes with label '{label}': {str(e)}")
+                        # Continue with other labels even if one fails
                 
-            job.progress = 20
-            job.message = f"Found {total_nodes_before} nodes and {total_relationships_before} relationships to clean"
-            task_db.commit()
-            
-            # Clean data by deleting all nodes and relationships for this schema
-            with driver.session() as session:
-                # Delete all relationships first
-                session.run("MATCH ()-[r]->() DELETE r")
+                # Update job status to completed
+                print(f"DEBUG: Clean job completed, total deleted: {total_deleted} nodes")
                 
                 # Update job progress
                 job = task_db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first()
@@ -304,24 +368,19 @@ async def process_clean_data_job(job_id: str, schema_id: int, graph_name: str, d
                 job.result = json.dumps(result_data)
                 
                 task_db.commit()
-                print(f"Job {job_id} completed successfully")
-            else:
-                print(f"Job {job_id} was cancelled or not found, not updating to completed")
+                print(f"DEBUG: Job status updated to completed in task_db connection")
                 
-        except Exception as e:
-            # Update job with failure
-            job = task_db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first()
-            if job and job.status != "cancelled":  # Only update if job wasn't cancelled
-                job.status = "failed"
-                job.completed_at = datetime.now()
-                job.progress = 0
-                job.message = f"Failed to clean data: {str(e)}"
-                job.error = str(e)
-                task_db.commit()
-                print(f"Job {job_id} failed: {str(e)}")
-                print(traceback.format_exc())
-            else:
-                print(f"Job {job_id} was cancelled or not found, not updating to failed")
+                # Update schema record to indicate data has been cleaned
+                schema_db = db.query(Schema).filter(Schema.id == schema_id).first()
+                if schema_db:
+                    schema_db.db_loaded = "no"
+                    print(f"Updated schema record {schema_id} with db_loaded=no")
+            
+            driver.close()
+        finally:
+            # Make sure to close the new session
+            task_db.close()
+        
     except Exception as e:
         print(f"Error in process_clean_data_job: {str(e)}")
         print(traceback.format_exc())
@@ -340,9 +399,11 @@ async def get_jobs(
     """
     Get all KGInsights processing jobs, optionally filtered by schema ID or job type
     """
-    print(f"DEBUG: get_jobs endpoint called with schema_id={schema_id}, job_type={job_type}")
+    # Removed debug output to reduce log verbosity
+    # print(f"DEBUG: get_jobs endpoint called with schema_id={schema_id}, job_type={job_type}")
     jobs = get_all_jobs(db, schema_id, job_type)
-    print(f"DEBUG: Found {len(jobs)} jobs")
+    # Removed debug output to reduce log verbosity
+    # print(f"DEBUG: Found {len(jobs)} jobs")
     return [format_job_response(job) for job in jobs]
 
 @router.get("/{job_id}", response_model=JobStatus)

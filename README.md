@@ -74,9 +74,10 @@ Entry point to the application offering navigation to DataPuur and KGInsights co
 
 ### Prerequisites
 
-- Node.js (v18+)
-- Python (v3.10+)
-- Git
+- Node.js (v18+)  v22.14.0
+- Python (v3.10+) Python 3.11.9
+- Git (Required for local development)
+- Neo4j 2025.04.0
 
 ### Local Development Setup
 

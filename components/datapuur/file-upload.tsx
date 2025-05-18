@@ -460,7 +460,7 @@ export function FileUpload({
                   // Create a job for profile generation in the UI
                   onJobCreated({
                     id: profileData.id, // Using profile ID as job ID
-                    name: `Profile: ${file.name}`,
+                    name: `${file.name}`,
                     type: "profile",
                     status: "completed", // Since profiling is synchronous, it's already completed
                     progress: 100,
@@ -472,7 +472,7 @@ export function FileUpload({
                   // Also add to global context
                   addJob({
                     id: profileData.id, // Using profile ID as job ID
-                    name: `Profile: ${file.name}`,
+                    name: `${file.name}`,
                     type: "profile",
                     status: "completed", // Since profiling is synchronous, it's already completed
                     progress: 100,
@@ -693,7 +693,7 @@ export function FileUpload({
                   // Create a job for profile generation in the UI
                   onJobCreated({
                     id: profileData.id, // Using profile ID as job ID
-                    name: `Profile: ${file.name}`,
+                    name: `${file.name}`,
                     type: "profile",
                     status: "completed", // Since profiling is synchronous, it's already completed
                     progress: 100,
@@ -705,7 +705,7 @@ export function FileUpload({
                   // Also add to global context
                   addJob({
                     id: profileData.id, // Using profile ID as job ID
-                    name: `Profile: ${file.name}`,
+                    name: `${file.name}`,
                     type: "profile",
                     status: "completed", // Since profiling is synchronous, it's already completed
                     progress: 100,
@@ -727,10 +727,32 @@ export function FileUpload({
       } catch (error: any) {
         console.error(`Error processing file ${file.name}:`, error)
         
-        // Update error state
-        const errorMessage = error.message || "Unknown error occurred during upload"
-        setError(errorMessage)
-        onError({ message: errorMessage })
+        // Extract structured error information if available
+        let errorMessage = "Unknown error occurred during upload";
+        let errorSuggestion = "";
+        
+        // Handle structured error responses from our enhanced backend
+        if (error.response && error.response.data && error.response.data.error) {
+          const errorData = error.response.data.error;
+          errorMessage = errorData.message || "Error during file upload";
+          
+          // Include error details if available
+          if (errorData.details) {
+            errorMessage = `${errorMessage}: ${errorData.details}`;
+          }
+          
+          // Save the suggestion for display
+          if (errorData.suggestion) {
+            errorSuggestion = errorData.suggestion;
+          }
+        } else if (error.message) {
+          // Fallback to standard error message
+          errorMessage = error.message;
+        }
+        
+        // Set error state with the extracted information
+        setError(errorMessage + (errorSuggestion ? `\n\nSuggestion: ${errorSuggestion}` : ""));
+        onError({ message: errorMessage, suggestion: errorSuggestion })
         
         // Remove the temporary job if it exists
         const tempJobId = `temp-${Date.now()}-${i}`
@@ -1163,7 +1185,23 @@ export function FileUpload({
       {error && (
         <Alert variant="destructive" className="mb-4">
           <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
+          <div>
+            {/* Split the error message to handle suggestion separately */}
+            {error.split('\n\nSuggestion: ').map((part, index) => {
+              if (index === 0) {
+                // First part is the main error message
+                return <AlertDescription key="main-error">{part}</AlertDescription>;
+              } else {
+                // Second part is the suggestion (if present)
+                return (
+                  <div key="suggestion" className="mt-2 pt-2 border-t border-destructive/30">
+                    <span className="font-semibold">Suggestion: </span>
+                    <span>{part}</span>
+                  </div>
+                );
+              }
+            })}
+          </div>
         </Alert>
       )}
 

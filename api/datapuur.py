@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional, Union
 from fastapi.responses import FileResponse
 import random
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 import csv
 import os
@@ -18,11 +18,13 @@ import asyncio
 import threading
 import time
 import logging
+import traceback
+import logging
 import pandas as pd
 import numpy as np
 from pydantic import BaseModel, Field
 
-from .models import User, get_db, ActivityLog, Role, UploadedFile, IngestionJob
+from .models import User, get_db, ActivityLog, Role, UploadedFile, IngestionJob, DatabaseConnection
 from .auth import get_current_active_user, has_role, has_permission, log_activity, has_any_permission
 from .data_models import DataSource, DataMetrics, Activity, DashboardData
 from .models import get_db, SessionLocal
@@ -30,6 +32,85 @@ from .models import get_db, SessionLocal
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Create a structured error response
+def create_error_response(error_code, message, details=None, suggestion=None):
+    """
+    Create a structured error response for improved error handling.
+    
+    Args:
+        error_code: Machine-readable error code
+        message: Human-readable short message
+        details: Detailed explanation of the error
+        suggestion: Actionable suggestion for users
+        
+    Returns:
+        Dictionary with structured error information
+    """
+    return {
+        "error": {
+            "code": error_code,
+            "message": message,
+            "details": details,
+            "suggestion": suggestion,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    }
+
+# Validate file before processing
+def validate_file_before_processing(file_path, file_type):
+    """
+    Validate file before processing to provide early feedback.
+    
+    Args:
+        file_path: Path to the file to validate
+        file_type: Type of the file (csv, json, etc.)
+        
+    Returns:
+        List of validation errors, empty if the file is valid
+    """
+    errors = []
+    
+    if file_type == "csv":
+        try:
+            # Read just a few rows to validate structure
+            with open(file_path, 'r', encoding='utf-8') as f:
+                header = f.readline().strip()
+                if not header:
+                    errors.append("CSV file appears to be empty")
+                elif header.count(',') == 0:
+                    errors.append("CSV file doesn't contain any commas, might not be properly formatted")
+                
+                # Try to read a few more lines to validate data
+                sample_rows = [f.readline() for _ in range(5) if f.readline()]
+                if not sample_rows and header:
+                    errors.append("CSV file only contains a header row with no data")
+        except UnicodeDecodeError:
+            errors.append("File encoding not recognized. Please use UTF-8 encoding.")
+        except Exception as e:
+            errors.append(f"File validation error: {str(e)}")
+    
+    elif file_type == "json":
+        try:
+            # Check if the file is a valid JSON
+            with open(file_path, 'r', encoding='utf-8') as f:
+                try:
+                    data = json.load(f)
+                    
+                    # Validate JSON structure for data ingestion
+                    if not isinstance(data, list):
+                        errors.append("JSON file must contain an array of objects")
+                    elif len(data) == 0:
+                        errors.append("JSON file contains an empty array")
+                    elif any(not isinstance(item, dict) for item in data[:10]):
+                        errors.append("JSON file must contain an array of objects (dictionaries)")
+                    
+                except json.JSONDecodeError as e:
+                    errors.append(f"Invalid JSON structure: {str(e)}")
+        except Exception as e:
+            errors.append(f"File validation error: {str(e)}")
+    
+    return errors
 
 # Router
 router = APIRouter(prefix="/api/datapuur", tags=["datapuur"])
@@ -72,7 +153,7 @@ def save_uploaded_file(db, file_id, file_data):
             path=file_data['path'],
             type=file_data['type'],
             uploaded_by=file_data['uploaded_by'],
-            uploaded_at=datetime.now(),
+            uploaded_at=datetime.now(timezone.utc),
             chunk_size=file_data.get('chunk_size', 1000),
             schema=schema_json
         )
@@ -118,7 +199,6 @@ def save_ingestion_job(db, job_id, job_data):
             end_time=datetime.fromisoformat(job_data['end_time']) if job_data.get('end_time') else None,
             details=job_data.get('details'),
             error=job_data.get('error'),
-            duration=job_data.get('duration'),
             config=config_json
         )
         db.add(new_job)
@@ -182,7 +262,6 @@ class JobStatus(BaseModel):
     end_time: Optional[str] = None
     details: str
     error: Optional[str] = None
-    duration: Optional[str] = None
     config: Optional[Dict[str, Any]] = None
 
 # New models for ingestion history
@@ -458,11 +537,24 @@ def get_db_schema(db_type, config, chunk_size=1000):
         
         # Get table columns
         columns = inspector.get_columns(config["table"])
+        column_names = [col["name"] for col in columns]
         
         # Get sample data
         with engine.connect() as connection:
-            result = connection.execute(f"SELECT * FROM {config['table']} LIMIT 1").fetchone()
-            sample_data = dict(result) if result else {}
+            query = sqlalchemy.text(f"SELECT * FROM {config['table']} LIMIT 1")
+            result = connection.execute(query).fetchone()
+            
+            # Manual conversion using column names - most reliable method
+            sample_data = {}
+            if result:
+                for i, value in enumerate(result):
+                    if i < len(column_names):
+                        col_name = column_names[i]
+                        # Convert datetime objects to strings for JSON serialization
+                        if isinstance(value, (datetime, date)):
+                            sample_data[col_name] = value.isoformat()
+                        else:
+                            sample_data[col_name] = value
         
         schema = {
             "name": config["table"],
@@ -489,11 +581,14 @@ def get_db_schema(db_type, config, chunk_size=1000):
             else:
                 field_type = "string"
             
+            # Get sample value, ensuring it's JSON serializable
+            sample_value = sample_data.get(col_name) if col_name in sample_data else None
+            
             schema["fields"].append({
                 "name": col_name,
                 "type": field_type,
                 "nullable": not column.get("nullable", True),
-                "sample": sample_data.get(col_name) if col_name in sample_data else None
+                "sample": sample_value
             })
         
         return schema
@@ -512,6 +607,127 @@ def create_connection_string(db_type, config):
     else:
         raise ValueError(f"Unsupported database type: {db_type}")
 
+# Database Connection Endpoints
+
+@router.get("/db-connections", status_code=status.HTTP_200_OK)
+async def get_database_connections(
+    current_user: User = Depends(has_permission("datapuur:read")),
+    db: Session = Depends(get_db)
+):
+    """Get all saved database connections for the current user"""
+    try:
+        connections = get_db_connections(db, current_user.username)
+        
+        # Convert connections to dict and parse config JSON
+        result = []
+        for conn in connections:
+            conn_dict = {
+                "id": conn.id,
+                "name": conn.name,
+                "type": conn.type,
+                "config": json.loads(conn.config),
+                "username": conn.username,
+                "created_at": conn.created_at.isoformat() if conn.created_at else None,
+                "updated_at": conn.updated_at.isoformat() if conn.updated_at else None
+            }
+            # Mask password for security
+            if "password" in conn_dict["config"]:
+                conn_dict["config"]["password"] = "********"
+            result.append(conn_dict)
+        
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving database connections: {str(e)}"
+        )
+
+@router.post("/db-connections", status_code=status.HTTP_201_CREATED)
+async def create_database_connection(
+    connection: dict,
+    current_user: User = Depends(has_permission("datapuur:write")),
+    db: Session = Depends(get_db)
+):
+    """Save a new database connection"""
+    try:
+        # Validate required fields
+        required_fields = ["name", "type", "config"]
+        for field in required_fields:
+            if field not in connection:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Missing required field: {field}"
+                )
+        
+        # Add username to connection data
+        connection["username"] = current_user.username
+        
+        # Save connection
+        conn = save_db_connection(db, connection)
+        
+        # Log activity
+        log_activity(
+            db=db,
+            username=current_user.username,
+            action="Database connection saved",
+            details=f"Saved connection: {connection['name']} ({connection['type']})"
+        )
+        
+        return {
+            "id": conn.id,
+            "name": conn.name,
+            "message": "Database connection saved successfully"
+        }
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error saving database connection: {str(e)}"
+        )
+
+@router.delete("/db-connections/{connection_id}", status_code=status.HTTP_200_OK)
+async def delete_database_connection(
+    connection_id: str,
+    current_user: User = Depends(has_permission("datapuur:write")),
+    db: Session = Depends(get_db)
+):
+    """Delete a database connection"""
+    try:
+        # Check if connection exists and belongs to user
+        connection = get_db_connection(db, connection_id)
+        if not connection:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Database connection not found"
+            )
+        
+        if connection.username != current_user.username and current_user.role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to delete this connection"
+            )
+        
+        # Delete connection
+        delete_db_connection(db, connection_id)
+        
+        # Log activity
+        log_activity(
+            db=db,
+            username=current_user.username,
+            action="Database connection deleted",
+            details=f"Deleted connection: {connection.name} ({connection.type})"
+        )
+        
+        return {"message": "Database connection deleted successfully"}
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting database connection: {str(e)}"
+        )
+
 # Process file ingestion with database
 def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
     """Process file ingestion in a background thread with database access"""
@@ -528,10 +744,38 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
         # Get file info
         file_info = get_uploaded_file(db_session, file_id)
         if not file_info:
-            raise ValueError(f"File with ID {file_id} not found")
+            error_data = create_error_response(
+                error_code="FILE_NOT_FOUND",
+                message="File not found",
+                details=f"File with ID {file_id} not found in the database",
+                suggestion="Check that the file was properly uploaded before ingestion"
+            )
+            logger.error(f"File with ID {file_id} not found")
+            job.status = "failed"
+            job.error = json.dumps(error_data)
+            job.end_time = datetime.now(timezone.utc)
+            db_session.commit()
+            return error_data
         
         file_path = file_info.path
         file_type = file_info.type
+        
+        # Validate file before processing
+        validation_errors = validate_file_before_processing(file_path, file_type)
+        if validation_errors:
+            error_details = "\n- " + "\n- ".join(validation_errors)
+            error_data = create_error_response(
+                error_code="FILE_VALIDATION_ERROR",
+                message="File validation failed",
+                details=f"The file failed validation checks: {error_details}",
+                suggestion="Please correct the file format and try again"
+            )
+            logger.error(f"File validation failed for {file_path}: {error_details}")
+            job.status = "failed"
+            job.error = json.dumps(error_data)
+            job.end_time = datetime.now(timezone.utc)
+            db_session.commit()
+            return error_data
         
         # Create output file path
         output_file = DATA_DIR / f"{job_id}.parquet"
@@ -611,7 +855,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                                     return
                                     
                                 # Estimate progress based on batches processed
-                                progress = min(int((batch_number * 10 * 1024 * 1024 / file_size) * 100), 99)
+                                progress = int((batch_number * 10 * 1024 * 1024 / file_size) * 100)
                                 job.progress = progress
                                 job.details = f"Processing batch {batch_number} ({progress}% complete)"
                                 db_session.commit()
@@ -625,7 +869,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                             raise ValueError("No data was read from the CSV file")
                         
                         # Final update
-                        job.progress = 99
+                        job.progress = 100
                         job.details = f"Finalizing file processing..."
                         db_session.commit()
                         
@@ -677,7 +921,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                     processed_rows += len(first_chunk)
                     
                     # Update progress
-                    job.progress = min(int((processed_rows / total_rows) * 100), 99)
+                    job.progress = int((processed_rows / total_rows) * 100)
                     db_session.commit()
                     
                     # Process remaining chunks more efficiently
@@ -720,7 +964,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                         processed_rows += len(chunk)
                         
                         # Update progress
-                        job.progress = min(int((processed_rows / total_rows) * 100), 99)
+                        job.progress = int((processed_rows / total_rows) * 100)
                         job.details = f"Processed {processed_rows} of {total_rows} rows ({job.progress}%)"
                         db_session.commit()
                         
@@ -839,7 +1083,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                                         pq.write_table(combined_table, output_file, compression='snappy')
                                     
                                     # Update progress
-                                    progress = min(int((processed_items / total_items_estimate) * 100), 99)
+                                    progress = int((processed_items / total_items_estimate) * 100)
                                     job.progress = progress
                                     job.details = f"Processed {processed_items} items ({progress}% estimated)"
                                     db_session.commit()
@@ -906,7 +1150,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                         logger.info(f"Job {job_id} was cancelled before finalizing JSON processing, stopping")
                         return
                         
-                    job.progress = 99
+                    job.progress = 100
                     job.details = f"Finalizing JSON processing..."
                     db_session.commit()
                 else:
@@ -996,7 +1240,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                     df.to_parquet(output_file, index=False, compression='snappy')
                     
                     # Update progress in a single step without sleep
-                    job.progress = 99
+                    job.progress = 100
                     job.details = "JSON processing completed"
                     db_session.commit()
             except Exception as e:
@@ -1013,28 +1257,110 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
         job.progress = 100
         job.end_time = datetime.now()
         
-        # Calculate duration
-        start_time = job.start_time
-        end_time = job.end_time
-        duration = end_time - start_time
-        job.duration = str(duration)
-        
         db_session.commit()
         
         logger.info(f"File ingestion completed for job {job_id}")
     
+    except pd.errors.ParserError as e:
+        # Handle CSV parsing errors
+        logger.error(f"CSV parsing error in job {job_id}: {str(e)}\nTraceback: {traceback.format_exc()}")
+        error_data = create_error_response(
+            error_code="CSV_PARSE_ERROR",
+            message="CSV parsing error",
+            details=f"Could not parse the CSV file: {str(e)}",
+            suggestion="Check that your CSV file is properly formatted with consistent delimiters and valid data."
+        )
+        try:
+            job = get_ingestion_job(db_session, job_id)
+            job.status = "failed"
+            job.error = json.dumps(error_data)
+            job.end_time = datetime.now(timezone.utc)
+            db_session.commit()
+        except Exception as commit_error:
+            logger.error(f"Failed to update job status: {str(commit_error)}")
+    
+    except json.JSONDecodeError as e:
+        # Handle JSON parsing errors
+        logger.error(f"JSON parsing error in job {job_id}: {str(e)}\nTraceback: {traceback.format_exc()}")
+        error_data = create_error_response(
+            error_code="JSON_PARSE_ERROR",
+            message="JSON parsing error",
+            details=f"Could not parse the JSON file: {str(e)}",
+            suggestion="Check that your JSON file contains valid JSON data in the expected format."
+        )
+        try:
+            job = get_ingestion_job(db_session, job_id)
+            job.status = "failed"
+            job.error = json.dumps(error_data)
+            job.end_time = datetime.now(timezone.utc)
+            db_session.commit()
+        except Exception as commit_error:
+            logger.error(f"Failed to update job status: {str(commit_error)}")
+    
+    except MemoryError as e:
+        # Handle memory limitation errors
+        logger.error(f"Memory error in job {job_id}: {str(e)}\nTraceback: {traceback.format_exc()}")
+        error_data = create_error_response(
+            error_code="MEMORY_ERROR",
+            message="Memory limit exceeded",
+            details="The system ran out of memory while processing this file.",
+            suggestion="Try reducing the chunk size or splitting the file into smaller parts."
+        )
+        try:
+            job = get_ingestion_job(db_session, job_id)
+            job.status = "failed"
+            job.error = json.dumps(error_data)
+            job.end_time = datetime.now(timezone.utc)
+            db_session.commit()
+        except Exception as commit_error:
+            logger.error(f"Failed to update job status: {str(commit_error)}")
+    
     except Exception as e:
-        logger.error(f"Error processing file ingestion: {str(e)}")
+        # Handle other general errors with more context
+        error_msg = str(e)
+        logger.error(f"Error processing file ingestion for job {job_id}: {error_msg}\nTraceback: {traceback.format_exc()}")
+        
+        # Categorize common errors by message patterns
+        if "duplicate key" in error_msg.lower():
+            error_data = create_error_response(
+                error_code="DUPLICATE_KEY_ERROR",
+                message="Duplicate data error",
+                details=f"The data contains duplicate keys: {error_msg}",
+                suggestion="Ensure your data has unique identifiers for each row."
+            )
+        elif any(phrase in error_msg.lower() for phrase in ["type conversion", "cannot convert", "invalid literal"]):
+            error_data = create_error_response(
+                error_code="DATA_TYPE_ERROR",
+                message="Data type conversion error",
+                details=f"Could not convert data to appropriate types: {error_msg}",
+                suggestion="Check that your data values match the expected column types."
+            )
+        elif any(phrase in error_msg.lower() for phrase in ["file not found", "no such file", "does not exist"]):
+            error_data = create_error_response(
+                error_code="FILE_ACCESS_ERROR",
+                message="File not accessible",
+                details=f"Could not access the file: {error_msg}",
+                suggestion="Verify that the file exists and is accessible to the application."
+            )
+        else:
+            # Generic fallback with as much detail as possible
+            error_data = create_error_response(
+                error_code="PROCESSING_ERROR",
+                message="Data processing error",
+                details=f"Error details: {error_msg}",
+                suggestion="Check the logs for more information or contact support."
+            )
         
         # Update job status to failed
         try:
             job = get_ingestion_job(db_session, job_id)
             job.status = "failed"
-            job.error = str(e)
-            job.end_time = datetime.now()
+            job.error = json.dumps(error_data)
+            job.end_time = datetime.now(timezone.utc)
             db_session.commit()
-        except:
-            pass
+        except Exception as commit_error:
+            logger.error(f"Failed to update job status: {str(commit_error)}")
+
     
     finally:
         # Close the database session
@@ -1051,77 +1377,238 @@ def process_db_ingestion_with_db(job_id, db_type, db_config, chunk_size, db):
         job = get_ingestion_job(db_session, job_id)
         job.status = "running"
         job.progress = 0
+        job.details = "Initializing SQL database connection"
         db_session.commit()
+        
+        # Function to check if job is cancelled
+        def check_job_cancelled():
+            # Refresh job from database to get latest status
+            nonlocal job
+            db_session.refresh(job)
+            
+            # Check if job has been marked as cancelled in the database
+            if job.status == "cancelled":
+                logger.info(f"Job {job_id} has been cancelled in the database, stopping processing")
+                return True
+                
+            # Check for cancellation marker file
+            cancel_marker_path = DATA_DIR / f"cancel_{job_id}"
+            if cancel_marker_path.exists():
+                logger.info(f"Cancellation marker found for job {job_id}, stopping processing")
+                # Update job status to cancelled since we found a marker
+                job.status = "cancelled"
+                job.end_time = datetime.now()
+                job.details = f"{job.details} (Cancelled by user)"
+                db_session.commit()
+                return True
+                
+            return False
         
         # Create connection string
         connection_string = create_connection_string(db_type, db_config)
         
+        # Sanitize table name for SQL injection prevention
+        table_name = db_config['table']
+        if not table_name.isalnum() and not all(c.isalnum() or c in ['_', '.'] for c in table_name):
+            raise ValueError(f"Invalid table name: {table_name}. Table names must contain only alphanumeric characters, underscores, or dots.")
+        
         # Create output file path
         output_file = DATA_DIR / f"{job_id}.parquet"
+        
+        # Create temporary directory for parquet chunks
+        temp_dir = DATA_DIR / f"temp_{job_id}"
+        temp_dir.mkdir(exist_ok=True)
+        
+        start_time = time.time()
         
         # Connect to database
         engine = create_engine(connection_string)
         
         try:
-            # Get total row count
-            with engine.connect() as conn:
-                result = conn.execute(f"SELECT COUNT(*) FROM {db_config['table']}")
-                total_rows = result.scalar()
+            # Get total row count (with error handling for different SQL dialects)
+            total_rows = 0
+            row_count_query = ""
             
-            # Read data in chunks
+            job.details = "Calculating total row count"
+            db_session.commit()
+            
+            try:
+                if db_type == "mysql":
+                    row_count_query = f"SELECT COUNT(*) FROM {table_name}"
+                elif db_type == "postgresql":
+                    row_count_query = f"SELECT COUNT(*) FROM {table_name}"
+                elif db_type == "mssql":
+                    row_count_query = f"SELECT COUNT(*) FROM {table_name}"
+                
+                with engine.connect() as conn:
+                    result = conn.execute(sqlalchemy.text(row_count_query))
+                    total_rows = result.scalar()
+                    
+                logger.info(f"Total rows to extract: {total_rows}")
+            except Exception as e:
+                logger.warning(f"Could not get exact row count: {str(e)}")
+                logger.warning("Continuing with extraction without knowing total row count")
+                total_rows = 0  # Will use a different progress calculation
+            
+            # Check if job was cancelled during preparation
+            if check_job_cancelled():
+                logger.info(f"Job {job_id} was cancelled during preparation, stopping")
+                return
+            
+            # Read data in chunks and save directly to parquet files
             offset = 0
             processed_rows = 0
+            chunk_files = []
+            chunk_number = 0
             
-            while offset < total_rows:
+            job.details = "Starting data extraction from SQL database"
+            db_session.commit()
+            
+            # Keep track of schema information from first chunk for consistency
+            schema = None
+            
+            while True:
+                # Check for cancellation
+                if check_job_cancelled():
+                    logger.info(f"Job {job_id} was cancelled during processing, stopping")
+                    
+                    # Clean up temporary files
+                    for chunk_file in chunk_files:
+                        if os.path.exists(chunk_file):
+                            os.unlink(chunk_file)
+                    
+                    if temp_dir.exists():
+                        shutil.rmtree(temp_dir)
+                    
+                    return
+                
                 # Update progress
-                job.progress = min(int((processed_rows / total_rows) * 100), 99)
+                if total_rows > 0:
+                    progress = int((processed_rows / total_rows) * 100)
+                    job.progress = min(progress, 99)  # Cap at 99% until complete
+                else:
+                    # If total_rows unknown, use a sliding scale
+                    job.progress = min(10 + (chunk_number * 5), 99)  # Cap at 99%
+                
+                job.details = f"Extracting data (offset: {offset}, processed: {processed_rows} rows)"
                 db_session.commit()
                 
-                # Read chunk
-                query = f"SELECT * FROM {db_config['table']} LIMIT {chunk_size} OFFSET {offset}"
-                chunk = pd.read_sql(query, engine)
+                # Construct query with proper handling for different SQL dialects
+                query = ""
+                try:
+                    if db_type == "mysql" or db_type == "postgresql":
+                        query = f"SELECT * FROM {table_name} LIMIT {chunk_size} OFFSET {offset}"
+                    elif db_type == "mssql":
+                        # MSSQL uses different OFFSET/FETCH syntax
+                        query = f"SELECT * FROM {table_name} ORDER BY (SELECT NULL) OFFSET {offset} ROWS FETCH NEXT {chunk_size} ROWS ONLY"
+                    
+                    # Read chunk safely using parameterized query
+                    chunk = pd.read_sql(sqlalchemy.text(query), engine)
+                except Exception as e:
+                    # Try a different approach if the standard approach fails
+                    logger.warning(f"Error with standard query: {str(e)}. Trying alternative approach.")
+                    try:
+                        # Simpler query without OFFSET for compatibility
+                        if chunk_number == 0:
+                            query = f"SELECT TOP {chunk_size} * FROM {table_name}"
+                        else:
+                            # This might not work for all databases, but it's a fallback
+                            query = f"SELECT * FROM {table_name} LIMIT {chunk_size}"
+                        
+                        chunk = pd.read_sql(sqlalchemy.text(query), engine)
+                    except Exception as inner_e:
+                        # If all approaches fail, report and exit
+                        error_msg = f"Failed to extract data: {str(inner_e)}"
+                        logger.error(error_msg)
+                        raise ValueError(error_msg)
                 
-                # Save chunk
-                if offset == 0:
-                    chunk.to_parquet(output_file, index=False)
-                else:
-                    # Read existing parquet file
-                    if os.path.exists(output_file):
-                        existing_df = pd.read_parquet(output_file)
-                        # Concatenate with new chunk
-                        combined_df = pd.concat([existing_df, chunk], ignore_index=True)
-                        # Write back to the file
-                        combined_df.to_parquet(output_file, index=False)
-                    else:
-                        chunk.to_parquet(output_file, index=False)
+                # If no rows returned, we've reached the end
+                if len(chunk) == 0:
+                    break
+                
+                # Save first chunk schema for consistency (but don't depend on it)
+                if chunk_number == 0:
+                    try:
+                        # This might fail depending on pandas version - use simpler approach
+                        schema = str(chunk.dtypes[0])
+                    except Exception as schema_error:
+                        logger.warning(f"Non-critical schema detection error: {str(schema_error)}")
+                        schema = None
+                
+                # Convert datetime columns to string to avoid serialization issues
+                try:
+                    for col in chunk.select_dtypes(include=['datetime64']).columns:
+                        logger.info(f"Converting datetime column '{col}' to string")
+                        chunk[col] = chunk[col].astype(str)
+                except Exception as dt_error:
+                    logger.warning(f"Error handling datetime columns: {str(dt_error)}")
+                
+                # Save chunk to a temporary parquet file
+                chunk_file = temp_dir / f"chunk_{chunk_number}.parquet"
+                chunk.to_parquet(chunk_file, index=False)
+                chunk_files.append(chunk_file)
                 
                 # Update counters
                 processed_rows += len(chunk)
                 offset += chunk_size
+                chunk_number += 1
                 
-                # Simulate processing time
-                time.sleep(0.2)
+                # Add a small delay to prevent database overload
+                time.sleep(0.1)
+            
+            # Check if any data was extracted
+            if not chunk_files:
+                raise ValueError("No data was extracted from the database. The table might be empty.")
+            
+            # Now combine all chunk files into a single parquet file
+            job.details = "Combining extracted data chunks into final parquet file"
+            job.progress = 99
+            db_session.commit()
+            
+            # If only one chunk, just rename it
+            if len(chunk_files) == 1:
+                shutil.move(str(chunk_files[0]), str(output_file))
+            else:
+                # Read and combine all chunks
+                dfs = [pd.read_parquet(chunk_file) for chunk_file in chunk_files]
+                combined_df = pd.concat(dfs, ignore_index=True)
+                combined_df.to_parquet(output_file, index=False)
+                
+                # Clean up temporary files
+                for chunk_file in chunk_files:
+                    if os.path.exists(chunk_file):
+                        os.unlink(chunk_file)
+            
+            # Clean up temporary directory
+            if temp_dir.exists():
+                shutil.rmtree(temp_dir)
+            
+            # Calculate processing time
+            processing_time = time.time() - start_time
             
             # Mark job as completed
             job.status = "completed"
             job.progress = 100
             job.end_time = datetime.now()
-            
-            # Calculate duration
-            start_time = job.start_time
-            end_time = job.end_time
-            duration = end_time - start_time
-            job.duration = str(duration)
+            job.details = f"Completed. Extracted {processed_rows} rows in {processing_time:.2f} seconds."
             
             db_session.commit()
             
-            logger.info(f"Database ingestion completed for job {job_id}")
+            logger.info(f"Database ingestion completed for job {job_id}. Processed {processed_rows} rows.")
         
         finally:
             engine.dispose()
     
     except Exception as e:
         logger.error(f"Error processing database ingestion: {str(e)}")
+        
+        # Clean up temporary directory if it exists
+        temp_dir = DATA_DIR / f"temp_{job_id}"
+        if temp_dir.exists():
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception as cleanup_error:
+                logger.error(f"Error cleaning up temporary directory: {str(cleanup_error)}")
         
         # Update job status to failed
         try:
@@ -1130,12 +1617,60 @@ def process_db_ingestion_with_db(job_id, db_type, db_config, chunk_size, db):
             job.error = str(e)
             job.end_time = datetime.now()
             db_session.commit()
-        except:
-            pass
+        except Exception as update_error:
+            logger.error(f"Error updating job status: {str(update_error)}")
     
     finally:
         # Close the database session
         db_session.close()
+
+# Database Connections Functions
+def get_db_connections(db, username):
+    """Get all saved database connections for a user"""
+    return db.query(DatabaseConnection).filter(DatabaseConnection.username == username).all()
+
+def get_db_connection(db, connection_id):
+    """Get a database connection by ID"""
+    return db.query(DatabaseConnection).filter(DatabaseConnection.id == connection_id).first()
+
+def save_db_connection(db, connection_data):
+    """Save a new database connection"""
+    connection = DatabaseConnection(
+        id=connection_data.get("id", str(uuid.uuid4())),
+        name=connection_data.get("name"),
+        type=connection_data.get("type"),
+        config=json.dumps(connection_data.get("config")),
+        username=connection_data.get("username")
+    )
+    db.add(connection)
+    db.commit()
+    return connection
+
+def update_db_connection(db, connection_id, connection_data):
+    """Update an existing database connection"""
+    connection = get_db_connection(db, connection_id)
+    if not connection:
+        return None
+    
+    if "name" in connection_data:
+        connection.name = connection_data["name"]
+    if "type" in connection_data:
+        connection.type = connection_data["type"]
+    if "config" in connection_data:
+        connection.config = json.dumps(connection_data["config"])
+    
+    db.commit()
+    return connection
+
+def delete_db_connection(db, connection_id):
+    """Delete a database connection"""
+    connection = get_db_connection(db, connection_id)
+    if not connection:
+        return False
+    
+    db.delete(connection)
+    db.commit()
+    return True
 
 # API Routes
 @router.post("/upload", status_code=status.HTTP_200_OK)
@@ -1243,7 +1778,7 @@ async def get_file_schema(
 @router.post("/test-connection", status_code=status.HTTP_200_OK)
 async def test_database_connection(
     connection_info: dict,
-    current_user: User = Depends(has_permission("database:connect")),
+    current_user: User = Depends(has_permission("datapuur:write")),  # Updated permission
     db: Session = Depends(get_db)
 ):
     """Test a database connection"""
@@ -1287,7 +1822,7 @@ async def test_database_connection(
 @router.post("/db-schema", status_code=status.HTTP_200_OK)
 async def get_database_schema(
     connection_info: dict,
-    current_user: User = Depends(has_permission("database:read")),
+    current_user: User = Depends(has_permission("datapuur:read")),  # Updated permission
     db: Session = Depends(get_db)
 ):
     """Get schema from a database table"""
@@ -1394,7 +1929,6 @@ async def ingest_file(
             "end_time": None,
             "details": f"File: {file_name}",
             "error": None,
-            "duration": None,
             "config": {
                 "file_id": file_id,
                 "chunk_size": chunk_size
@@ -1415,9 +1949,17 @@ async def ingest_file(
         
         return {"job_id": job_id, "message": "File ingestion started"}
     except Exception as e:
+        # Create a structured error response with more context
+        error_resp = create_error_response(
+            error_code="INGESTION_INIT_ERROR",
+            message="Error starting ingestion process",
+            details=str(e),
+            suggestion="Check that the file exists and is accessible"
+        )
+        logger.error(f"Error starting ingestion: {str(e)}\nTraceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error starting ingestion: {str(e)}"
+            detail=error_resp
         )
 
 @router.post("/ingest-db", status_code=status.HTTP_200_OK)
@@ -1457,7 +1999,6 @@ async def ingest_database(
             "end_time": None,
             "details": f"DB: {db_config['database']}.{db_config['table']}",
             "error": None,
-            "duration": None,
             "config": {
                 "type": db_type,
                 "database": db_config["database"],
@@ -1511,7 +2052,6 @@ async def get_job_status(
         end_time=job.end_time.isoformat() if job.end_time else None,
         details=job.details,
         error=job.error,
-        duration=job.duration,
         config=config
     )
 
@@ -1550,12 +2090,6 @@ async def cancel_job(
     job.error = None  # Remove error message since cancellation is not an error
     job.details = f"{job.details} (Cancelled by user)"  # Add cancellation info to details
     job.end_time = datetime.now()
-    
-    # Calculate duration
-    start_time = job.start_time
-    end_time = job.end_time
-    duration = end_time - start_time
-    job.duration = str(duration)
     
     # Delete any associated data files
     try:
@@ -1602,7 +2136,6 @@ async def cancel_job(
         end_time=job.end_time.isoformat() if job.end_time else None,
         details=job.details,
         error=job.error,
-        duration=job.duration,
         config=config
     )
 
@@ -1686,7 +2219,7 @@ async def get_ingestion_history(
                 "filename": job.name,
                 "type": "database" if job.type == "database" else file_info.type if file_info else "unknown",
                 "size": os.path.getsize(file_info.path) if file_info and os.path.exists(file_info.path) else 0,
-                "uploaded_at": job.start_time.strftime("%Y-%m-%d %H:%M:%S") if isinstance(job.start_time, datetime) else job.start_time,
+                "uploaded_at": job.start_time.astimezone(timezone.utc).isoformat() if isinstance(job.start_time, datetime) else job.start_time,
                 "uploaded_by": current_user.username,
                 "preview_url": f"/api/datapuur/ingestion-preview/{job.id}",
                 "download_url": f"/api/datapuur/ingestion-download/{job.id}",
@@ -1808,19 +2341,14 @@ async def get_ingestion_preview(
                             if pd.isna(value):
                                 clean_record[key] = None
                             elif isinstance(value, (np.integer, np.floating)):
-                                clean_record[key] = float(value)
+                                clean_record[key] = value.item()  # Convert NumPy scalar to Python native type
                             elif isinstance(value, np.bool_):
-                                clean_record[key] = bool(value)
+                                clean_record[key] = bool(value)  # Convert NumPy boolean to Python boolean
                             elif isinstance(value, (dict, list)):
                                 # Ensure nested objects are properly serialized
                                 clean_record[key] = json.loads(json.dumps(value))
                             else:
-                                # Convert any other complex types to strings
-                                try:
-                                    json.dumps(value)  # Test if serializable
-                                    clean_record[key] = value
-                                except (TypeError, OverflowError):
-                                    clean_record[key] = str(value)
+                                clean_record[key] = value
                         records.append(clean_record)
                 except Exception as e:
                     # Fallback - if any error occurs, create a simpler structure
@@ -2175,23 +2703,6 @@ async def get_ingestion_statistics(
         
         # Get processing time from job
         processing_time = "Unknown"
-        if job.duration:
-            try:
-                # Parse duration string like "0:00:05.123456"
-                duration_parts = job.duration.split(":")
-                if len(duration_parts) >= 3:
-                    hours = int(duration_parts[0])
-                    minutes = int(duration_parts[1])
-                    seconds = float(duration_parts[2])
-                    
-                    if hours > 0:
-                        processing_time = f"{hours}h {minutes}m {seconds:.1f}s"
-                    elif minutes > 0:
-                        processing_time = f"{minutes}m {seconds:.1f}s"
-                    else:
-                        processing_time = f"{seconds:.1f}s"
-            except:
-                pass
         
         # Calculate data density (rows per KB)
         data_density = (row_count / (memory_usage_bytes / 1024)) if memory_usage_bytes > 0 else 0
@@ -2383,7 +2894,7 @@ async def get_source_details(
                 "path": file_info.path,
                 "type": file_info.type,
                 "uploaded_by": file_info.uploaded_by,
-                "uploaded_at": file_info.uploaded_at.isoformat() if isinstance(file_info.uploaded_at, datetime) else file_info.uploaded_at,
+                "uploaded_at": file_info.uploaded_at.astimezone(timezone.utc).isoformat() if isinstance(file_info.uploaded_at, datetime) else file_info.uploaded_at,
                 "chunk_size": file_info.chunk_size,
                 "schema": file_info.schema
             }
@@ -2410,7 +2921,6 @@ async def get_data_metrics(
     total_records = 0
     processed_records = 0
     failed_records = 0
-    processing_time = 0.0
     
     # Query jobs
     completed_jobs = db.query(IngestionJob).filter(IngestionJob.status == "completed").all()
@@ -2427,27 +2937,6 @@ async def get_data_metrics(
             total_records += 5000
             processed_records += 5000
         
-        # Calculate processing time
-        if job.duration:
-            try:
-                # Parse duration string like "0:00:05.123456"
-                duration_parts = job.duration.split(":")
-                if len(duration_parts) >= 3:
-                    hours = int(duration_parts[0])
-                    minutes = int(duration_parts[1])
-                    seconds = float(duration_parts[2])
-                    
-                    if hours > 0:
-                        job_time = hours * 3600 + minutes * 60 + seconds
-                    elif minutes > 0:
-                        job_time = minutes * 60 + seconds
-                    else:
-                        job_time = seconds
-                    
-                    processing_time += job_time
-            except:
-                pass
-    
     # Estimate failed records
     for job in failed_jobs:
         if job.type == "file":
@@ -2470,7 +2959,7 @@ async def get_data_metrics(
         total_records=total_records,
         processed_records=processed_records,
         failed_records=failed_records,
-        processing_time=round(processing_time, 2)
+        processing_time=0.0
     )
 
 @router.get("/activities", response_model=List[Activity])
@@ -2606,7 +3095,7 @@ async def get_file_history(
                 "filename": file.filename,
                 "type": file.type,
                 "size": os.path.getsize(file.path) if os.path.exists(file.path) else 0,
-                "uploaded_at": file.uploaded_at,
+                "uploaded_at": file.uploaded_at.astimezone(timezone.utc).isoformat() if isinstance(file.uploaded_at, datetime) else file.uploaded_at,
                 "uploaded_by": file.uploaded_by,
                 "preview_url": f"/api/datapuur/preview/{file.id}",
                 "download_url": f"/api/datapuur/download/{file.id}",
@@ -3087,7 +3576,7 @@ async def complete_chunked_upload(
                 "path": str(file_path),
                 "type": file_ext,
                 "uploaded_by": current_user.username,
-                "uploaded_at": datetime.now(),
+                "uploaded_at": datetime.now(timezone.utc),
                 "chunk_size": original_chunk_size
             }
             
@@ -3161,7 +3650,7 @@ async def cancel_chunked_upload(
             # Remove all chunks
             shutil.rmtree(chunks_dir)
             
-            # Create a cancellation marker file to prevent further processing
+            # Create a cancellation marker file to signal to any ongoing processes that they should stop
             # This will be checked by the complete_chunked_upload endpoint
             cancel_marker = UPLOAD_DIR / f"cancel_{upload_id}"
             with open(cancel_marker, 'w') as f:
@@ -3239,7 +3728,6 @@ class CreateJobRequest(BaseModel):
     name: Optional[str] = None
     progress: Optional[int] = 100
     error: Optional[str] = None
-    duration: Optional[str] = None
     config: Optional[Dict] = None
 
 @router.post("/create-job", status_code=status.HTTP_201_CREATED)
@@ -3263,7 +3751,6 @@ async def create_job(
             "end_time": now if request.status == "completed" else None,
             "details": json.dumps(request.details) if request.details else None,
             "error": request.error,
-            "duration": request.duration,
             "config": request.config
         }
         
@@ -3366,18 +3853,60 @@ async def preview_file_direct(
         elif file_extension == 'json':
             # Read JSON file
             try:
-                # For large JSON files, we need to be careful about memory usage
-                # Read the file in chunks and only process the beginning
-                with open(temp_path, 'r', encoding='utf-8', errors='replace') as jsonfile:
-                    # Try to parse the JSON data
+                # Import ijson for streaming JSON parsing
+                import ijson
+                
+                preview_records = []
+                max_records = 50  # Limit to first 50 records for preview
+                
+                # Check if the file starts with an array
+                with open(temp_path, 'r', encoding='utf-8', errors='replace') as f:
+                    # Read just enough to determine if it's an array
+                    first_char = f.read(1).strip()
+                
+                # If it's an array (starts with '['), use ijson for streaming parse
+                if first_char == '[':
                     try:
-                        data = json.load(jsonfile)
+                        # Reopen the file for streaming parse
+                        with open(temp_path, 'r', encoding='utf-8', errors='replace') as f:
+                            # Use ijson to stream parse the JSON array
+                            parser = ijson.items(f, 'item')
+                            
+                            # Get the first few items for preview
+                            for i, item in enumerate(parser):
+                                if i >= max_records:
+                                    break
+                                preview_records.append(item)
+                    except Exception as e:
+                        logger.error(f"Error streaming JSON file: {str(e)}")
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Error processing JSON file: {str(e)}"
+                        )
+                else:
+                    # If it's not an array, read a limited amount to avoid memory issues
+                    with open(temp_path, 'r', encoding='utf-8', errors='replace') as f:
+                        # Read only the first 1MB of the file
+                        json_data = f.read(1024 * 1024)
+                    
+                    try:
+                        # Try to parse as a single JSON object
+                        data = json.loads(json_data)
+                        preview_records = [data]
                     except json.JSONDecodeError:
                         logger.error("Invalid JSON file")
                         raise HTTPException(
                             status_code=status.HTTP_400_BAD_REQUEST,
                             detail="Invalid JSON file"
                         )
+                
+                # If we didn't get any records, the file might be malformed
+                if not preview_records:
+                    logger.error("Invalid JSON file structure or empty array")
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid JSON file structure or empty array"
+                    )
                 
                 # Function to flatten nested JSON
                 def flatten_json(nested_json, prefix=''):
@@ -3404,20 +3933,13 @@ async def preview_file_direct(
                             flattened[f"{prefix}{key}"] = value
                     return flattened
                 
-                # If it's an array, limit to first 100 items and flatten each item
-                if isinstance(data, list):
-                    limited_data = data[:100]  # Limit to first 100 items
-                    flattened_data = []
-                    for item in limited_data:
-                        if isinstance(item, dict):
-                            flattened_data.append(flatten_json(item))
-                        else:
-                            flattened_data.append({"value": item})
-                # If it's a single object, flatten it
-                elif isinstance(data, dict):
-                    flattened_data = [flatten_json(data)]
-                else:
-                    flattened_data = [{"value": data}]
+                # Convert records to a format suitable for display
+                flattened_data = []
+                for item in preview_records:
+                    if isinstance(item, dict):
+                        flattened_data.append(flatten_json(item))
+                    else:
+                        flattened_data.append({"value": item})
                 
                 # Log activity
                 log_activity(
@@ -3430,10 +3952,13 @@ async def preview_file_direct(
                 # Convert to DataFrame to get headers and rows for consistent display
                 df = pd.DataFrame(flattened_data)
                 
+                # Clean up the temporary file
+                os.unlink(temp_path)
+                
                 # Return data in a format similar to CSV preview
                 return {
-                    "headers": df.columns.tolist(),
-                    "rows": df.values.tolist() if not df.empty else []
+                    "headers": df.columns.tolist() if not df.empty else [],
+                    "rows": df.replace({np.nan: None}).values.tolist() if not df.empty else []
                 }
             except Exception as e:
                 logger.error(f"Error processing JSON file: {str(e)}")

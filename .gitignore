@@ -58,6 +58,10 @@ data/
 runtime-data/
 .windsurfrules
 api/kginsights/saved_schemas/
+api/samples/TelecomChurn_Large_300.csv
+.ubuntuenv/
+testdata/
+api/samples/*.csv
 app/.DS_Store
 app/.DS_Store
 components/.DS_Store

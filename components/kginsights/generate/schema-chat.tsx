@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Send, Loader2, BotMessageSquare, User } from "lucide-react"
@@ -26,6 +26,12 @@ export interface ChatMessage {
   }
 }
 
+// Define the ref type for external access
+export interface SchemaChatRef {
+  handleSendMessage: () => Promise<void>;
+  setMessage: (message: string) => void;
+}
+
 interface SchemaChatProps {
   selectedSource: string
   selectedSourceName: string
@@ -35,14 +41,14 @@ interface SchemaChatProps {
   setLoading: (loading: boolean) => void
 }
 
-export function SchemaChat({ 
+export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function SchemaChat({ 
   selectedSource, 
   selectedSourceName,
   domain,
   onSchemaGenerated,
   loading,
   setLoading
-}: SchemaChatProps) {
+}, ref) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [message, setMessage] = useState("")
   const [currentSchema, setCurrentSchema] = useState<any>(null)
@@ -97,6 +103,15 @@ export function SchemaChat({
       toast({
         title: "Error",
         description: "Please select a data source first",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!domain) {
+      toast({
+        title: "Error",
+        description: "Please select a data domain",
         variant: "destructive",
       })
       return
@@ -233,7 +248,17 @@ export function SchemaChat({
       setLoading(false)
     }
   }
-  
+
+  // Expose methods to parent component via ref
+  useImperativeHandle(ref, () => ({
+    handleSendMessage: async () => {
+      return handleSendMessage();
+    },
+    setMessage: (newMessage: string) => {
+      setMessage(newMessage);
+    }
+  }), [handleSendMessage]);
+
   // Handle sending message for schema refinement
   const handleRefinement = async () => {
     if (!message.trim() || loading) return
@@ -242,6 +267,15 @@ export function SchemaChat({
       toast({
         title: "Error",
         description: "Please select a data source first",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!domain) {
+      toast({
+        title: "Error",
+        description: "Please select a data domain",
         variant: "destructive",
       })
       return
@@ -380,10 +414,10 @@ export function SchemaChat({
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full overflow-hidden">
       {/* Chat messages */}
-      <ScrollArea className="flex-grow pr-4">
-        <div className="space-y-4 p-4">
+      <ScrollArea className="flex-grow pr-4 min-h-0">
+        <div className="space-y-3 p-4">
           {messages.map((message) => (
             <div
               key={message.id}
@@ -405,7 +439,7 @@ export function SchemaChat({
                 
                 <Card
                   className={cn(
-                    "px-4 py-3 max-w-[80%]",
+                    "px-4 py-3 max-w-[80%] break-words",
                     message.role === "user" 
                       ? "bg-primary text-primary-foreground" 
                       : message.role === "system"
@@ -465,7 +499,7 @@ export function SchemaChat({
       </ScrollArea>
       
       {/* Chat input */}
-      <div className="p-4 border-t">
+      <div className="p-4 border-t mt-auto">
         <div className="flex items-end gap-2">
           <Textarea
             id="schema-chat-input"
@@ -493,4 +527,4 @@ export function SchemaChat({
       </div>
     </div>
   )
-}
+})
