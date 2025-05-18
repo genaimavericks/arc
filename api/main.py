@@ -25,7 +25,7 @@ from api.auth import router as auth_router, has_any_permission
 #from api.ingestion import router as ingestion_router
 from api.datapuur import router as datapuur_router
 #from api.datapuur_dramatiq_api import router as datapuur_router
-from api.datapuur_dramatiq_api import get_all_jobs_admin, stop_job_admin, delete_job_admin
+from api.datapuur import get_all_jobs_admin, stop_job_admin, delete_job_admin
 from api.kginsights import router as kginsights_router
 from api.kgdatainsights.data_insights_api import router as kgdatainsights_router, get_query_history, get_predefined_queries
 from api.kginsights.graphschemaapi import router as graphschema_router, build_schema_from_source, SourceIdInput, SchemaResult
