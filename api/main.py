@@ -29,6 +29,7 @@ from api.kgdatainsights.data_insights_api import router as kgdatainsights_router
 from api.kginsights.graphschemaapi import router as graphschema_router, build_schema_from_source, SourceIdInput, SchemaResult
 from api.profiler import router as profiler_router
 from api.admin import router as admin_router
+from api.export_router import router as export_router
 from api.middleware import ActivityLoggerMiddleware
 from api.log_filter_middleware import LogFilterMiddleware
 
@@ -79,6 +80,7 @@ print(f"DEBUG: Full application routes: {[route.path for route in app.routes]}")
 app.include_router(graphschema_router, prefix="/api")
 app.include_router(kgdatainsights_router, prefix="/api")
 app.include_router(profiler_router)
+app.include_router(export_router)
 
 app.include_router(admin_router)
 

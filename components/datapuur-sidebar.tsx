@@ -55,17 +55,7 @@ export default function DataPuurSidebar() {
               <Wand2 className="h-4 w-4" />
               <span>Transformation</span>
             </Link>
-            {/* Add Explore menu item */}
-            <Link
-              href="/datapuur/explore"
-              className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground",
-                pathname.includes("/datapuur/explore") ? "bg-accent" : "transparent",
-              )}
-            >
-              <Compass className="h-4 w-4" />
-              <span>Explore</span>
-            </Link>
+            {/* Explore page link removed */}
             <Link
               href="/datapuur/export"
               className={cn(
