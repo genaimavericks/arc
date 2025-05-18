@@ -283,7 +283,19 @@ class DataLoader:
                     print(f"Permission denied to create {self.neo4j_import_dir}, using temporary directory: {temp_import_dir}")
                     self.neo4j_import_dir = temp_import_dir
             
+            # Clean import directory - remove existing CSV files
+            print(f"Cleaning Neo4j import directory: {self.neo4j_import_dir}")
+            try:
+                for file in os.listdir(self.neo4j_import_dir):
+                    if file.endswith('.csv'):
+                        file_path = os.path.join(self.neo4j_import_dir, file)
+                        os.remove(file_path)
+                        print(f"Removed existing file: {file_path}")
+            except Exception as e:
+                print(f"Warning: Could not clean import directory completely: {str(e)}")
+                
             # Copy CSV files to Neo4j import directory
+            print(f"Copying CSV files to Neo4j import directory")
             for file in os.listdir(self.temp_dir):
                 if file.endswith('.csv'):
                     src = os.path.join(self.temp_dir, file)

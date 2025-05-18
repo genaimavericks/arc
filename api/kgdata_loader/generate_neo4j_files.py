@@ -14,6 +14,34 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # --- Helper Functions ---
 
+def convert_to_neo4j_type(python_type):
+    """
+    Converts Python type names to Neo4j CSV header type names.
+    Returns the Neo4j type specifier for use in CSV headers.
+    
+    Args:
+        python_type (str): The Python type name from the schema.
+        
+    Returns:
+        str: The Neo4j type specifier or None if no mapping exists.
+    """
+    # Mapping from Python/schema types to Neo4j CSV header types
+    type_mapping = {
+        'string': 'string',
+        'str': 'string',
+        'integer': 'int',
+        'int': 'int',
+        'float': 'float',
+        'double': 'float',
+        'boolean': 'boolean',
+        'bool': 'boolean',
+        'date': 'date',
+        'datetime': 'datetime',
+        'point': 'point',
+        # Add other mappings as needed
+    }
+    return type_mapping.get(python_type.lower(), None)
+
 def cast_value(value, target_type):
     """Attempts to cast a value to the specified Neo4j type."""
     if pd.isna(value) or value == '':
@@ -665,21 +693,48 @@ def create_neo4j_import_files(schema_path, data_path, output_dir):
             node_schema = next((n for n in schema['nodes'] if n['label'] == label), None)
             df = pd.DataFrame(list(data_list.values()))
             
-            # Create a mapping from schema property names to original CSV column names
+            # Create a mapping from schema property names to original CSV column names with type information
             column_rename_map = {':ID': ':ID', ':LABEL': ':LABEL'}  # Special columns always stay the same
+            
+            # Create a header with Neo4j type information
+            neo4j_headers = {':ID': ':ID', ':LABEL': ':LABEL'}  # Special columns stay the same
             
             if node_schema and 'properties' in node_schema:
                 for prop_name, prop_details in node_schema['properties'].items():
-                    if isinstance(prop_details, dict) and 'source_column' in prop_details:
-                        # Map from schema property name to the original CSV column name
-                        column_rename_map[prop_name] = prop_details['source_column']
+                    if isinstance(prop_details, dict):
+                        # Get the source column and data type
+                        source_col = prop_details.get('source_column', prop_name)
+                        data_type = prop_details.get('type', 'string')
+                        
+                        # Map the column name with type information for Neo4j
+                        neo4j_type = convert_to_neo4j_type(data_type)
+                        if neo4j_type:
+                            neo4j_headers[prop_name] = f"{prop_name}:{neo4j_type}"
+                        else:
+                            neo4j_headers[prop_name] = prop_name
+                            
+                        # Store the original mapping for renaming
+                        column_rename_map[prop_name] = source_col
+                    elif isinstance(prop_details, str):
+                        # For simple string type definitions
+                        neo4j_type = convert_to_neo4j_type(prop_details)
+                        if neo4j_type:
+                            neo4j_headers[prop_name] = f"{prop_name}:{neo4j_type}"
+                        else:
+                            neo4j_headers[prop_name] = prop_name
+                        
+                        column_rename_map[prop_name] = prop_name
             
             # Apply the column renaming to the DataFrame
             df.rename(columns=column_rename_map, inplace=True)
             
-            # Write the file with renamed columns
+            # Create a new DataFrame with the typed headers
+            typed_df = df.copy()
+            typed_df.columns = [neo4j_headers.get(col, col) for col in df.columns]
+            
+            # Write the file with type information in the headers
             output_path = os.path.join(output_dir, f"{label}_nodes.csv")
-            df.to_csv(output_path, index=False, lineterminator='\n')
+            typed_df.to_csv(output_path, index=False, lineterminator='\n')
             logging.info(f"Successfully wrote node file: {output_path}")
         else:
             logging.warning(f"No data generated for node label: {label}")
@@ -775,20 +830,46 @@ def create_neo4j_import_files(schema_path, data_path, output_dir):
         # Special relationship columns always stay the same
         rel_column_rename_map = {':START_ID': ':START_ID', ':END_ID': ':END_ID', ':TYPE': ':TYPE'}
         
-        # Loop through all relationship schemas to build the property mapping
+        # Create a header with Neo4j type information
+        neo4j_rel_headers = {':START_ID': ':START_ID', ':END_ID': ':END_ID', ':TYPE': ':TYPE'}
+        
+        # Loop through all relationship schemas to build the property mapping with types
         for rel_schema in schema.get('relationships', []):
             if 'properties' in rel_schema:
                 for prop_name, prop_details in rel_schema['properties'].items():
-                    if isinstance(prop_details, dict) and 'source_column' in prop_details:
-                        # Map from schema property name to the original CSV column name
-                        rel_column_rename_map[prop_name] = prop_details['source_column']
+                    if isinstance(prop_details, dict):
+                        source_col = prop_details.get('source_column', prop_name)
+                        data_type = prop_details.get('type', 'string')
+                        
+                        # Map the column name with type information for Neo4j
+                        neo4j_type = convert_to_neo4j_type(data_type)
+                        if neo4j_type:
+                            neo4j_rel_headers[prop_name] = f"{prop_name}:{neo4j_type}"
+                        else:
+                            neo4j_rel_headers[prop_name] = prop_name
+                            
+                        # Store the original mapping for renaming
+                        rel_column_rename_map[prop_name] = source_col
+                    elif isinstance(prop_details, str):
+                        # For simple string type definitions
+                        neo4j_type = convert_to_neo4j_type(prop_details)
+                        if neo4j_type:
+                            neo4j_rel_headers[prop_name] = f"{prop_name}:{neo4j_type}"
+                        else:
+                            neo4j_rel_headers[prop_name] = prop_name
+                        
+                        rel_column_rename_map[prop_name] = prop_name
         
         # Apply the column renaming to the DataFrame
         df.rename(columns=rel_column_rename_map, inplace=True)
         
-        # Write the relationships CSV file
+        # Create a new DataFrame with the typed headers
+        typed_df = df.copy()
+        typed_df.columns = [neo4j_rel_headers.get(col, col) for col in df.columns]
+        
+        # Write the relationships CSV file with type information in the headers
         output_path = os.path.join(output_dir, "relationships.csv")
-        df.to_csv(output_path, index=False, lineterminator='\n')
+        typed_df.to_csv(output_path, index=False, lineterminator='\n')
         logging.info(f"Successfully wrote relationships file: {output_path}")
     else:
         logging.warning("No relationship data generated.")
