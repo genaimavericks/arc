@@ -15,17 +15,11 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # --- Helper Functions ---
 
 def convert_to_neo4j_type(python_type):
-    """
-    Converts Python type names to Neo4j CSV header type names.
-    Returns the Neo4j type specifier for use in CSV headers.
-    
-    Args:
-        python_type (str): The Python type name from the schema.
+    """Converts Python type to Neo4j compatible type for CSV headers."""
+    if not python_type:
+        return None
         
-    Returns:
-        str: The Neo4j type specifier or None if no mapping exists.
-    """
-    # Mapping from Python/schema types to Neo4j CSV header types
+    # Mapping from Python type name to Neo4j type
     type_mapping = {
         'string': 'string',
         'str': 'string',
@@ -37,10 +31,128 @@ def convert_to_neo4j_type(python_type):
         'bool': 'boolean',
         'date': 'date',
         'datetime': 'datetime',
-        'point': 'point',
         # Add other mappings as needed
     }
-    return type_mapping.get(python_type.lower(), None)
+    return type_mapping.get(str(python_type).lower(), None)
+
+def infer_data_type(val):
+    """Infers the data type based on the value.
+    
+    Args:
+        val: Value to infer type from
+        
+    Returns:
+        string: The inferred type (string, integer, float, boolean, date, datetime)
+    """
+    if val is None:
+        return None
+    
+    # If it's already a typed value (not a string), use its Python type
+    if isinstance(val, bool):
+        return 'boolean'
+    elif isinstance(val, int):
+        return 'integer'
+    elif isinstance(val, float):
+        # Check if it's actually an integer stored as float (e.g., 1.0)
+        if val.is_integer():
+            # Only return integer if it's a perfect integer
+            # We'll leave this as float to be safer with Neo4j imports
+            return 'float'
+        return 'float'
+    
+    # For strings and other types, try to parse
+    # Convert to string for parsing
+    val_str = str(val).strip()
+    if not val_str or val_str.lower() == 'nan' or val_str.lower() == 'null':
+        return None
+    
+    # Check if it's a boolean
+    if val_str.lower() in ('true', 'false', 't', 'f', 'yes', 'no', 'y', 'n'):
+        return 'boolean'
+    
+    # Check if it's a number
+    try:
+        # Try to convert to int first
+        int(val_str)
+        return 'integer'
+    except (ValueError, TypeError):
+        try:
+            # Then try float
+            float(val_str)
+            return 'float'
+        except (ValueError, TypeError):
+            pass
+    
+    # Check if it's a date or datetime
+    try:
+        dt = pd.to_datetime(val_str)
+        # If it has time components with non-zero values
+        if dt.hour != 0 or dt.minute != 0 or dt.second != 0:
+            return 'datetime'
+        else:
+            return 'date'
+    except (ValueError, TypeError):
+        pass
+    
+    # Default to string if nothing else matches
+    return 'string'
+
+def detect_type_mismatch(df, column_name, schema_type):
+    """Detects if the schema type matches the actual data types in a column.
+    
+    Args:
+        df: DataFrame containing the data
+        column_name: The column to check
+        schema_type: The type specified in the schema
+        
+    Returns:
+        (boolean, string) - Whether there's a mismatch and the recommended type
+    """
+    if column_name not in df.columns:
+        return False, schema_type
+    
+    # Get non-null values for type checking
+    values = df[column_name].dropna()
+    if len(values) == 0:
+        return False, schema_type  # No data to infer from
+    
+    # Sample values to determine actual types (all values if few, or a sample if many)
+    sample_size = min(len(values), 100)
+    samples = values.sample(sample_size) if len(values) > 100 else values
+    
+    # Count types in sample
+    type_counts = {}
+    for val in samples:
+        inferred_type = infer_data_type(val)
+        if inferred_type:
+            type_counts[inferred_type] = type_counts.get(inferred_type, 0) + 1
+    
+    if not type_counts:  # All null values
+        return False, schema_type
+    
+    # Find the most common type
+    most_common_type = max(type_counts.items(), key=lambda x: x[1])[0]
+    
+    # Check type compatibility
+    compatible = False
+    
+    # Schema type string can hold any data type - no mismatch
+    if schema_type == 'string':
+        compatible = True
+    
+    # Schema type float can hold int values
+    elif schema_type == 'float' and most_common_type == 'integer':
+        compatible = True
+    
+    # Schema type datetime includes dates
+    elif schema_type == 'datetime' and most_common_type == 'date':
+        compatible = True
+    
+    # Exact type match
+    elif schema_type == most_common_type:
+        compatible = True
+    
+    return not compatible, most_common_type
 
 def cast_value(value, target_type):
     """Attempts to cast a value to the specified Neo4j type."""
@@ -387,17 +499,22 @@ def create_neo4j_import_files(schema_path, data_path, output_dir):
         # Initialize dictionary for this node type if it doesn't exist
         if label not in nodes_data:
             nodes_data[label] = {}
-            node_headers[label] = set()  # Initialize headers set
+            node_headers[label] = set([':ID', ':LABEL'])
             
-        # Get properties schema for this node type
+        # Get property schema for this node type
         properties_schema = node_schema.get('properties', {})
         
-        # Check if any property is a JSON array that should be processed into separate nodes
+        # Check data types against schema and update if necessary
         for prop_name, prop_details in properties_schema.items():
-            # If the property is of type "json" and maps to another node type,
-            # record this mapping for later processing
-            if isinstance(prop_details, dict) and prop_details.get('type') == 'json':
+            source_col = None
+            schema_type = None
+            
+            if isinstance(prop_details, dict):
                 source_col = prop_details.get('source_column', prop_name)
+                schema_type = prop_details.get('type', 'string')
+            elif isinstance(prop_details, dict) and prop_details.get('type') == 'json':
+                source_col = prop_details.get('source_column', prop_name)
+                schema_type = 'json'
                 target_node_type = prop_details.get('target_node')
                 relationship_type = prop_details.get('relationship_type')
                 
@@ -409,6 +526,9 @@ def create_neo4j_import_files(schema_path, data_path, output_dir):
                         'relationship_type': relationship_type,
                         'property_schema': prop_details.get('properties', {})
                     }
+            elif isinstance(prop_details, str):
+                source_col = prop_name
+                schema_type = prop_details
             
             # If it's a simple string type, it might indicate the column name directly
             elif isinstance(prop_details, str) and prop_details == 'json':
@@ -463,6 +583,20 @@ def create_neo4j_import_files(schema_path, data_path, output_dir):
                 elif isinstance(prop_details, str):
                     source_col = prop_name
                     target_type = prop_details
+                
+                # Check data types against schema and update if necessary
+                if source_col and source_col in original_df.columns and not use_generated_id:
+                    has_mismatch, inferred_type = detect_type_mismatch(original_df, source_col, target_type)
+                    if has_mismatch:
+                        logging.warning(f"Type mismatch for {label}.{prop_name}: schema says '{target_type}' but data indicates '{inferred_type}'")
+                        # Update the schema type to match the data
+                        if isinstance(prop_details, dict):
+                            properties_schema[prop_name]['type'] = inferred_type
+                            target_type = inferred_type
+                        else:
+                            properties_schema[prop_name] = inferred_type
+                            target_type = inferred_type
+                        logging.info(f"Updated type for {label}.{prop_name} from '{target_type}' to '{inferred_type}'")
                 
                 # Get property value
                 prop_value = None
@@ -794,6 +928,20 @@ def create_neo4j_import_files(schema_path, data_path, output_dir):
                         source_col = prop_name
                         target_type = prop_details
                         
+                    # Check data types against schema and update if necessary
+                    if source_col and source_col in original_df.columns:
+                        has_mismatch, inferred_type = detect_type_mismatch(original_df, source_col, target_type)
+                        if has_mismatch:
+                            logging.warning(f"Type mismatch for relationship property {prop_name}: schema says '{target_type}' but data indicates '{inferred_type}'")
+                            # Update the schema type to match the data
+                            if isinstance(prop_details, dict):
+                                rel_props[prop_name]['type'] = inferred_type
+                                target_type = inferred_type
+                            else:
+                                rel_props[prop_name] = inferred_type
+                                target_type = inferred_type
+                            logging.info(f"Updated type for relationship property {prop_name} from '{target_type}' to '{inferred_type}'")
+                    
                     prop_value = None
                     if source_col and source_col in original_df.columns:  # Check against original CSV columns
                         if target_type == 'json':
@@ -833,15 +981,134 @@ def create_neo4j_import_files(schema_path, data_path, output_dir):
         # Create a header with Neo4j type information
         neo4j_rel_headers = {':START_ID': ':START_ID', ':END_ID': ':END_ID', ':TYPE': ':TYPE'}
         
-        # Loop through all relationship schemas to build the property mapping with types
+        # First, scan the actual data for ALL properties to determine their types
+        # This ensures we're not constrained by what's in the schema and can process any property
+        rel_property_samples = {}
+        for rel_data in relationships_output:
+            for prop_name, prop_value in rel_data.items():
+                if prop_name not in [':START_ID', ':END_ID', ':TYPE'] and prop_value is not None:
+                    if prop_name not in rel_property_samples:
+                        rel_property_samples[prop_name] = []
+                    rel_property_samples[prop_name].append(prop_value)
+        
+        # Infer types from actual data
+        rel_property_types = {}
+        for prop_name, samples in rel_property_samples.items():
+            # Get a representative sample for type inference
+            sample_values = [s for s in samples if s is not None][:10]  # Use up to 10 non-null values
+            if sample_values:
+                # Print the raw sample values for debugging
+                logging.info(f"Raw sample values for {prop_name}: {sample_values[:5]} of types {[type(v).__name__ for v in sample_values[:5]]}")
+                
+                # Special handling for numeric values with decimal points
+                has_decimal_points = False
+                for val in sample_values:
+                    # Check if it's a string representation with a decimal point
+                    if isinstance(val, str) and '.' in val:
+                        logging.info(f"Found decimal point in string value: {val}")
+                        has_decimal_points = True
+                        break
+                    # Check if it's actually a float value (even if it's 0.0 or 1.0)
+                    elif isinstance(val, float):
+                        logging.info(f"Found float value: {val} (is_integer: {val.is_integer()})")
+                        # Even for integers stored as floats (e.g., 0.0, 1.0), treat as float for Neo4j compatibility
+                        has_decimal_points = True
+                        break
+                    # Additional check for values that might be parsed incorrectly
+                    elif isinstance(val, (int, bool)):
+                        try:
+                            # Try parsing as float to catch cases where values like 0.0 are converted to 0
+                            str_val = str(val)
+                            parsed_val = float(str_val)
+                            if '.' in str_val or isinstance(parsed_val, float):
+                                logging.info(f"Found numeric value that should be float: {val}")
+                                has_decimal_points = True
+                                break
+                        except (ValueError, TypeError):
+                            pass
+                
+                # If any value has a decimal point, force float type
+                if has_decimal_points:
+                    inferred_type = 'float'
+                    logging.info(f"Detected decimal values in {prop_name}, forcing 'float' type")
+                    # Ensure we override the relationship property type in the schema
+                    for rel_schema in schema.get('relationships', []):
+                        if 'properties' in rel_schema and prop_name in rel_schema['properties']:
+                            logging.info(f"Explicitly setting schema type for {prop_name} to float")
+                            if isinstance(rel_schema['properties'][prop_name], dict):
+                                rel_schema['properties'][prop_name]['type'] = 'float'
+                            else:
+                                rel_schema['properties'][prop_name] = 'float'
+                else:
+                    # Normal type inference for each sample
+                    sample_types = [infer_data_type(val) for val in sample_values]
+                    # Filter out None values
+                    sample_types = [t for t in sample_types if t is not None]
+                    
+                    if sample_types:
+                        # Find the most flexible type that can accommodate all values
+                        if 'string' in sample_types:
+                            # String can hold any value
+                            inferred_type = 'string'
+                        elif 'float' in sample_types:
+                            # Float can hold integers too
+                            inferred_type = 'float'
+                        elif 'integer' in sample_types:
+                            inferred_type = 'integer'
+                        elif 'boolean' in sample_types:
+                            inferred_type = 'boolean'
+                        elif 'datetime' in sample_types:
+                            inferred_type = 'datetime'
+                        elif 'date' in sample_types:
+                            inferred_type = 'date'
+                        else:
+                            # Default to string if mixed/unknown types
+                            inferred_type = 'string'
+                    
+                    rel_property_types[prop_name] = inferred_type
+                    logging.info(f"Inferred type '{inferred_type}' for relationship property '{prop_name}' from samples {sample_values[:3]}...")
+        
+        # Now apply inferred types to the headers and update schema if needed
+        for prop_name, inferred_type in rel_property_types.items():
+            # Check against schema to report mismatches
+            schema_type = None
+            for rel_schema in schema.get('relationships', []):
+                if 'properties' in rel_schema and prop_name in rel_schema['properties']:
+                    prop_details = rel_schema['properties'][prop_name]
+                    if isinstance(prop_details, dict):
+                        schema_type = prop_details.get('type', 'string')
+                    else:
+                        schema_type = prop_details
+                    
+                    # Report mismatch and update schema
+                    if schema_type != inferred_type:
+                        logging.warning(f"Type mismatch for relationship property {prop_name}: schema says '{schema_type}' but data indicates '{inferred_type}'")
+                        logging.info(f"Using '{inferred_type}' for property {prop_name} in relationship header")
+                        
+                        # Update schema to match actual data
+                        if isinstance(prop_details, dict):
+                            rel_schema['properties'][prop_name]['type'] = inferred_type
+                        else:
+                            rel_schema['properties'][prop_name] = inferred_type
+            
+            # Create the Neo4j type header
+            neo4j_type = convert_to_neo4j_type(inferred_type)
+            if neo4j_type:
+                neo4j_rel_headers[prop_name] = f"{prop_name}:{neo4j_type}"
+            else:
+                neo4j_rel_headers[prop_name] = prop_name
+        
+        # Add any schema-defined properties that weren't in the data
         for rel_schema in schema.get('relationships', []):
             if 'properties' in rel_schema:
                 for prop_name, prop_details in rel_schema['properties'].items():
+                    # Skip properties we've already processed
+                    if prop_name in neo4j_rel_headers:
+                        continue
+                        
                     if isinstance(prop_details, dict):
                         source_col = prop_details.get('source_column', prop_name)
                         data_type = prop_details.get('type', 'string')
-                        
-                        # Map the column name with type information for Neo4j
                         neo4j_type = convert_to_neo4j_type(data_type)
                         if neo4j_type:
                             neo4j_rel_headers[prop_name] = f"{prop_name}:{neo4j_type}"
@@ -850,18 +1117,57 @@ def create_neo4j_import_files(schema_path, data_path, output_dir):
                             
                         # Store the original mapping for renaming
                         rel_column_rename_map[prop_name] = source_col
-                    elif isinstance(prop_details, str):
-                        # For simple string type definitions
-                        neo4j_type = convert_to_neo4j_type(prop_details)
-                        if neo4j_type:
-                            neo4j_rel_headers[prop_name] = f"{prop_name}:{neo4j_type}"
-                        else:
-                            neo4j_rel_headers[prop_name] = prop_name
-                        
+                    else:
+                        # For string props with no detailed config, just add them directly
+                        neo4j_rel_headers[prop_name] = f"{prop_name}:string"
                         rel_column_rename_map[prop_name] = prop_name
         
         # Apply the column renaming to the DataFrame
         df.rename(columns=rel_column_rename_map, inplace=True)
+        
+        # Generic solution for handling numeric fields with potential decimal values
+        # Scan through all columns to find numeric columns that might need to be handled as float
+        for col in df.columns:
+            # Skip special columns
+            if col in [':START_ID', ':END_ID', ':TYPE']:
+                continue
+                
+            # If already defined as float, no need to check further
+            if col in neo4j_rel_headers and ':float' in neo4j_rel_headers[col]:
+                continue
+                
+            # Check if this is a numeric column
+            if col in df.columns and not df[col].empty:
+                # Sample some non-null values
+                sample = df[col].dropna().head(10).tolist()
+                
+                if sample:
+                    # Check if values are numeric and if any might be floats
+                    might_be_float = False
+                    all_numeric = True
+                    
+                    for val in sample:
+                        if isinstance(val, (int, float)):
+                            # For direct numeric types
+                            if isinstance(val, float) or (isinstance(val, str) and '.' in val):
+                                might_be_float = True
+                                break
+                        elif isinstance(val, str):
+                            # Try to convert string to number
+                            try:
+                                num_val = float(val)
+                                if '.' in val or not float(val).is_integer():
+                                    might_be_float = True
+                                    break
+                            except (ValueError, TypeError):
+                                all_numeric = False
+                        else:
+                            all_numeric = False
+                    
+                    # If it's numeric and might contain float values, ensure it's treated as float
+                    if all_numeric and might_be_float and col in neo4j_rel_headers:
+                        logging.info(f"Generic handling: Setting {col} to float type based on value analysis")
+                        neo4j_rel_headers[col] = f"{col}:float"
         
         # Create a new DataFrame with the typed headers
         typed_df = df.copy()

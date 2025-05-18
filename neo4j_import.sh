@@ -309,6 +309,9 @@ function import_database {
     # Add delimiter options
     IMPORT_CMD="$IMPORT_CMD --delimiter=\",\" --array-delimiter=\";\""
     
+    # Add verbose flag for detailed error output
+    IMPORT_CMD="$IMPORT_CMD --verbose"
+    
     # Add database name as positional argument
     IMPORT_CMD="$IMPORT_CMD $DATABASE_NAME"
     
