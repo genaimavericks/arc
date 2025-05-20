@@ -215,6 +215,18 @@ def delete_dataset(db, dataset_id):
         return False, "Dataset not found"
     
     try:
+        # Check if this is a file-based dataset and extract the file_id
+        uploaded_file = None
+        if dataset.type == "file" and dataset.config:
+            try:
+                config_data = json.loads(dataset.config)
+                if "file_id" in config_data:
+                    file_id = config_data["file_id"]
+                    # Find the associated uploaded file
+                    uploaded_file = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
+            except json.JSONDecodeError:
+                logger.warning(f"Could not parse config JSON for dataset {dataset_id}")
+        
         # Delete the dataset record
         db.delete(dataset)
         
@@ -222,6 +234,7 @@ def delete_dataset(db, dataset_id):
         data_path = DATA_DIR / f"{dataset_id}.parquet"
         if data_path.exists():
             data_path.unlink()
+            logger.info(f"Deleted parquet file for dataset {dataset_id}")
         
         # Delete associated profile records
         from .profiler.models import ProfileResult
@@ -231,10 +244,24 @@ def delete_dataset(db, dataset_id):
             db.delete(profile)
             logger.info(f"Deleted associated profile {profile.id} for dataset {dataset_id}")
         
+        # Delete the uploaded file record and the actual file from disk if found
+        if uploaded_file:
+            # Delete the physical file from disk
+            if uploaded_file.path and os.path.exists(uploaded_file.path):
+                try:
+                    os.remove(uploaded_file.path)
+                    logger.info(f"Deleted physical file {uploaded_file.path} for dataset {dataset_id}")
+                except OSError as e:
+                    logger.error(f"Error deleting physical file {uploaded_file.path}: {str(e)}")
+            
+            # Delete the uploaded file record
+            db.delete(uploaded_file)
+            logger.info(f"Deleted uploaded file record {uploaded_file.id} for dataset {dataset_id}")
+        
         # Commit the changes
         db.commit()
         
-        return True, "Dataset and associated profiles deleted successfully"
+        return True, "Dataset, associated profiles, and uploaded files deleted successfully"
     except Exception as e:
         db.rollback()
         logger.error(f"Error deleting dataset: {str(e)}")
