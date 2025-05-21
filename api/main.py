@@ -218,7 +218,7 @@ async def direct_websocket_endpoint(websocket: WebSocket, schema_id: str):
                         "content": {
                             "query": query_text,
                             "result": f"Response to: {query_text}",
-                            "timestamp": datetime.now().isoformat()
+                            "timestamp": datetime.datetime.now().isoformat()
                         }
                     })
                 

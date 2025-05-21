@@ -2,7 +2,7 @@ from typing import Dict, List, Optional, Any
 import json
 import asyncio
 from fastapi import WebSocket
-import datetime
+from datetime import datetime
 import logging
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ class ConnectionManager:
         await self.send_message(
             websocket=websocket,
             message_type="connection_status",
-            content={"status": "connected", "timestamp": datetime.datetime.now().isoformat()}
+            content={"status": "connected", "timestamp": datetime.now().isoformat()}
         )
     
     def disconnect(self, user_id: str, schema_id: str):
@@ -53,7 +53,7 @@ class ConnectionManager:
         message = {
             "type": message_type,
             "content": content,
-            "timestamp": datetime.datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat()
         }
         await websocket.send_json(message)
     
@@ -65,7 +65,7 @@ class ConnectionManager:
         message = {
             "type": message_type,
             "content": content,
-            "timestamp": datetime.datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat()
         }
         
         # Store message in history
