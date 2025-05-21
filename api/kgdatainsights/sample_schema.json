@@ -1,0 +1,65 @@
+{
+  "nodes": [
+    {
+      "label": "Person",
+      "properties": [
+        {"name": "name", "type": "string"},
+        {"name": "age", "type": "integer"},
+        {"name": "email", "type": "string"}
+      ]
+    },
+    {
+      "label": "Company",
+      "properties": [
+        {"name": "name", "type": "string"},
+        {"name": "industry", "type": "string"},
+        {"name": "founded", "type": "date"}
+      ]
+    },
+    {
+      "label": "Product",
+      "properties": [
+        {"name": "name", "type": "string"},
+        {"name": "price", "type": "float"},
+        {"name": "category", "type": "string"}
+      ]
+    },
+    {
+      "label": "Factory",
+      "properties": [
+        {"name": "name", "type": "string"},
+        {"name": "location", "type": "string"},
+        {"name": "capacity", "type": "integer"}
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "type": "WORKS_AT",
+      "source": "Person",
+      "target": "Company",
+      "properties": [
+        {"name": "since", "type": "date"},
+        {"name": "role", "type": "string"}
+      ]
+    },
+    {
+      "type": "MANUFACTURES",
+      "source": "Factory",
+      "target": "Product",
+      "properties": [
+        {"name": "quantity", "type": "integer"},
+        {"name": "cost", "type": "float"}
+      ]
+    },
+    {
+      "type": "OWNS",
+      "source": "Company",
+      "target": "Factory",
+      "properties": [
+        {"name": "since", "type": "date"},
+        {"name": "investment", "type": "float"}
+      ]
+    }
+  ]
+}

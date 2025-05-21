@@ -21,6 +21,11 @@ export default function KGInsightsSidebar() {
       icon: MessageSquare,
     },
     {
+      name: "KG Insights Simple",
+      href: "/kginsights/insights-simple",
+      icon: MessageSquare,
+    },
+    {
       name: "Generate Graph",
       href: "/kginsights/generate",
       icon: GitBranch,

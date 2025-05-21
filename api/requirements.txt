@@ -100,5 +100,6 @@ langchain_mistralai
 langchain_anthropic
 langchain_ollama
 langchain_aws
+websockets
 
 
