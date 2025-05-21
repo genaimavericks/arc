@@ -26,29 +26,37 @@ async def get_schema_data(schema_id: str) -> Dict[str, Any]:
     if schema_id in schema_cache:
         return schema_cache[schema_id]
     
-    # For testing, use the sample schema data
     try:
-        # First try to load from the sample schema file
+        # Import the Neo4j schema helper
+        try:
+            # When imported as a module
+            from api.kgdatainsights.neo4j_schema_helper import merge_schema_data
+        except ImportError:
+            # When run directly
+            from .neo4j_schema_helper import merge_schema_data
+        
+        # First try to load from the sample schema file or database
+        db_schema = {}
         sample_schema_path = os.path.join(os.path.dirname(__file__), "sample_schema.json")
         if os.path.exists(sample_schema_path):
             with open(sample_schema_path, "r") as f:
-                schema_data = json.load(f)
-                # Cache the schema data
-                schema_cache[schema_id] = schema_data
-                return schema_data
+                db_schema = json.load(f)
+        else:
+            try:
+                db = next(get_db())
+                schema = db.query(Schema).filter(Schema.id == schema_id).first()
+                if schema:
+                    # Parse schema data from the schema field
+                    db_schema = json.loads(schema.schema)
+            except Exception as db_error:
+                logger.error(f"Error getting schema from database: {str(db_error)}")
         
-        # If sample schema not found, try database
-        try:
-            db = next(get_db())
-            schema = db.query(Schema).filter(Schema.id == schema_id).first()
-            if schema:
-                # Parse schema data from the schema field
-                schema_data = json.loads(schema.schema)
-                # Cache the schema data
-                schema_cache[schema_id] = schema_data
-                return schema_data
-        except Exception as db_error:
-            logger.error(f"Error getting schema from database: {str(db_error)}")
+        # Merge with Neo4j schema data to get actual nodes and relationships
+        schema_data = await merge_schema_data(schema_id, db_schema)
+        
+        # Cache the schema data
+        schema_cache[schema_id] = schema_data
+        return schema_data
         
         # If all else fails, return empty schema
         return {"nodes": [], "relationships": []}
@@ -102,37 +110,55 @@ async def process_query(schema_id: str, query_text: str, user: User) -> Dict[str
     
     return result
 
-async def get_autocomplete_suggestions(schema_id: str, partial_text: str, cursor_position: int, user: User) -> List[str]:
-    """Get autocomplete suggestions based on partial text and schema"""
-    # Get entity suggestions from schema
-    entities = await get_entity_suggestions(schema_id)
-    node_labels = entities["node_labels"]
-    relationship_types = entities["relationship_types"]
+async def get_autocomplete_suggestions(schema_id: str, partial_text: str, cursor_position: int, user: User) -> List[Dict[str, Any]]:
+    """Get autocomplete suggestions based on partial text and schema
     
-    # Convert partial text to lowercase for case-insensitive matching
-    lower_text = partial_text.lower()
+    This function now delegates to the autocomplete_service module for more advanced suggestions.
     
-    # Simple autocomplete logic based on schema entities
-    if lower_text.startswith("show") or lower_text.startswith("find"):
+    Args:
+        schema_id: ID of the schema
+        partial_text: Text entered by the user
+        cursor_position: Position of the cursor in the text
+        user: User object
+        
+    Returns:
+        List of suggestion objects with text and optional description
+    """
+    try:
+        # Import the autocomplete service
+        try:
+            # When imported as a module
+            from api.kgdatainsights.autocomplete_service import get_autocomplete_suggestions as get_suggestions
+        except ImportError:
+            # When run directly
+            from .autocomplete_service import get_autocomplete_suggestions as get_suggestions
+        
+        # Get suggestions from the autocomplete service
+        suggestions = await get_suggestions(schema_id, partial_text, cursor_position, user)
+        return suggestions
+    except Exception as e:
+        # Log the error
+        logger.error(f"Error getting autocomplete suggestions: {str(e)}")
+        
+        # Fall back to basic suggestions if there's an error
+        entities = await get_entity_suggestions(schema_id)
+        node_labels = entities["node_labels"]
+        
+        # Return basic suggestions
+        if not partial_text.strip():
+            return [
+                {"text": "Show me all nodes", "description": "List all nodes in the graph"},
+                {"text": "Find nodes where", "description": "Search for specific nodes"},
+                {"text": "Count nodes by type", "description": "Count nodes by label"},
+                {"text": "Match relationships between", "description": "Find connections"}
+            ]
+        
         # Suggest node labels
-        return [f"Show me all {label} nodes" for label in node_labels] + \
-               [f"Find {label} nodes with property" for label in node_labels]
-    elif lower_text.startswith("count"):
-        # Suggest counting by node label or relationship type
-        return [f"Count {label} nodes" for label in node_labels] + \
-               [f"Count {rel_type} relationships" for rel_type in relationship_types]
-    elif lower_text.startswith("match"):
-        # Suggest relationship patterns
-        suggestions = []
-        for source in node_labels:
-            for target in node_labels:
-                if source != target:
-                    for rel_type in relationship_types:
-                        suggestions.append(f"Match {source}-[{rel_type}]->{target}")
-        return suggestions[:10]  # Limit to 10 suggestions to avoid overwhelming the user
-    else:
+        if partial_text.lower().startswith("show") or partial_text.lower().startswith("find"):
+            return [{"text": f"Show me all {label} nodes", "description": f"List all {label} nodes"} for label in node_labels[:5]]
+        
         # Default suggestions
-        return ["Show", "Find", "Count", "Match"]
+        return [{"text": suggestion, "description": None} for suggestion in ["Show", "Find", "Count", "Match", "Where"]]
 
 async def validate_query(schema_id: str, query_text: str, user: User) -> List[Dict[str, Any]]:
     """Validate a query against the schema and return any errors or warnings"""

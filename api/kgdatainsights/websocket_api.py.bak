@@ -2,11 +2,11 @@ from typing import Dict, List, Optional, Any
 import json
 import asyncio
 import logging
-import traceback
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.requests import Request
 from jose import jwt
+import traceback
 from sqlalchemy.orm import Session
 
 # Fix import paths for both direct and module imports
@@ -83,6 +83,7 @@ async def check_ws_permission(websocket: WebSocket, required_permissions: List[s
                 db.close()
             
             # Get permissions from the user's role
+            
             # Check permissions
             user_permissions = []
             
@@ -318,7 +319,6 @@ async def handle_query(
     
     except Exception as e:
         logger.error(f"Error processing query: {str(e)}")
-        logger.error(traceback.format_exc())
         await manager.send_message(
             websocket=websocket,
             message_type="query_error",
@@ -336,27 +336,29 @@ async def handle_autocomplete(
 ):
     """Handle an autocomplete request asynchronously"""
     try:
-        # Get the current user from the connection if not provided
-        if not user:
-            user_id = None
-            for uid, ws in manager.active_connections.get(schema_id, {}).items():
-                if websocket == ws:
-                    user_id = uid
-                    break
+        # Get the current user from the connection
+        user_id = None
+        for uid, ws in manager.active_connections.get(schema_id, {}).items():
+            if websocket == ws:
+                user_id = uid
+                break
+        
+        if not user_id:
+            # If user not found, use a dummy user
+            user = User(id=999, username="anonymous", email="anonymous@example.com", role="user")
+            # Note: permissions will be retrieved from the 'user' role
+        else:
+            # Get the user from the database
+            from sqlalchemy.orm import Session
+            from api.models import User, SessionLocal
             
-            if not user_id:
-                # If user not found, use a dummy user
-                user = User(id=999, username="anonymous", email="anonymous@example.com", role="user")
-                # Note: permissions will be retrieved from the 'user' role
-            else:
-                # Get the user from the database
-                with SessionLocal() as db:
-                    db_user = db.query(User).filter(User.id == int(user_id)).first()
-                    if db_user:
-                        user = db_user
-                    else:
-                        # Create a user object with the ID if not found in DB
-                        user = User(id=int(user_id), username="user", email="user@example.com", role="user")
+            with SessionLocal() as db:
+                db_user = db.query(User).filter(User.id == int(user_id)).first()
+                if db_user:
+                    user = db_user
+                else:
+                    # Create a user object with the ID if not found in DB
+                    user = User(id=int(user_id), username="user", email="user@example.com", role="user")
         
         # Get the current word being typed
         if not partial_text or cursor_position == 0:
@@ -431,27 +433,29 @@ async def handle_validation(
 ):
     """Handle a validation request asynchronously"""
     try:
-        # Get the current user from the connection if not provided
-        if not user:
-            user_id = None
-            for uid, connections in manager.active_connections.get(schema_id, {}).items():
-                if websocket in connections.values():
-                    user_id = uid
-                    break
+        # Get the current user from the connection
+        user_id = None
+        for uid, connections in manager.active_connections.get(schema_id, {}).items():
+            if websocket in connections.values():
+                user_id = uid
+                break
+        
+        if not user_id:
+            # If user not found, use a dummy user
+            user = User(id=999, username="anonymous", email="anonymous@example.com", role="user")
+            # Note: permissions will be retrieved from the 'user' role
+        else:
+            # Get the user from the database
+            from sqlalchemy.orm import Session
+            from api.models import User, SessionLocal
             
-            if not user_id:
-                # If user not found, use a dummy user
-                user = User(id=999, username="anonymous", email="anonymous@example.com", role="user")
-                # Note: permissions will be retrieved from the 'user' role
-            else:
-                # Get the user from the database
-                with SessionLocal() as db:
-                    db_user = db.query(User).filter(User.id == int(user_id)).first()
-                    if db_user:
-                        user = db_user
-                    else:
-                        # Create a user object with the ID if not found in DB
-                        user = User(id=int(user_id), username="user", email="user@example.com", role="user")
+            with SessionLocal() as db:
+                db_user = db.query(User).filter(User.id == int(user_id)).first()
+                if db_user:
+                    user = db_user
+                else:
+                    # Create a user object with the ID if not found in DB
+                    user = User(id=int(user_id), username="user", email="user@example.com", role="user")
         
         # Validate query against schema
         errors = await validate_query(schema_id, query_text, user)
@@ -469,7 +473,6 @@ async def handle_validation(
     
     except Exception as e:
         logger.error(f"Error processing validation: {str(e)}")
-        logger.error(traceback.format_exc())
         await manager.send_message(
             websocket=websocket,
             message_type="validation_error",
@@ -500,6 +503,7 @@ async def handle_suggestions(
                 # Note: permissions will be retrieved from the 'user' role
             else:
                 # Get the user from the database
+                
                 with SessionLocal() as db:
                     db_user = db.query(User).filter(User.id == int(user_id)).first()
                     if db_user:
@@ -524,7 +528,6 @@ async def handle_suggestions(
     
     except Exception as e:
         logger.error(f"Error processing suggestions: {str(e)}")
-        logger.error(traceback.format_exc())
         await manager.send_message(
             websocket=websocket,
             message_type="suggestions_error",
