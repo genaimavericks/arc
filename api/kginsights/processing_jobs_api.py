@@ -46,6 +46,11 @@ async def generate_prompts_async(schema_id: int):
         task_db.close()
         print(f"Completed async prompt generation task for schema_id={schema_id}")
 
+from ..db_config import engine
+from sqlalchemy.orm import sessionmaker
+
+# Create a session factory for background tasks
+BackgroundSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Models
 class JobStatus(BaseModel):
@@ -153,27 +158,22 @@ async def process_load_data_job(job_id: str, schema_id: int, graph_name: str, dr
     """
     Background task to load data into Neo4j
     """
-    # Get the job
-    job = db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first()
-    if not job:
-        print(f"Error: Job with ID {job_id} not found")
-        return
+    # Create a new session specifically for this background task
+    task_db = BackgroundSessionLocal()
     
     try:
+        # Get the job using the new session
+        job = task_db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first()
+        if not job:
+            print(f"Error: Job with ID {job_id} not found")
+            return
+        
         # Update job status to running
         job.status = "running"
         job.started_at = datetime.now()
         job.message = f"Starting data load for schema ID {schema_id} to graph {graph_name}"
         job.progress = 5
-        db.commit()
-        
-        # Create a new session for the background task
-        # This is necessary because we can't reuse the Depends(get_db) session
-        from sqlalchemy.orm import sessionmaker
-        from ..db_config import engine
-        
-        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-        task_db = SessionLocal()
+        task_db.commit()
         
         try:
             # Call the existing load_data_from_schema function with our new session
@@ -255,43 +255,36 @@ async def process_load_data_job(job_id: str, schema_id: int, graph_name: str, dr
             task_db.close()
         
     except Exception as e:
-        # Update job with error
-        job.status = "failed"
-        job.completed_at = datetime.now()
-        job.error = str(e)
-        job.message = f"Error loading data: {str(e)}"
         print(f"Error in process_load_data_job: {str(e)}")
         print(traceback.format_exc())
-        db.commit()
+    finally:
+        # Always close the task-specific session
+        task_db.close()
 
 # Background task for cleaning Neo4j data
 async def process_clean_data_job(job_id: str, schema_id: int, graph_name: str, db: Session):
     """
     Background task to clean data from Neo4j
     """
-    # Get the job
-    job = db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first()
-    if not job:
-        print(f"Error: Job with ID {job_id} not found")
-        return
+    # Create a new session specifically for this background task
+    task_db = BackgroundSessionLocal()
     
     try:
+        # Get the job using the new session
+        job = task_db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first()
+        if not job:
+            print(f"Error: Job with ID {job_id} not found")
+            return
+        
         # Update job status to running
         job.status = "running"
         job.started_at = datetime.now()
         job.message = f"Starting data cleaning for schema ID {schema_id} from graph {graph_name}"
         job.progress = 5
-        db.commit()
-        
-        # Create a new session for the background task
-        from sqlalchemy.orm import sessionmaker
-        from ..db_config import engine
-        
-        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-        task_db = SessionLocal()
+        task_db.commit()
         
         try:
-            # Get the schema
+            # Get schema record
             schema = task_db.query(Schema).filter(Schema.id == schema_id).first()
             if not schema:
                 raise ValueError(f"Schema with ID {schema_id} not found")
@@ -343,46 +336,37 @@ async def process_clean_data_job(job_id: str, schema_id: int, graph_name: str, d
                 # Update job status to completed
                 print(f"DEBUG: Clean job completed, total deleted: {total_deleted} nodes")
                 
-                # Get a fresh reference to the job from the main db connection
-                main_job = db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first()
-                if main_job:
-                    main_job.status = "completed"
-                    main_job.completed_at = datetime.now()
-                    main_job.progress = 100
-                    main_job.message = f"Successfully cleaned {total_deleted} nodes from the graph"
+                # Update job progress
+                job = task_db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first()
+                if job and job.status == "cancelled":
+                    driver.close()
+                    return
                     
-                    # Reset node and relationship counts to 0
-                    main_job.node_count = 0
-                    main_job.relationship_count = 0
-                    
-                    # Update the result with empty counts
-                    main_job.result = json.dumps({
-                        "nodes_deleted": total_deleted,
-                        "node_types_cleaned": len(node_labels),
-                        "node_counts": {},
-                        "relationship_counts": {}
-                    })
-                    db.commit()
-                    print(f"DEBUG: Main job status updated to completed in main DB connection")
-                    print(f"DEBUG: Reset node_count and relationship_count to 0")
+                job.progress = 60
+                job.message = "Deleted all relationships, now deleting nodes"
+                task_db.commit()
                 
-                # Also update in the task_db connection
+                # Delete all nodes
+                session.run("MATCH (n) DELETE n")
+            
+            # Close Neo4j connection
+            driver.close()
+            
+            # Update job with success
+            job = task_db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first()
+            if job and job.status != "cancelled":  # Only update if job wasn't cancelled
                 job.status = "completed"
                 job.completed_at = datetime.now()
                 job.progress = 100
-                job.message = f"Successfully cleaned {total_deleted} nodes from the graph"
+                job.message = f"Successfully cleaned data for schema ID {schema_id} from graph {graph_name}"
                 
-                # Reset node and relationship counts to 0
-                job.node_count = 0
-                job.relationship_count = 0
+                # Store the result
+                result_data = {
+                    "nodes_removed": total_nodes_before,
+                    "relationships_removed": total_relationships_before
+                }
+                job.result = json.dumps(result_data)
                 
-                # Update the result with empty counts
-                job.result = json.dumps({
-                    "nodes_deleted": total_deleted,
-                    "node_types_cleaned": len(node_labels),
-                    "node_counts": {},
-                    "relationship_counts": {}
-                })
                 task_db.commit()
                 print(f"DEBUG: Job status updated to completed in task_db connection")
                 
@@ -398,23 +382,11 @@ async def process_clean_data_job(job_id: str, schema_id: int, graph_name: str, d
             task_db.close()
         
     except Exception as e:
-        # Update job with error
         print(f"Error in process_clean_data_job: {str(e)}")
         print(traceback.format_exc())
-        
-        try:
-            # Make sure job is marked as failed
-            job = db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first()
-            if job:
-                job.status = "failed"
-                job.error = str(e)
-                job.message = f"Failed to clean data: {str(e)[:100]}"
-                db.commit()
-                print(f"DEBUG: Job marked as failed due to error")
-        except Exception as inner_e:
-            print(f"Error updating job status: {str(inner_e)}")
-        
-        db.commit()
+    finally:
+        # Always close the task-specific session
+        task_db.close()
 
 # API Routes
 @router.get("", response_model=List[JobStatus])
@@ -495,16 +467,14 @@ async def load_data_to_neo4j(
     # Get the created job
     job = db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first()
     
-    # Start the background task for loading data
-    # Use asyncio.create_task instead of background_tasks.add_task for async functions
-    asyncio.create_task(
-        process_load_data_job(
-            job_id=job_id,
-            schema_id=request.schema_id,
-            graph_name=request.graph_name,
-            drop_existing=request.drop_existing,
-            db=db
-        )
+    # Start the background task for loading data using FastAPI's background_tasks
+    background_tasks.add_task(
+        process_load_data_job,
+        job_id=job_id,
+        schema_id=request.schema_id,
+        graph_name=request.graph_name,
+        drop_existing=request.drop_existing,
+        db=db
     )
     
     return format_job_response(job)
@@ -532,15 +502,13 @@ async def clean_data_from_neo4j(
     # Get the created job
     job = db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first()
     
-    # Start the background task for cleaning data
-    # Use asyncio.create_task instead of background_tasks.add_task for async functions
-    asyncio.create_task(
-        process_clean_data_job(
-            job_id=job_id,
-            schema_id=request.schema_id,
-            graph_name=request.graph_name,
-            db=db
-        )
+    # Start the background task for cleaning data using FastAPI's background_tasks
+    background_tasks.add_task(
+        process_clean_data_job,
+        job_id=job_id,
+        schema_id=request.schema_id,
+        graph_name=request.graph_name,
+        db=db
     )
     
     return format_job_response(job)
@@ -554,18 +522,24 @@ async def cancel_job(
     """
     Cancel a running job
     """
-    # Updated to use GraphIngestionJob
+    # Check if the job ID starts with "temp-" which indicates a temporary frontend job
+    if job_id.startswith("temp-"):
+        # For temporary jobs that don't exist in the database, return a success message
+        # This helps the frontend clean up its state without showing an error
+        return {"message": "Temporary job removed successfully", "status": "not_found"}
+        
     job = db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first()
     if not job:
-        raise HTTPException(status_code=404, detail=f"Job with ID {job_id} not found")
+        # Instead of raising a 404 error, return a message that can be used by the frontend
+        # to clean up its state
+        return {"message": f"Job with ID {job_id} not found", "status": "not_found"}
         
-    if job.status in ["completed", "failed"]:
+    if job.status not in ["pending", "running"]:
         return {"message": f"Job is already in {job.status} state and cannot be cancelled"}
-        
+    
     job.status = "cancelled"
     job.message = "Job cancelled by user"
     job.updated_at = datetime.now()
-    
     db.commit()
     
-    return {"message": "Job cancelled successfully"}
+    return {"message": "Job cancelled successfully", "status": "cancelled"}

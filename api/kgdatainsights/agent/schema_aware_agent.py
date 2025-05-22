@@ -66,6 +66,7 @@ class SchemaAwareGraphAssistant:
         self.schema = json.loads(schema) if isinstance(schema, str) else schema
         self.session_id = session_id or f"session_{uuid4()}"
         self.formatted_schema = None
+        self.schema_from_db = None
         # read csv path from Schema table
         self.csv_file_path = self._get_csv_path()
         self._format_schema()
@@ -87,6 +88,10 @@ class SchemaAwareGraphAssistant:
             refresh_schema=False  # Disable schema refresh to avoid APOC dependency
         )
         
+        # Get schema from database
+        self.schema_from_db = self.graph.schema
+        print(f"Schema from database: {self.schema_from_db}")
+
         # Initialize Neo4j-backed chat history
         self.history = Neo4jChatMessageHistory(
             session_id=self.session_id,
@@ -494,7 +499,7 @@ class SchemaAwareGraphAssistant:
             print(f"Generating Cypher prompt template for {self.db_id}...")
             cypher_messages = [
                 {"role": "system", "content": cypher_system_prompt},
-                {"role": "user", "content": f"Use this Neo4j schema: {self.formatted_schema} for generating Cypher prompt as per following instructions:\n\n{cypher_prompt_instruction}"}
+                {"role": "user", "content": f"Use this Neo4j schema: {self.schema_from_db} for generating Cypher prompt as per following instructions:\n\n{cypher_prompt_instruction}"}
             ]
             llm_local = LLMProvider.get_llm(provider_name=LLMConstants.Providers.GOOGLE, model_name=LLMConstants.GoogleModels.DEFAULT, temperature=0.0)
             cypher_response = llm_local.invoke(cypher_messages)
@@ -515,7 +520,7 @@ class SchemaAwareGraphAssistant:
             print(f"Generating QA prompt template for {self.db_id}...")
             qa_messages = [
                 {"role": "system", "content": qa_system_prompt},
-                {"role": "user", "content": f"Use this Neo4j schema: {self.formatted_schema} for generating QA prompt as per following instructions:\n\n{qa_prompt_instruction}"}
+                {"role": "user", "content": f"Use this Neo4j schema: {self.schema_from_db} for generating QA prompt as per following instructions:\n\n{qa_prompt_instruction}"}
             ]
             qa_response = llm_local.invoke(qa_messages)
             qa_prompt_template = qa_response.content.strip()
@@ -532,7 +537,7 @@ class SchemaAwareGraphAssistant:
             # Generate sample queries
             sample_queries_messages = [
                 {"role": "system", "content": sample_queries_system_prompt},
-                {"role": "user", "content": f"Use this Neo4j schema: {self.formatted_schema} and the data to use: {sample_data} for generating sample questions prompt as per following instruction: \n\n{sample_queries_instruction}"}
+                {"role": "user", "content": f"Use this Neo4j schema: {self.schema_from_db} and the data to use: {sample_data} for generating sample questions prompt as per following instruction: \n\n{sample_queries_instruction}"}
             ]
             sample_queries_response = llm_local.invoke(sample_queries_messages)
             

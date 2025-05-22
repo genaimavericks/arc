@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { PlusCircle, Search, Eye, BarChart2, Wand2, Compass, RefreshCw, Trash2, ChevronLeft, ChevronRight } from "lucide-react"
+import { PlusCircle, Search, Eye, BarChart2, Wand2, RefreshCw, Trash2, ChevronLeft, ChevronRight, FileDown } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { DatasetPreviewModal } from "@/components/datapuur/dataset-preview-modal"
 import { format } from "date-fns"
@@ -117,6 +117,7 @@ export function DataDashboard() {
       // Fetch metrics
       try {
         const metrics = await fetchWithAuth("/api/datapuur/metrics")
+        console.log("API Response - Metrics:", metrics)
         setDataMetrics(metrics)
       } catch (error) {
         console.error("Error fetching metrics:", error)
@@ -125,6 +126,7 @@ export function DataDashboard() {
       // Fetch activities
       try {
         const activitiesData = await fetchWithAuth("/api/datapuur/activities")
+        console.log("API Response - Activities:", activitiesData)
         setActivities(activitiesData)
       } catch (error) {
         console.error("Error fetching activities:", error)
@@ -133,7 +135,14 @@ export function DataDashboard() {
       // Fetch dashboard data
       try {
         const dashboardData = await fetchWithAuth("/api/datapuur/dashboard")
+        console.log("API Response - Dashboard:", dashboardData)
         setDashboardData(dashboardData)
+        
+        // Log specific parts of the dashboard data for easier comparison
+        console.log("Dashboard - metrics:", dashboardData.metrics)
+        console.log("Dashboard - chart_data:", dashboardData.chart_data)
+        console.log("Dashboard - recent_activities:", dashboardData.recent_activities)
+        console.log("Dashboard - userRole:", dashboardData.userRole)
       } catch (error) {
         console.error("Error fetching dashboard data:", error)
       }
@@ -368,8 +377,8 @@ export function DataDashboard() {
     router.push(`/datapuur/transformation/${datasetId}`)
   }
 
-  const handleExplore = (datasetId: string) => {
-    router.push(`/datapuur/explore/${datasetId}`)
+  const handleExport = (datasetId: string) => {
+    router.push(`/datapuur/export?id=${datasetId}`)
   }
 
   const formatDate = (dateString: string) => {
@@ -530,12 +539,13 @@ export function DataDashboard() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => handleExplore(dataset.id)}
-                              title="Explore"
+                              onClick={() => handleExport(dataset.id)}
+                              title="Export"
                               disabled={dataset.status.toLowerCase() !== "active"}
                             >
-                              <Compass className="h-4 w-4" />
+                              <FileDown className="h-4 w-4" />
                             </Button>
+
                             {canDeleteDataset(dataset) && (
                               <Button
                                 variant="ghost"

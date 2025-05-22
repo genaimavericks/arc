@@ -24,11 +24,14 @@ from api.db_config import get_db, init_db
 from api.auth import router as auth_router, has_any_permission
 #from api.ingestion import router as ingestion_router
 from api.datapuur import router as datapuur_router
+#from api.datapuur_dramatiq_api import router as datapuur_router
+from api.datapuur import get_all_jobs_admin, stop_job_admin, delete_job_admin
 from api.kginsights import router as kginsights_router
 from api.kgdatainsights.data_insights_api import router as kgdatainsights_router, get_query_history, get_predefined_queries
 from api.kginsights.graphschemaapi import router as graphschema_router, build_schema_from_source, SourceIdInput, SchemaResult
 from api.profiler import router as profiler_router
 from api.admin import router as admin_router
+from api.gen_ai_layer.router import router as gen_ai_router
 from api.export_router import router as export_router
 from api.middleware import ActivityLoggerMiddleware
 from api.log_filter_middleware import LogFilterMiddleware
@@ -81,8 +84,14 @@ app.include_router(graphschema_router, prefix="/api")
 app.include_router(kgdatainsights_router, prefix="/api")
 app.include_router(profiler_router)
 app.include_router(export_router)
-
 app.include_router(admin_router)
+# Include the Gen AI Layer router
+app.include_router(gen_ai_router)
+
+# Add additional admin routes that map to datapuur admin endpoints
+app.add_api_route("/api/admin/jobs", get_all_jobs_admin, methods=["GET"])
+app.add_api_route("/api/admin/jobs/{job_id}/stop", stop_job_admin, methods=["POST"])
+app.add_api_route("/api/admin/jobs/{job_id}", delete_job_admin, methods=["DELETE"])
 
 # Removed old compatibility routes for KGInsights
 # These are now handled by the kgdatainsights_router

@@ -147,57 +147,74 @@ export function KGInsightsJobProvider({ children }: { children: ReactNode }) {
 
   // Fetch all jobs from API
   const refreshJobs = async () => {
-    setIsLoading(true)
-    setError(null)
+    if (isLoading) return;
     
     try {
+      setIsLoading(true);
+      setError(null);
+      
       const token = safeLocalStorage.getItem('token');
       const response = await fetch('/api/processing-jobs', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
-      })
+      });
       
       if (!response.ok) {
-        throw new Error(`Failed to fetch jobs: ${response.statusText}`)
+        throw new Error(`Failed to fetch jobs: ${response.statusText}`);
       }
       
-      const data = await response.json()
+      const data = await response.json();
       
-      // Update local state while preserving any jobs not returned by the API
+      // Merge with existing jobs, keeping temporary jobs that might not be in the API yet
+      // and removing jobs that no longer exist in the API (except for temporary ones)
       setJobs(prevJobs => {
-        // Create a map of existing jobs by ID for quick lookup
-        const existingJobsMap = new Map(prevJobs.map(job => [job.id, job]));
-        
-        // Process the new jobs from the API
-        const updatedJobs = data.map((apiJob: KGJob) => {
-          const existingJob = existingJobsMap.get(apiJob.id);
-          
-          // If this is a temporary job that's been replaced by a real one, use the API data
-          if (existingJob && existingJob.id.startsWith('temp-')) {
-            return apiJob;
-          }
-          
-          // For existing jobs, always use the API data (server is source of truth)
-          return apiJob;
-        });
-        
-        // Keep only the temporary jobs that aren't in the API response yet
+        // Get all temporary jobs that might not be in the API yet
         const tempJobs = prevJobs.filter(job => 
           job.id.startsWith('temp-') && 
-          !data.some((apiJob: KGJob) => apiJob.schema_id === job.schema_id && apiJob.job_type === job.job_type)
+          !data.some((apiJob: KGJob) => apiJob.id === job.id)
         );
         
-        return [...tempJobs, ...updatedJobs];
+        // Get all completed/failed/cancelled jobs from previous state that we want to keep
+        // but might not be returned by the API anymore
+        const recentCompletedJobs = prevJobs.filter(job => 
+          (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') &&
+          !data.some((apiJob: KGJob) => apiJob.id === job.id) &&
+          // Only keep if updated in the last 5 minutes
+          new Date(job.updated_at) > new Date(Date.now() - 5 * 60 * 1000)
+        );
+        
+        // Combine API jobs with temp jobs and recent completed jobs
+        const mergedJobs = [
+          ...data,
+          ...tempJobs,
+          ...recentCompletedJobs
+        ];
+        
+        // Clean up any temporary jobs that are older than 2 minutes
+        // This prevents polling for temporary jobs that never got created in the backend
+        const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
+        const cleanedJobs = mergedJobs.filter(job => {
+          if (job.id.startsWith('temp-')) {
+            return new Date(job.created_at) > twoMinutesAgo;
+          }
+          return true;
+        });
+        
+        // Save to localStorage
+        safeLocalStorage.setItem(STORAGE_KEY, JSON.stringify(cleanedJobs));
+        
+        return cleanedJobs;
       });
+      
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error fetching jobs'
-      setError(errorMessage)
-      console.error(errorMessage)
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error fetching jobs';
+      setError(errorMessage);
+      console.error('Error fetching jobs:', errorMessage);
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   // Clear completed jobs
   const clearCompletedJobs = () => {
@@ -377,8 +394,24 @@ export function KGInsightsJobProvider({ children }: { children: ReactNode }) {
         }
       })
       
-      if (!response.ok) {
-        throw new Error(`Failed to cancel job: ${response.statusText}`)
+      const result = await response.json();
+      
+      // Check if the job was not found (we modified the API to return status instead of 404)
+      if (result.status === "not_found") {
+        // Remove the job from our local state
+        setJobs(prevJobs => prevJobs.filter(job => job.id !== jobId));
+        
+        // Update localStorage
+        const updatedJobs = jobs.filter(job => job.id !== jobId);
+        safeLocalStorage.setItem(STORAGE_KEY, JSON.stringify(updatedJobs));
+        
+        toast({
+          title: "Job Removed",
+          description: "The job no longer exists and has been removed from your list.",
+          variant: "default",
+        });
+        
+        return true;
       }
       
       // Update local state immediately, then refresh
@@ -390,24 +423,40 @@ export function KGInsightsJobProvider({ children }: { children: ReactNode }) {
         )
       );
       
-      await refreshJobs()
+      await refreshJobs();
       
       toast({
         title: "Job Cancelled",
         description: "The job has been cancelled successfully.",
         variant: "default",
-      })
+      });
       
-      return true
+      return true;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error cancelling job'
-      setError(errorMessage)
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error cancelling job';
+      setError(errorMessage);
+      
+      // If we get an error, it might be because the job doesn't exist
+      // Let's check if it's a temporary job and remove it if needed
+      if (jobId.startsWith('temp-')) {
+        setJobs(prevJobs => prevJobs.filter(job => job.id !== jobId));
+        
+        toast({
+          title: "Job Removed",
+          description: "The temporary job has been removed.",
+          variant: "default",
+        });
+        
+        return true;
+      }
+      
       toast({
         title: "Error",
         description: errorMessage,
         variant: "destructive",
-      })
-      return false
+      });
+      
+      return false;
     }
   }
 

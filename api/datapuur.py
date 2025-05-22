@@ -215,6 +215,18 @@ def delete_dataset(db, dataset_id):
         return False, "Dataset not found"
     
     try:
+        # Check if this is a file-based dataset and extract the file_id
+        uploaded_file = None
+        if dataset.type == "file" and dataset.config:
+            try:
+                config_data = json.loads(dataset.config)
+                if "file_id" in config_data:
+                    file_id = config_data["file_id"]
+                    # Find the associated uploaded file
+                    uploaded_file = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
+            except json.JSONDecodeError:
+                logger.warning(f"Could not parse config JSON for dataset {dataset_id}")
+        
         # Delete the dataset record
         db.delete(dataset)
         
@@ -222,6 +234,7 @@ def delete_dataset(db, dataset_id):
         data_path = DATA_DIR / f"{dataset_id}.parquet"
         if data_path.exists():
             data_path.unlink()
+            logger.info(f"Deleted parquet file for dataset {dataset_id}")
         
         # Delete associated profile records
         from .profiler.models import ProfileResult
@@ -231,10 +244,24 @@ def delete_dataset(db, dataset_id):
             db.delete(profile)
             logger.info(f"Deleted associated profile {profile.id} for dataset {dataset_id}")
         
+        # Delete the uploaded file record and the actual file from disk if found
+        if uploaded_file:
+            # Delete the physical file from disk
+            if uploaded_file.path and os.path.exists(uploaded_file.path):
+                try:
+                    os.remove(uploaded_file.path)
+                    logger.info(f"Deleted physical file {uploaded_file.path} for dataset {dataset_id}")
+                except OSError as e:
+                    logger.error(f"Error deleting physical file {uploaded_file.path}: {str(e)}")
+            
+            # Delete the uploaded file record
+            db.delete(uploaded_file)
+            logger.info(f"Deleted uploaded file record {uploaded_file.id} for dataset {dataset_id}")
+        
         # Commit the changes
         db.commit()
         
-        return True, "Dataset and associated profiles deleted successfully"
+        return True, "Dataset, associated profiles, and uploaded files deleted successfully"
     except Exception as e:
         db.rollback()
         logger.error(f"Error deleting dataset: {str(e)}")
@@ -3982,3 +4009,157 @@ async def preview_file_direct(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error previewing file: {str(e)}"
         )
+        
+@router.get("/admin/jobs", response_model=List[Dict[str, Any]])
+async def get_all_jobs_admin(
+    current_user: User = Depends(has_permission("datapuur:manage")),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all jobs in the system (admin only, requires datapuur:manage permission).
+    Returns detailed information about all jobs for admin monitoring.
+    """
+    try:
+        from .models import IngestionJob
+        
+        # Get all jobs from the database
+        jobs = db.query(IngestionJob).all()
+        
+        # Convert to response format
+        job_list = []
+        for job in jobs:
+            job_data = {
+                "id": job.id or "",  # Ensure we never return null for string fields
+                "name": job.name or "",
+                "type": job.type or "",
+                "status": job.status or "",
+                "createdAt": job.start_time.isoformat() if job.start_time else "",
+                "updatedAt": job.end_time.isoformat() if job.end_time else "",
+                "progress": job.progress or 0,
+                "details": job.details or "",
+                "error": job.error or ""
+            }
+            job_list.append(job_data)
+        
+        # Log this admin activity
+        log_activity(
+            db=db,
+            username=current_user.username,
+            action="Admin job management",
+            details="Retrieved all system jobs"
+        )
+        
+        return job_list
+    except Exception as e:
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving jobs: {str(e)}"
+        )
+
+@router.post("/admin/jobs/{job_id}/stop", response_model=Dict[str, Any])
+async def stop_job_admin(
+    job_id: str,
+    current_user: User = Depends(has_permission("datapuur:manage")),
+    db: Session = Depends(get_db)
+):
+    """
+    Stop a running job (admin only, requires datapuur:manage permission).
+    Used by admins to forcibly stop jobs that might be stuck or problematic.
+    """
+    try:
+        from .models import IngestionJob
+        
+        # Get the job
+        job = db.query(IngestionJob).filter(IngestionJob.id == job_id).first()
+        if not job:
+            raise HTTPException(
+                status_code=http_status.HTTP_404_NOT_FOUND,
+                detail=f"Job not found with ID: {job_id}"
+            )
+        
+        # Check if job can be stopped
+        if job.status not in ["running", "queued"]:
+            raise HTTPException(
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+                detail=f"Job with status '{job.status}' cannot be stopped"
+            )
+        
+        # Update job status to cancelled
+        job.status = "cancelled"
+        job.end_time = datetime.now()
+        job.details = f"{job.details} (Stopped by admin: {current_user.username})"
+        db.commit()
+        
+        # Log this admin activity
+        log_activity(
+            db=db,
+            username=current_user.username,
+            action="Admin job management",
+            details=f"Stopped job {job_id}"
+        )
+        
+        return {
+            "id": job.id,
+            "status": job.status,
+            "message": "Job stopped successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error stopping job: {str(e)}"
+        )
+
+@router.delete("/admin/jobs/{job_id}", response_model=Dict[str, Any])
+async def delete_job_admin(
+    job_id: str,
+    current_user: User = Depends(has_permission("datapuur:manage")),
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a job and its associated resources (admin only, requires datapuur:manage permission).
+    Used by admins to clean up the system by removing old or failed jobs.
+    """
+    try:
+        from .models import IngestionJob
+        
+        # Get the job
+        job = db.query(IngestionJob).filter(IngestionJob.id == job_id).first()
+        if not job:
+            raise HTTPException(
+                status_code=http_status.HTTP_404_NOT_FOUND,
+                detail=f"Job not found with ID: {job_id}"
+            )
+        
+        # If the job has associated files, may need to delete them as well
+        # This is job-type specific
+        if job.type == "file":
+            # For file ingestion jobs, we might want to delete associated files
+            file_path = os.path.join(os.path.dirname(__file__), "data", f"{job_id}.parquet")
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        
+        # Delete the job from the database
+        db.delete(job)
+        db.commit()
+        
+        # Log this admin activity
+        log_activity(
+            db=db,
+            username=current_user.username,
+            action="Admin job management",
+            details=f"Deleted job {job_id}"
+        )
+        
+        return {
+            "id": job_id,
+            "message": "Job deleted successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting job: {str(e)}"
+        )   
