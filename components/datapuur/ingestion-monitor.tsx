@@ -49,35 +49,61 @@ export function IngestionMonitor({ jobs: propJobs, onJobUpdated, errors: propErr
   useEffect(() => {
     if (!localIsPolling) return
 
-    // Initial check immediately when a new job is added
+    // Function to check job status
     const checkJobs = async () => {
-      // Only poll for active jobs
-      const jobsToUpdate = jobs.filter((job) => 
-        (job.status === "running" || job.status === "queued") && 
-        // Skip temporary jobs (they start with "temp-")
-        !job.id.startsWith("temp-")
-      )
-
-      if (jobsToUpdate.length === 0) {
-        return
-      }
-
       try {
-        for (const job of jobsToUpdate) {
-          const apiBaseUrl = getApiBaseUrl();
-          const response = await fetch(`${apiBaseUrl}/api/datapuur/job-status/${job.id}`, {
-            headers: {
-              Authorization: `Bearer ${localStorage.getItem("token")}`,
-            },
-          })
+        const apiBaseUrl = getApiBaseUrl()
+        const token = localStorage.getItem("token")
 
-          if (response.ok) {
-            const updatedJob = await response.json()
-            if (onJobUpdated) {
-              onJobUpdated(updatedJob)
-            } else if (updateJob) {
-              updateJob(updatedJob)
+        if (!token) return
+
+        // Only check running or queued jobs
+        const jobsToCheck = jobs.filter(job => 
+          job.status === "running" || job.status === "queued"
+        )
+
+        if (jobsToCheck.length === 0) return
+
+        for (const job of jobsToCheck) {
+          try {
+            const response = await fetch(`${apiBaseUrl}/api/datapuur/job-status/${job.id}`, {
+              headers: {
+                Authorization: `Bearer ${token}`
+              }
+            })
+            
+            // Handle 404 responses - job no longer exists
+            if (response.status === 404) {
+              console.log(`Job ${job.id} no longer exists (404), removing from tracking`)
+              
+              // Mark job as removed
+              updateJob({
+                ...job,
+                status: "removed",
+                markedForRemoval: true,
+                details: "Job no longer exists on server"
+              })
+              
+              continue
             }
+            
+            if (!response.ok) {
+              console.error(`Error checking job ${job.id}: ${response.statusText}`)
+              continue
+            }
+            
+            const data = await response.json()
+            
+            // Update job with new status
+            if (data) {
+              if (onJobUpdated) {
+                onJobUpdated(data)
+              } else {
+                updateJob(data)
+              }
+            }
+          } catch (error) {
+            console.error(`Error checking job ${job.id}:`, error)
           }
         }
       } catch (error) {
@@ -89,7 +115,7 @@ export function IngestionMonitor({ jobs: propJobs, onJobUpdated, errors: propErr
     checkJobs()
     
     // Then set up the polling interval
-    const pollInterval = setInterval(checkJobs, 3000) // Poll every 3 seconds
+    const pollInterval = setInterval(checkJobs, 10000) // Poll every 10 seconds instead of 3
 
     return () => clearInterval(pollInterval)
   }, [jobs, localIsPolling, onJobUpdated, updateJob])

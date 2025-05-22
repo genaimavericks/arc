@@ -568,6 +568,13 @@ async def register_user(
             detail="Email already registered"
         )
     
+    # Role security check: Only admin users can create admin users
+    if user_data.role == "admin" and current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admin users can create users with admin role"
+        )
+    
     # Validate role
     validate_role(user_data.role, db)
     
@@ -633,14 +640,27 @@ async def get_roles(
     db: Session = Depends(get_db)
 ):
     """Get all roles"""
-    roles = db.query(Role).all()
+    db_roles = db.query(Role).all()
     
-    # Convert permissions from JSON string to list
-    for role in roles:
-        try:
-            role.permissions_list = json.loads(role.description).get("permissions", []) if role.description else []
-        except json.JSONDecodeError:
-            role.permissions_list = []
+    # Create a list of RoleResponse objects with proper permission handling
+    roles = []
+    for role in db_roles:
+        # Get permissions using the model's get_permissions method
+        permissions = role.get_permissions()
+        
+        # Create a dictionary with all the role data
+        role_data = {
+            "id": role.id,
+            "name": role.name,
+            "description": role.description or "",
+            "permissions": permissions,  # This maps to permissions_list in RoleResponse via the alias
+            "is_system_role": role.is_system_role,
+            "created_at": role.created_at,
+            "updated_at": role.updated_at
+        }
+        
+        # Create a RoleResponse object and append to the list
+        roles.append(RoleResponse(**role_data))
     
     return roles
 
@@ -658,13 +678,22 @@ async def get_role(
             detail="Role not found"
         )
     
-    # Convert permissions from JSON string to list
-    try:
-        role.permissions_list = json.loads(role.description).get("permissions", []) if role.description else []
-    except json.JSONDecodeError:
-        role.permissions_list = []
+    # Get permissions using the model's get_permissions method
+    permissions = role.get_permissions()
     
-    return role
+    # Create a dictionary with all the role data
+    role_data = {
+        "id": role.id,
+        "name": role.name,
+        "description": role.description or "",
+        "permissions": permissions,  # This maps to permissions_list in RoleResponse via the alias
+        "is_system_role": role.is_system_role,
+        "created_at": role.created_at,
+        "updated_at": role.updated_at
+    }
+    
+    # Return a RoleResponse object
+    return RoleResponse(**role_data)
 
 @router.post("/admin/roles", response_model=RoleResponse)
 async def create_role(
@@ -721,9 +750,20 @@ async def create_role(
         db.refresh(new_role)
         
         # Log the creation for debugging
-        print(f"Created role {new_role.name} (ID: {new_role.id}) permissions: {new_role.permissions}")
+        print(f"Created role {new_role.name} (ID: {new_role.id}) permissions: {role_create.permissions}")
         
-        return new_role
+        # Create a RoleResponse object with proper permission handling
+        role_data = {
+            "id": new_role.id,
+            "name": new_role.name,
+            "description": new_role.description or "",
+            "permissions": role_create.permissions,  # Use the permissions from the request
+            "is_system_role": new_role.is_system_role,
+            "created_at": new_role.created_at,
+            "updated_at": new_role.updated_at
+        }
+        
+        return RoleResponse(**role_data)
     except Exception as e:
         db.rollback()
         raise HTTPException(
@@ -773,13 +813,24 @@ async def update_role(
                 db.refresh(role)
                 
                 # Log the update for debugging
-                print(f"Updated system role {role.name} (ID: {role.id}) permissions: {role.permissions}")
+                print(f"Updated system role {role.name} (ID: {role.id}) permissions: {role_update.permissions}")
                 
                 # Check if any users have this role and log them
                 users_with_role = db.query(User).filter(User.role == role.name).all()
                 print(f"Users with role {role.name}: {[user.username for user in users_with_role]}")
                 
-                return role
+                # Create a RoleResponse object with proper permission handling
+                role_data = {
+                    "id": role.id,
+                    "name": role.name,
+                    "description": role.description or "",
+                    "permissions": role_update.permissions,  # Use the updated permissions
+                    "is_system_role": role.is_system_role,
+                    "created_at": role.created_at,
+                    "updated_at": role.updated_at
+                }
+                
+                return RoleResponse(**role_data)
         except Exception as e:
             db.rollback()
             print(f"Error updating system role permissions: {str(e)}")
@@ -825,13 +876,25 @@ async def update_role(
         db.refresh(role)
         
         # Log the update for debugging
-        print(f"Updated role {role.name} (ID: {role.id}) permissions: {role.permissions}")
+        permissions = role.get_permissions()
+        print(f"Updated role {role.name} (ID: {role.id}) permissions: {permissions}")
         
         # Check if any users have this role and log them
         users_with_role = db.query(User).filter(User.role == role.name).all()
         print(f"Users with role {role.name}: {[user.username for user in users_with_role]}")
         
-        return role
+        # Create a RoleResponse object with proper permission handling
+        role_data = {
+            "id": role.id,
+            "name": role.name,
+            "description": role.description or "",
+            "permissions": permissions,  # Use the permissions from the role
+            "is_system_role": role.is_system_role,
+            "created_at": role.created_at,
+            "updated_at": role.updated_at
+        }
+        
+        return RoleResponse(**role_data)
     except Exception as e:
         db.rollback()
         raise HTTPException(
@@ -925,27 +988,31 @@ def request_password_reset(request_data: ForgotPasswordRequest, db: Session = De
     Request a password reset link to be sent to the user's email.
     
     This endpoint sends a password reset link to the user's email if the account exists.
-    For security reasons, it always returns a 200 OK status even if the email is not found.
+    Returns an error if the email doesn't exist in the system.
     """
     # Check if user exists
     user = db.query(User).filter(User.email == request_data.email).first()
     
-    if user:
-        # In a real implementation, you would:
-        # 1. Generate a secure token
-        # 2. Store token with expiration in a database
-        # 3. Send email with reset link
-        # For demo purposes, we just log the action
-        print(f"Password reset requested for user: {user.username}")
-        log_activity(
-            db=db,
-            username=user.username,
-            action="PASSWORD_RESET_REQUESTED",
-            details=f"Password reset requested for {user.email}"
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Email not found in our records"
         )
     
-    # Always return OK for security (don't leak whether email exists)
-    return {"message": "If the email exists, a password reset link has been sent"}
+    # In a real implementation, you would:
+    # 1. Generate a secure token
+    # 2. Store token with expiration in a database
+    # 3. Send email with reset link
+    # For demo purposes, we just log the action
+    print(f"Password reset requested for user: {user.username}")
+    log_activity(
+        db=db,
+        username=user.username,
+        action="PASSWORD_RESET_REQUESTED",
+        details=f"Password reset requested for {user.email}"
+    )
+    
+    return {"message": "Password reset link has been sent to your email"}
 
 @router.post("/reset-password-direct", status_code=status.HTTP_200_OK)
 def reset_password_direct(

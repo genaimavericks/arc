@@ -89,6 +89,7 @@ export default function AdminDashboard() {
     { id: "users", label: "Users", icon: Users },
     { id: "activity", label: "Activity Log", icon: Activity },
     { id: "permissions", label: "Permissions", icon: Shield },
+    { id: "jobs", label: "Job Control", icon: Activity },
     { id: "settings", label: "Settings", icon: Settings },
   ]
 

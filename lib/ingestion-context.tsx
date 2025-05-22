@@ -38,30 +38,36 @@ interface IngestionContextType {
 const IngestionContext = createContext<IngestionContextType | undefined>(undefined)
 
 // Helper functions for localStorage
-const saveJobsToStorage = (jobs: Job[]) => {
+function saveJobsToStorage(jobs: Job[]) {
   try {
-    localStorage.setItem('ingestionJobs', JSON.stringify(jobs))
+    // Filter out any jobs with status 'removed', 'deleted', or 'cancelled'
+    // before saving to localStorage to prevent orphaned jobs
+    const validJobsToSave = jobs.filter(job => 
+      !['removed', 'deleted', 'cancelled'].includes(job.status)
+    );
+    
+    localStorage.setItem('ingestionJobs', JSON.stringify(validJobsToSave))
   } catch (error) {
     console.error('Error saving jobs to localStorage:', error)
   }
 }
 
 // Helper function to get jobs from localStorage
-const getJobsFromStorage = (): Job[] => {
+function getJobsFromStorage(): Job[] {
   try {
-    const storedJobs = localStorage.getItem("ingestionJobs")
-    if (storedJobs) {
-      const parsedJobs = JSON.parse(storedJobs)
-      // Filter out completed and failed jobs when retrieving from storage
-      // This ensures completed jobs don't persist after a page refresh
-      return parsedJobs.filter((job: Job) => 
-        job.status === "running" || job.status === "queued"
-      )
-    }
+    const jobsData = localStorage.getItem('ingestionJobs')
+    if (!jobsData) return []
+    
+    const parsedJobs = JSON.parse(jobsData)
+    
+    // Filter out any stale jobs that may have been left in localStorage
+    return parsedJobs.filter((job: Job) => 
+      !['removed', 'deleted', 'cancelled'].includes(job.status)
+    )
   } catch (error) {
-    console.error("Error retrieving jobs from localStorage:", error)
+    console.error('Error retrieving jobs from localStorage:', error)
+    return []
   }
-  return []
 }
 
 // Provider component
@@ -103,11 +109,12 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
       const newJobs = [...prevJobs]
       newJobs[index] = updatedJob
       
-      // If the job is now completed, failed, or cancelled, mark it for removal after a delay
+      // If the job is now completed, failed, cancelled or removed, mark it for removal
       if (
         (updatedJob.status === "completed" || 
          updatedJob.status === "failed" || 
-         updatedJob.status === "cancelled") && 
+         updatedJob.status === "cancelled" ||
+         updatedJob.status === "removed") && 
         !newJobs[index].markedForRemoval
       ) {
         // Mark the job for removal
@@ -116,18 +123,30 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
           markedForRemoval: true,
         }
         
-        // Clear processing status if this was a cancelled job
-        if (updatedJob.status === "cancelled") {
+        // Clear processing status if this was a cancelled/removed job
+        if (updatedJob.status === "cancelled" || updatedJob.status === "removed") {
           setProcessingStatus("");
+          
+          // Also remove this job from localStorage immediately
+          const filteredJobs = prevJobs.filter(job => job.id !== updatedJob.id);
+          saveJobsToStorage(filteredJobs);
         }
         
         // Remove the job after a delay
-        const removalDelay = updatedJob.status === "cancelled" ? 3000 : 5000;
+        const removalDelay = (updatedJob.status === "cancelled" || updatedJob.status === "removed") ? 3000 : 5000;
         setTimeout(() => {
-          setJobs((currentJobs) =>
-            currentJobs.filter((job) => job.id !== updatedJob.id)
-          )
-        }, removalDelay) // Remove after delay (shorter for cancelled jobs)
+          setJobs((currentJobs) => {
+            const filteredJobs = currentJobs.filter((job) => job.id !== updatedJob.id);
+            // Update localStorage when removing jobs
+            saveJobsToStorage(filteredJobs);
+            return filteredJobs;
+          })
+        }, removalDelay) // Remove after delay (shorter for cancelled/removed jobs)
+      }
+      
+      // For any status update, persist to localStorage
+      if (typeof window !== 'undefined') {
+        saveJobsToStorage(newJobs);
       }
       
       return newJobs
@@ -336,50 +355,64 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
     // Ensure this runs client-side only
     if (typeof window === 'undefined' || !isPolling) return
 
-    // Initial check immediately when a new job is added
+    // Function to check status of all jobs
     const checkJobs = async () => {
-      // Only poll for active jobs
-      const jobsToUpdate = jobs.filter((job) => 
-        (job.status === "running" || job.status === "queued") && 
-        // Skip temporary jobs (they start with "temp-")
-        !job.id.startsWith("temp-")
-      )
-
-      if (jobsToUpdate.length === 0) {
-        return
-      }
-
       try {
-        // Use Promise.all to fetch all job statuses concurrently instead of sequentially
-        // This ensures all jobs get updated at the same time
         const apiBaseUrl = getApiBaseUrl()
-        const jobPromises = jobsToUpdate.map(job => 
-          fetch(`${apiBaseUrl}/api/datapuur/job-status/${job.id}`, {
-            method: "GET",
-            headers: {
-              Authorization: `Bearer ${typeof window !== 'undefined' ? localStorage.getItem("token") : ''}`,
-            },
-          })
-          .then(response => {
-            if (response.ok) {
-              return response.json()
-            }
-            return null
-          })
-          .catch(error => {
-            console.error(`Error polling job status for job ${job.id}:`, error)
-            return null
-          })
+        const token = localStorage.getItem("token")
+        
+        if (!token) return // Skip if no token
+        
+        // Check each running or queued job
+        const jobsToCheck = jobs.filter(
+          job => job.status === "running" || job.status === "queued"
         )
         
-        const updatedJobs = await Promise.all(jobPromises)
+        if (jobsToCheck.length === 0) return // Skip if no jobs to check
         
-        // Update all jobs that returned valid data
-        updatedJobs.forEach(updatedJob => {
-          if (updatedJob) {
-            updateJob(updatedJob)
+        for (const job of jobsToCheck) {
+          try {
+            const response = await fetch(`${apiBaseUrl}/api/datapuur/job-status/${job.id}`, {
+              headers: {
+                Authorization: `Bearer ${token}`
+              }
+            })
+            
+            // Handle 404 Not Found responses - job no longer exists
+            if (response.status === 404) {
+              console.log(`Job ${job.id} no longer exists (404), removing from tracking`)
+              
+              // Remove the job from localStorage
+              updateJob({
+                ...job,
+                status: "removed",
+                markedForRemoval: true,
+                details: "Job no longer exists on server"
+              })
+              
+              // Continue to next job
+              continue
+            }
+            
+            if (!response.ok) {
+              console.error(`Error checking job ${job.id}: ${response.statusText}`)
+              continue
+            }
+            
+            const data = await response.json()
+            
+            // Update job status
+            updateJob({
+              ...job,
+              status: data.status,
+              progress: data.progress,
+              details: data.details || job.details,
+              error: data.error
+            })
+          } catch (error) {
+            console.error(`Error polling job status for job ${job.id}:`, error)
           }
-        })
+        }
       } catch (error) {
         console.error("Error polling job status:", error)
       }
@@ -389,7 +422,7 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
     checkJobs()
     
     // Then set up the polling interval
-    const pollInterval = setInterval(checkJobs, 3000) // Poll every 3 seconds
+    const pollInterval = setInterval(checkJobs, 10000) // Poll every 10 seconds instead of 3
 
     return () => clearInterval(pollInterval)
   }, [jobs, isPolling, updateJob])

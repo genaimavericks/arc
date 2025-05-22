@@ -20,6 +20,7 @@ import {
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { formatDistanceToNow } from "date-fns"
+import { usePathname } from "next/navigation"
 
 export function FloatingJobCard() {
   const { 
@@ -33,6 +34,9 @@ export function FloatingJobCard() {
     isPolling, 
     setIsPolling 
   } = useIngestion()
+  const pathname = usePathname()
+  const isHomePage = pathname === "/" || pathname === ""
+  
   const [isMinimized, setIsMinimized] = useState(() => {
     // Try to retrieve minimized state from localStorage
     try {
@@ -42,7 +46,7 @@ export function FloatingJobCard() {
       return false
     }
   })
-  const [isVisible, setIsVisible] = useState(true)
+  const [isVisible, setIsVisible] = useState(false)
   const [recentlyCompletedJobs, setRecentlyCompletedJobs] = useState<string[]>([])
   const [activeTab, setActiveTab] = useState("active")
   const [cancellingJobs, setCancellingJobs] = useState<string[]>([])
@@ -57,13 +61,18 @@ export function FloatingJobCard() {
     }
   }, [isMinimized])
   
-  // Reset isVisible when new jobs are added or processing status changes
+  // Update visibility based on active jobs and processing status
   useEffect(() => {
     const hasActiveJobs = jobs.some(job => job.status === "running" || job.status === "queued");
-    if (hasActiveJobs || processingStatus) {
+    
+    // Only show the card if there are active jobs or a processing status
+    // AND we're not on the homepage
+    if ((hasActiveJobs || processingStatus) && !isHomePage) {
       setIsVisible(true);
+    } else {
+      setIsVisible(false);
     }
-  }, [jobs, processingStatus]);
+  }, [jobs, processingStatus, isHomePage]);
   
   // Track when jobs complete to show them temporarily
   useEffect(() => {

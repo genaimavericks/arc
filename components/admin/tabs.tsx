@@ -5,6 +5,7 @@ import { UsersTab } from "@/components/admin/tabs/users-tab"
 import { ActivityTab } from "@/components/admin/tabs/activity-tab"
 import { PermissionsTab } from "@/components/admin/tabs/permissions-tab"
 import { SettingsTab } from "@/components/admin/tabs/settings-tab"
+import { JobControlTab } from "@/components/admin/tabs/job-control-tab"
 
 interface AdminTabsProps {
   activeTab: string
@@ -137,6 +138,18 @@ export function AdminTabs({ activeTab, loading, error, onTabChange }: AdminTabsP
             exit="exit"
           >
             <SettingsTab />
+          </motion.div>
+        )}
+        
+        {activeTab === "jobs" && (
+          <motion.div
+            key="jobs"
+            variants={fadeIn}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+          >
+            <JobControlTab />
           </motion.div>
         )}
       </AnimatePresence>

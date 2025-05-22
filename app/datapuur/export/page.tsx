@@ -54,6 +54,10 @@ export default function ExportPage() {
   const [totalPages, setTotalPages] = useState(1)
   const [itemsPerPage] = useState(10)
   
+  // State for sorting
+  const [sortField, setSortField] = useState<"name" | "size" | "uploaded_at">("uploaded_at")
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
+  
   // Track expanded items
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({})
   // Track which tab is active for each expanded item
@@ -98,6 +102,35 @@ export default function ExportPage() {
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
   }
 
+  // Function to handle sorting
+  const handleSort = (field: "name" | "size" | "uploaded_at") => {
+    // If clicking the same field, toggle direction
+    if (field === sortField) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc")
+    } else {
+      // If clicking a new field, set it as the sort field and default to descending
+      setSortField(field)
+      setSortDirection("desc")
+    }
+  }
+
+  // Function to sort datasets
+  const sortDatasets = (data: Dataset[]) => {
+    return [...data].sort((a, b) => {
+      let comparison = 0
+      
+      if (sortField === "name") {
+        comparison = a.name.localeCompare(b.name)
+      } else if (sortField === "size") {
+        comparison = a.size - b.size
+      } else if (sortField === "uploaded_at") {
+        comparison = new Date(a.uploaded_at).getTime() - new Date(b.uploaded_at).getTime()
+      }
+      
+      return sortDirection === "asc" ? comparison : -comparison
+    })
+  }
+
   // Function to fetch datasets
   const fetchDatasets = async () => {
     setIsLoading(true)
@@ -126,8 +159,9 @@ export default function ExportPage() {
       }
 
       const data = await response.json()
+      const sortedData = sortDatasets(data.datasets)
       setDatasets(data.datasets)
-      setFilteredDatasets(data.datasets)
+      setFilteredDatasets(sortedData)
       setTotalPages(Math.ceil(data.total / itemsPerPage))
     } catch (err) {
       console.error("Error fetching datasets:", err)
@@ -135,8 +169,9 @@ export default function ExportPage() {
       
       // Use mock data for demonstration if API fails
       const mockData = generateMockData()
+      const sortedMockData = sortDatasets(mockData)
       setDatasets(mockData)
-      setFilteredDatasets(mockData)
+      setFilteredDatasets(sortedMockData)
       setTotalPages(Math.ceil(mockData.length / itemsPerPage))
     } finally {
       setIsLoading(false)
@@ -524,9 +559,24 @@ export default function ExportPage() {
     document.body.removeChild(link)
   }
 
+  // Apply sorting when datasets change or sort parameters change
+  useEffect(() => {
+    if (datasets.length > 0) {
+      const sortedData = sortDatasets(datasets)
+      setFilteredDatasets(sortedData)
+    }
+  }, [sortField, sortDirection, datasets])
+
   // useEffect for data fetching
   useEffect(() => {
     fetchDatasets()
+    
+    // Set up auto-refresh every 30 seconds
+    const refreshInterval = setInterval(() => {
+      fetchDatasets()
+    }, 30000)
+    
+    return () => clearInterval(refreshInterval)
   }, [page, searchQuery])
 
   // Function to render the preview tab content
@@ -1029,6 +1079,48 @@ export default function ExportPage() {
                 </div>
               )}
 
+              {/* Dataset header */}
+              <div className="mb-4 text-sm">
+                <div className="bg-muted/50 rounded-t-lg grid grid-cols-12 gap-4 p-4 font-medium text-muted-foreground">
+                  <div 
+                    className="col-span-6 flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors"
+                    onClick={() => handleSort("name")}
+                  >
+                    Name
+                    {sortField === "name" && (
+                      <span className="ml-1">
+                        {sortDirection === "asc" ? "↑" : "↓"}
+                      </span>
+                    )}
+                  </div>
+                  <div 
+                    className="col-span-3 flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors"
+                    onClick={() => handleSort("size")}
+                  >
+                    Size
+                    {sortField === "size" && (
+                      <span className="ml-1">
+                        {sortDirection === "asc" ? "↑" : "↓"}
+                      </span>
+                    )}
+                  </div>
+                  <div 
+                    className="col-span-2 flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors"
+                    onClick={() => handleSort("uploaded_at")}
+                  >
+                    Last Updated
+                    {sortField === "uploaded_at" && (
+                      <span className="ml-1">
+                        {sortDirection === "asc" ? "↑" : "↓"}
+                      </span>
+                    )}
+                  </div>
+                  <div className="col-span-1 text-right">
+                    Actions
+                  </div>
+                </div>
+              </div>
+
               {/* Dataset list */}
               {isLoading ? (
                 <div className="flex justify-center items-center h-64">
@@ -1053,11 +1145,11 @@ export default function ExportPage() {
                       className="border rounded-lg overflow-hidden bg-card/50 hover:bg-card/80 transition-colors"
                     >
                       {/* Header row */}
-                      <div
+                       <div
                         className="grid grid-cols-12 gap-4 p-4 cursor-pointer"
                         onClick={() => toggleExpand(dataset.id)}
                       >
-                        <div className="col-span-5 flex items-center gap-2">
+                        <div className="col-span-6 flex items-center gap-2">
                           <FileText className="h-5 w-5 text-primary flex-shrink-0" />
                           <div>
                             <div className="font-medium text-foreground truncate">{dataset.name}</div>
@@ -1069,12 +1161,12 @@ export default function ExportPage() {
                           </div>
                         </div>
 
-                        <div className="col-span-2 flex items-center text-muted-foreground">
+                        <div className="col-span-3 flex items-center text-muted-foreground">
                           <HardDrive className="h-3 w-3 mr-1 flex-shrink-0" />
                           {formatFileSize(dataset.size)}
                         </div>
 
-                        <div className="col-span-3 flex items-center text-muted-foreground">
+                        <div className="col-span-2 flex items-center text-muted-foreground">
                           <Calendar className="h-3 w-3 mr-1 flex-shrink-0" />
                           <div>
                             <div>{formatDistanceToNow(new Date(dataset.uploaded_at), { addSuffix: true })}</div>
@@ -1082,11 +1174,12 @@ export default function ExportPage() {
                           </div>
                         </div>
 
-                        <div className="col-span-2 flex items-center justify-end gap-2">
+                        <div className="col-span-1 flex items-center justify-end gap-1">
                           <Button
                             variant="outline"
                             size="sm"
                             className="flex items-center gap-1 text-xs h-8"
+                            title="Download CSV"
                             onClick={(e) => {
                               e.stopPropagation()
                               downloadDataset(dataset.id, dataset.name)
@@ -1095,7 +1188,7 @@ export default function ExportPage() {
                             <FileDown className="h-3 w-3" />
                             CSV
                           </Button>
-
+                          
                           <ChevronDown
                             className={`h-4 w-4 transition-transform ${expandedItems[dataset.id] ? "rotate-180" : ""}`}
                           />

@@ -27,8 +27,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 }
 
 export const metadata = {
-  generator: 'v0.dev',
-  title: 'RSW',
+  generator: 'Team RSW',
+  title: 'Cognitive Data Expert',
   description: 'RSW Application',
   icons: {
     icon: '/favicon.png',

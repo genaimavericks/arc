@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from api.db_config import get_db
 from api.models import UploadedFile, User
-from api.auth import get_current_user
+from api.auth import get_current_user, has_permission, has_any_permission
 
 router = APIRouter(prefix="/api/export", tags=["Export"])
 logger = logging.getLogger(__name__)
@@ -24,7 +24,7 @@ async def download_dataset(
     value: Optional[str] = None,
     max_rows: Optional[int] = Query(None, ge=1, description="Maximum number of rows to include in the download"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(has_permission("datapuur:read"))
 ):
     """
     Download a dataset in the specified format.
@@ -179,7 +179,7 @@ async def download_dataset(
 @router.get("/datasets")
 async def get_datasets(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(has_permission("datapuur:read")),
     page: int = Query(1, ge=1),
     limit: int = Query(10, ge=1, le=100),
     search: Optional[str] = None
@@ -195,8 +195,8 @@ async def get_datasets(
         if search:
             query = query.filter(UploadedFile.filename.ilike(f"%{search}%"))
         
-        # Apply sorting (newest first)
-        query = query.order_by(UploadedFile.uploaded_at.desc())
+        # Apply sorting (oldest first)
+        query = query.order_by(UploadedFile.uploaded_at.asc())
         
         # Get total count before pagination
         total = query.count()
@@ -248,7 +248,7 @@ async def get_dataset_preview(
     page: int = Query(1, ge=1),
     page_size: int = Query(15, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(has_permission("datapuur:read"))
 ):
     """
     Get a paginated preview of a dataset.
@@ -313,7 +313,7 @@ async def filter_dataset(
     page: int = Query(1, ge=1),
     page_size: int = Query(15, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(has_permission("datapuur:read"))
 ):
     """
     Filter a dataset based on column values.
@@ -441,7 +441,7 @@ async def download_dataset(
     value: Optional[str] = None,
     operator: str = Query("eq", regex="^(eq|neq|gt|lt|gte|lte|contains)$"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(has_permission("datapuur:read"))
 ):
     """
     Download a dataset as CSV. Optionally apply filters.
