@@ -5,6 +5,7 @@ import hashlib
 import threading
 import traceback
 import re
+import asyncio
 from pathlib import Path
 from uuid import uuid4
 from typing import Dict, Any
@@ -17,8 +18,6 @@ from langchain_neo4j import (
     Neo4jChatMessageHistory
 )
 
-from .templates.foamfactory.cypher_prompt_template import CYPHER_GENERATION_PROMPT
-from .templates.foamfactory.qa_prompt_template import QA_PROMPT
 from .cache import Cache
 from .cache import cacheable
 
@@ -56,51 +55,87 @@ class SchemaAwareGraphAssistant:
             schema: The schema content as a string or dict
             session_id: Optional session ID for chat history, generated if not provided
         """
+        print(f"TRACE: Before SchemaAwareGraphAssistant.__init__ for {db_id}")
 
-        # Initialize LLM first
-        #self.llm = LLMProvider.get_default_llm(temperature=0.0)
-        self.llm = LLMProvider.get_llm(provider_name=LLMConstants.Providers.OPENAI, model_name=LLMConstants.OpenAIModels.DEFAULT, temperature=0.0)
-
+        # Initialize basic properties regardless of gen_schema flag
         self.db_id = db_id
         self.schema_id = schema_id
         self.schema = json.loads(schema) if isinstance(schema, str) else schema
         self.session_id = session_id or f"session_{uuid4()}"
         self.formatted_schema = None
-        # read csv path from Schema table
+        
+        # Read CSV path from Schema table and format schema (needed for both modes)
         self.csv_file_path = self._get_csv_path()
+        print(f"TRACE: Before _format_schema() for {self.db_id}")
         self._format_schema()
+        print(f"TRACE: After _format_schema() for {self.db_id}")
         
-        # Ensure we have the prompt files
-        self._ensure_prompt()
+        # If gen_schema is True, skip expensive initializations
+        print(f"TRACE: Initializing in schema generation mode for {self.db_id}")
+        print(f"Initializing in schema generation mode - skipping LLM, graph connection, and chain setup")
         
-        # Get Neo4j connection parameters from the database API
+        # Initialize minimal components needed for schema operations
+        print(f"TRACE: Before _get_connection_params() for {self.db_id}")
         self.connection_params = self._get_connection_params()
-        print(f"Connection params: {self.connection_params}")
+        print(f"TRACE: After _get_connection_params() for {self.db_id}")
         
-        # Initialize Neo4j Graph connection
-        self.graph = Neo4jGraph(
-            url=self.connection_params.get("uri"),
-            username=self.connection_params.get("username"),
-            password=self.connection_params.get("password"),
-            database=self.connection_params.get("database", "neo4j"),
-            enhanced_schema=True,
-            refresh_schema=False  # Disable schema refresh to avoid APOC dependency
-        )
+        print(f"TRACE: Before Cache initialization for {self.db_id}")
+        self.cache = Cache()
+        print(f"TRACE: After Cache initialization for {self.db_id}")
         
-        # Initialize Neo4j-backed chat history
-        self.history = Neo4jChatMessageHistory(
-            session_id=self.session_id,
-            url=self.connection_params.get("uri"),
-            username=self.connection_params.get("username"),
-            password=self.connection_params.get("password"),
-            database=self.connection_params.get("database", "neo4j")
-        )
+        print(f"TRACE: Before _ensure_prompt() for {self.db_id}")
+        self._ensure_prompt()
+        print(f"TRACE: After _ensure_prompt() for {self.db_id}")
+
+        # Start async initialization in the background
+        self.initialization_complete = False
+        self.initialization_error = None
+        self.llm = None
+        self.graph = None
+        self.history = None
+        self.chain = None
         
-        # Load the custom prompts for this source
-        self._load_prompts()
-        
-        # Initialize QA chain with Neo4j optimizations using modular LangChain pattern
+        # Start the async initialization
+        asyncio.create_task(self._initialize_async())
+
+    async def _initialize_async(self):
+        """
+        Asynchronous initialization of LLM, graph connection, and chain.
+        This runs in the background to avoid blocking object construction.
+        """
         try:
+            print(f"DEBUG: Starting async initialization for {self.db_id} with schema {self.schema_id}")
+            
+            # Initialize LLM
+            self.llm = LLMProvider.get_llm(
+                provider_name=LLMConstants.Providers.OPENAI, 
+                model_name=LLMConstants.OpenAIModels.DEFAULT, 
+                temperature=0.0
+            )
+            
+            # Load the custom prompts for this source
+            self._load_prompts()
+            
+            # Initialize Neo4j Graph connection
+            self.graph = Neo4jGraph(
+                url=self.connection_params.get("uri"),
+                username=self.connection_params.get("username"),
+                password=self.connection_params.get("password"),
+                database=self.connection_params.get("database", "neo4j"),
+                enhanced_schema=True,
+                refresh_schema=False  # Disable schema refresh to avoid APOC dependency
+            )
+            
+            # Initialize Neo4j-backed chat history
+            self.history = Neo4jChatMessageHistory(
+                session_id=self.session_id,
+                url=self.connection_params.get("uri"),
+                username=self.connection_params.get("username"),
+                password=self.connection_params.get("password"),
+                database=self.connection_params.get("database", "neo4j")
+            )
+            
+            # Initialize QA chain with Neo4j optimizations using modular LangChain pattern
             print(f"DEBUG: Initializing GraphCypherQAChain using langchain_neo4j pattern")
             
             # Create a structured chain configuration dictionary
@@ -147,13 +182,15 @@ class SchemaAwareGraphAssistant:
             self.chain = GraphCypherQAChain.from_llm(**chain_config)
             print(f"DEBUG: Successfully initialized GraphCypherQAChain")
             
+            # Mark initialization as complete
+            self.initialization_complete = True
+            print(f"DEBUG: Async initialization completed successfully for {self.db_id}")
+            
         except Exception as e:
-            print(f"ERROR: GraphCypherQAChain initialization failed: {str(e)}")
-            print(f"DEBUG: Error details: {traceback.format_exc()}")        
-        
-        # Initialize cache
-        self.cache = Cache()
-
+            self.initialization_error = str(e)
+            print(f"ERROR: Async initialization failed: {str(e)}")
+            print(f"DEBUG: Error details: {traceback.format_exc()}")
+    
     def _get_csv_path(self):
         """
         Read csv path from Schema table
@@ -225,19 +262,26 @@ class SchemaAwareGraphAssistant:
         
     def _ensure_prompt(self) -> None:
         """Check if prompts exist, validate generation_id, create and save if needed."""
+        print(f"TRACE: _ensure_prompt started for db_id={self.db_id}, schema_id={self.schema_id}")
         prompt_file = PROMPT_DIR / f"prompt_{self.db_id}_{self.schema_id}.json"
         query_file = QUERY_DIR / f"{self.schema_id}_queries.json" 
+        print(f"TRACE: Prompt file path: {prompt_file}")
+        print(f"TRACE: Query file path: {query_file}")
 
         regenerate_prompts = False
         current_generation_id = None
         existing_prompts = None
 
         # 1. Fetch current generation_id from DB
+        print(f"TRACE: Starting DB fetch for generation_id, schema_id={self.schema_id}")
         db = None # Initialize db to None
         try:
+            print(f"TRACE: Creating DB session")
             db = SessionLocal()
+            print(f"TRACE: Querying Schema table for schema_id={self.schema_id}")
             schema_record = db.query(Schema).filter(Schema.id == self.schema_id).first()
             if schema_record:
+                print(f"TRACE: Schema record found, checking generation_id")
                 current_generation_id = schema_record.generation_id
                 if not current_generation_id:
                     print(f"Warning: Schema record found for {self.schema_id}, but generation_id is missing. Will regenerate prompts.")
@@ -249,10 +293,12 @@ class SchemaAwareGraphAssistant:
                 regenerate_prompts = True # If schema record is missing, prompts might be invalid.
         except Exception as e:
             print(f"Error fetching schema generation_id: {e}. Proceeding, may regenerate prompts.")
+            print(f"TRACE: Exception details: {traceback.format_exc()}")
             # If DB access fails, we should probably regenerate prompts
             regenerate_prompts = True
         finally:
             if db:
+                print(f"TRACE: Closing DB session")
                 db.close()
 
         # 2. Check prompt file and generation_id if regeneration not already decided
@@ -284,8 +330,15 @@ class SchemaAwareGraphAssistant:
         # 3. Regenerate and save if needed
         if regenerate_prompts:
             print("Generating new prompts...")
+            print(f"TRACE: Starting _generate_prompts() for db_id={self.db_id}, schema_id={self.schema_id}")
             # Generate prompts based on schema
-            prompts = self._generate_prompts() # Assumes this returns a dict
+            try:
+                prompts = self._generate_prompts() # Assumes this returns a dict
+                print(f"TRACE: Successfully completed _generate_prompts()")
+            except Exception as e:
+                print(f"TRACE: Error in _generate_prompts(): {str(e)}")
+                print(f"TRACE: Exception details: {traceback.format_exc()}")
+                raise
             
             # Add the current generation_id (if available and valid)
             if current_generation_id:
@@ -296,12 +349,16 @@ class SchemaAwareGraphAssistant:
 
             # Save the prompts to file
             try:
+                print(f"TRACE: Creating prompt directory: {PROMPT_DIR}")
                 PROMPT_DIR.mkdir(parents=True, exist_ok=True) # Ensure directory exists
+                print(f"TRACE: Saving prompts to file: {prompt_file}")
                 with open(prompt_file, "w") as f:
                     json.dump(prompts, f, indent=2)
                 print(f"Prompts saved to {prompt_file}")
 
+                print(f"TRACE: Creating query directory: {QUERY_DIR}")
                 QUERY_DIR.mkdir(parents=True, exist_ok=True) # Ensure directory exists
+                print(f"TRACE: Saving queries to file: {query_file}")
                 with open(query_file, "w") as f:
                     # Format the sample queries to match what the API expects
                     # The API expects a dictionary with categories as keys and lists of queries as values
@@ -497,6 +554,7 @@ class SchemaAwareGraphAssistant:
                 {"role": "user", "content": f"Use this Neo4j schema: {self.formatted_schema} for generating Cypher prompt as per following instructions:\n\n{cypher_prompt_instruction}"}
             ]
             llm_local = LLMProvider.get_llm(provider_name=LLMConstants.Providers.GOOGLE, model_name=LLMConstants.GoogleModels.DEFAULT, temperature=0.0)
+            
             cypher_response = llm_local.invoke(cypher_messages)
             cypher_prompt_template = cypher_response.content.strip()
             
@@ -956,6 +1014,16 @@ class SchemaAwareGraphAssistant:
         """Process user queries against the knowledge graph"""
         try:
             print(f"\n===== DEBUG: PROCESSING QUERY: '{question}' =====")
+            
+            # Check if async initialization is complete
+            if not hasattr(self, 'initialization_complete') or not self.initialization_complete:
+                # Check if there was an error during initialization
+                if hasattr(self, 'initialization_error') and self.initialization_error:
+                    return {"result": f"Error initializing the system: {self.initialization_error}. Please try again later."}
+                
+                # If initialization is still in progress
+                return {"result": "The system is still initializing. Please try again in a few moments."}
+            
             # Add detailed diagnostic info about prompts
             self._debug_print_prompts()
             
@@ -1098,6 +1166,7 @@ def get_schema_aware_assistant(db_id: str, schema_id: str, schema: str, session_
         schema_id: ID of the schema being used
         schema: JSON string containing the schema
         session_id: Optional session ID for chat history
+        gen_schema: If True, only initialize minimal components needed for schema generation
     Returns:
         SchemaAwareGraphAssistant: The assistant for the database
     """

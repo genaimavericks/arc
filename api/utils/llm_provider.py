@@ -41,6 +41,11 @@ class LLMConstants:
 
 class LLMProvider:
     """Provides instances of LangChain chat models based on a provider flag."""
+    
+    # Cache for pre-initialized LLM instances
+    _openai_instance = None
+    _google_instance = None
+    _initialized = False
 
     @staticmethod
     def get_llm(provider_name: str, model_name: Optional[str] = None, temperature: float = 0) -> BaseChatModel:
@@ -62,6 +67,18 @@ class LLMProvider:
                         unsupported provider_name is given.
             RuntimeError: If an error occurs during the LLM client initialization.
         """
+        # Check if we can use cached instances for default settings
+        if temperature == 0 and LLMProvider._initialized:
+            if provider_name == LLMConstants.Providers.OPENAI and \
+               (model_name is None or model_name == LLMConstants.OpenAIModels.DEFAULT) and \
+               LLMProvider._openai_instance is not None:
+                return LLMProvider._openai_instance
+                
+            if provider_name == LLMConstants.Providers.GOOGLE and \
+               (model_name is None or model_name == LLMConstants.GoogleModels.DEFAULT) and \
+               LLMProvider._google_instance is not None:
+                return LLMProvider._google_instance
+        
         api_key = None
         llm_instance = None
 
@@ -121,11 +138,80 @@ class LLMProvider:
             ValueError: If GOOGLE_API_KEY environment variable is not set.
             RuntimeError: If an error occurs during the LLM client initialization.
         """
+        # If cached instance is available and temperature is 0 (default), return it
+        if LLMProvider._initialized and LLMProvider._google_instance is not None and temperature == 0:
+            return LLMProvider._google_instance
+            
         return LLMProvider.get_llm(
             provider_name=LLMConstants.Providers.GOOGLE,
             model_name=LLMConstants.GoogleModels.DEFAULT,
             temperature=temperature
         )
+        
+    @staticmethod
+    def get_cached_openai() -> BaseChatModel:
+        """
+        Returns the cached OpenAI LLM instance with default settings.
+        If not initialized, returns None.
+        """
+        if LLMProvider._initialized and LLMProvider._openai_instance is not None:
+            return LLMProvider._openai_instance
+        return None
+        
+    @staticmethod
+    def get_cached_google() -> BaseChatModel:
+        """
+        Returns the cached Google LLM instance with default settings.
+        If not initialized, returns None.
+        """
+        if LLMProvider._initialized and LLMProvider._google_instance is not None:
+            return LLMProvider._google_instance
+        return None
+        
+    @staticmethod
+    def initialize_models():
+        """
+        Pre-initializes and caches LLM models for faster access.
+        Should be called during application startup.
+        """
+        if LLMProvider._initialized:
+            print("LLM models already initialized")
+            return
+            
+        try:
+            # Initialize OpenAI model if API key is available
+            if OPENAI_AVAILABLE and os.getenv("OPENAI_API_KEY"):
+                print("Pre-initializing OpenAI LLM model...")
+                LLMProvider._openai_instance = LLMProvider.get_llm(
+                    provider_name=LLMConstants.Providers.OPENAI,
+                    model_name=LLMConstants.OpenAIModels.DEFAULT,
+                    temperature=0.0
+                )
+                print("Successfully initialized OpenAI LLM")
+            else:
+                print("Warning: OpenAI API key not found or langchain_openai not installed. Skipping initialization.")
+                
+            # Initialize Google model if API key is available
+            if GOOGLE_AVAILABLE and os.getenv("GOOGLE_API_KEY"):
+                print("Pre-initializing Google LLM model...")
+                LLMProvider._google_instance = LLMProvider.get_llm(
+                    provider_name=LLMConstants.Providers.GOOGLE,
+                    model_name=LLMConstants.GoogleModels.DEFAULT,
+                    temperature=0.0
+                )
+                print("Successfully initialized Google Gemini LLM")
+            else:
+                print("Warning: GOOGLE_API_KEY environment variable is not set or langchain_google_genai not installed. Skipping initialization.")
+                
+            LLMProvider._initialized = True
+            
+        except Exception as e:
+            print(f"Error during LLM initialization: {str(e)}")
+            # Don't mark as initialized if there was an error
+
+# Initialize LLM models during module import
+# This ensures models are pre-initialized when the application starts
+LLMProvider.initialize_models()
 
 # Example Usage (Optional - for testing)
 if __name__ == '__main__':
