@@ -202,35 +202,74 @@ async def validate_query(schema_id: str, query_text: str, user: User) -> List[Di
     
     return errors
 
-async def get_query_suggestions(schema_id: str, user: User) -> List[str]:
-    """Get query suggestions based on schema"""
-    # Get entity suggestions from schema
-    entities = await get_entity_suggestions(schema_id)
-    node_labels = entities["node_labels"]
-    relationship_types = entities["relationship_types"]
+async def get_query_suggestions(schema_id: str, user: User, current_text: str = "", cursor_position: int = 0) -> List[str]:
+    """Get query suggestions based on schema, query history, and current text
     
-    # Generate suggestions based on schema entities
-    suggestions = []
-    
-    # Add node-based suggestions
-    for label in node_labels[:3]:  # Limit to first 3 node types to avoid too many suggestions
-        suggestions.append(f"Show me all {label} nodes")
-        suggestions.append(f"Count {label} nodes")
-    
-    # Add relationship-based suggestions
-    if len(node_labels) >= 2 and len(relationship_types) > 0:
-        suggestions.append(f"Find relationships between {node_labels[0]} and {node_labels[1]}")
-    
-    # Add general suggestions if we don't have enough
-    if len(suggestions) < 5:
-        general_suggestions = [
-            "Show the most connected nodes",
-            "Find the shortest path between two nodes",
-            "Count nodes by type"
+    Args:
+        schema_id: ID of the schema
+        user: User object
+        current_text: Current text in the input field (for context-aware suggestions)
+        cursor_position: Current cursor position in the text
+        
+    Returns:
+        List of suggested queries or query completions
+    """
+    try:
+        # Import the suggestion service
+        try:
+            # When imported as a module
+            from api.kgdatainsights.suggestion_service import get_context_aware_suggestions
+            from api.kgdatainsights.query_history_tracker import extract_common_patterns
+        except ImportError:
+            # When run directly
+            from .suggestion_service import get_context_aware_suggestions
+            from .query_history_tracker import extract_common_patterns
+        
+        # Get entity suggestions from schema
+        entities = await get_entity_suggestions(schema_id)
+        node_labels = entities["node_labels"]
+        relationship_types = entities["relationship_types"]
+        
+        # If we have current text, get context-aware suggestions
+        if current_text:
+            context_suggestions = await get_context_aware_suggestions(schema_id, current_text, cursor_position)
+            if context_suggestions:
+                return context_suggestions[:10]  # Return at most 10 context-aware suggestions
+        
+        # Combine different types of suggestions
+        suggestions = []
+        
+        # Add common patterns from query history
+        history_patterns = await extract_common_patterns(schema_id)
+        suggestions.extend(history_patterns[:3])  # Add up to 3 common patterns
+        
+        # Add node-based suggestions
+        for label in node_labels[:3]:  # Limit to first 3 node types to avoid too many suggestions
+            suggestions.append(f"MATCH (n:{label}) RETURN n LIMIT 10")
+            suggestions.append(f"MATCH (n:{label}) RETURN count(n)")
+        
+        # Add relationship-based suggestions
+        if len(node_labels) >= 2 and len(relationship_types) > 0:
+            suggestions.append(f"MATCH (a:{node_labels[0]})-[r:{relationship_types[0]}]->(b:{node_labels[1]}) RETURN a, r, b LIMIT 10")
+        
+        # Add general suggestions if we don't have enough
+        if len(suggestions) < 5:
+            general_suggestions = [
+                "MATCH (n) RETURN labels(n), count(n) ORDER BY count(n) DESC LIMIT 10",
+                "MATCH p=shortestPath((a)-[*]-(b)) WHERE id(a) = $startId AND id(b) = $endId RETURN p",
+                "MATCH (n) RETURN DISTINCT labels(n), count(n) ORDER BY count(n) DESC"
+            ]
+            suggestions.extend(general_suggestions)
+        
+        return suggestions[:10]  # Return at most 10 suggestions
+    except Exception as e:
+        logger.error(f"Error getting query suggestions: {str(e)}")
+        # Fallback to basic suggestions
+        return [
+            "MATCH (n) RETURN n LIMIT 10",
+            "MATCH (n)-[r]->(m) RETURN n, r, m LIMIT 10",
+            "MATCH (n) RETURN labels(n), count(n) ORDER BY count(n) DESC LIMIT 10"
         ]
-        suggestions.extend(general_suggestions)
-    
-    return suggestions[:5]  # Return at most 5 suggestions
 
 def generate_dummy_visualization(query_text: str) -> Dict[str, Any]:
     """Generate dummy visualization data for testing"""

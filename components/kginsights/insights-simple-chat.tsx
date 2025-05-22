@@ -667,7 +667,13 @@ export function InsightsSimpleChat() {
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault()
-                  handleSendMessage(input)
+                  // If autocomplete suggestions are visible, select the first one instead of sending the message
+                  if (showAutocomplete && autocompleteSuggestions.length > 0) {
+                    handleSelectSuggestion(autocompleteSuggestions[0].text)
+                  } else {
+                    // Otherwise, send the message
+                    handleSendMessage(input)
+                  }
                 } else if (e.key === 'Tab' && showAutocomplete && autocompleteSuggestions.length > 0) {
                   e.preventDefault()
                   handleSelectSuggestion(autocompleteSuggestions[0].text)
