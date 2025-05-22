@@ -9,8 +9,34 @@ import string
 import re
 import ast
 
+# Import optimized JSON processing functions
+try:
+    # Try relative import first (when run as a module)
+    from api.kgdata_loader.json_processing_optimizations import (
+        clean_non_json_chars_optimized,
+        parse_json_data_optimized,
+        process_json_column_optimized,
+        generate_node_id
+    )
+except ImportError:
+    # Fall back to local import (when run directly)
+    from json_processing_optimizations import (
+        clean_non_json_chars_optimized,
+        parse_json_data_optimized,
+        process_json_column_optimized,
+        generate_node_id
+    )
+
 # --- Configuration ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Performance optimization settings
+BATCH_SIZE = 5000  # Process data in batches of this size
+
+# Cache settings
+MAX_CACHE_SIZE = 10000  # Maximum number of items to keep in caches
+json_parse_cache = {}  # Cache for parsed JSON data
+existing_relationships_set = set()  # For faster relationship lookups
 
 # --- Helper Functions ---
 
@@ -35,6 +61,15 @@ def convert_to_neo4j_type(python_type):
     }
     return type_mapping.get(str(python_type).lower(), None)
 
+# Common date formats to check before using the expensive pd.to_datetime
+DATE_FORMATS = [
+    '%Y-%m-%d', '%m/%d/%Y', '%d/%m/%Y', '%Y/%m/%d',
+    '%d-%m-%Y', '%m-%d-%Y', '%Y.%m.%d', '%d.%m.%Y'
+]
+
+# Cache for previously inferred types
+type_cache = {}
+
 def infer_data_type(val):
     """Infers the data type based on the value.
     
@@ -44,58 +79,77 @@ def infer_data_type(val):
     Returns:
         string: The inferred type (string, integer, float, boolean, date, datetime)
     """
+    # Check cache first
+    if val in type_cache:
+        return type_cache[val]
+        
     if val is None:
         return None
     
     # If it's already a typed value (not a string), use its Python type
     if isinstance(val, bool):
-        return 'boolean'
+        result = 'boolean'
     elif isinstance(val, int):
-        return 'integer'
+        result = 'integer'
     elif isinstance(val, float):
-        # Check if it's actually an integer stored as float (e.g., 1.0)
-        if val.is_integer():
-            # Only return integer if it's a perfect integer
-            # We'll leave this as float to be safer with Neo4j imports
-            return 'float'
-        return 'float'
-    
-    # For strings and other types, try to parse
-    # Convert to string for parsing
-    val_str = str(val).strip()
-    if not val_str or val_str.lower() == 'nan' or val_str.lower() == 'null':
-        return None
-    
-    # Check if it's a boolean
-    if val_str.lower() in ('true', 'false', 't', 'f', 'yes', 'no', 'y', 'n'):
-        return 'boolean'
-    
-    # Check if it's a number
-    try:
-        # Try to convert to int first
-        int(val_str)
-        return 'integer'
-    except (ValueError, TypeError):
-        try:
-            # Then try float
-            float(val_str)
-            return 'float'
-        except (ValueError, TypeError):
-            pass
-    
-    # Check if it's a date or datetime
-    try:
-        dt = pd.to_datetime(val_str)
-        # If it has time components with non-zero values
-        if dt.hour != 0 or dt.minute != 0 or dt.second != 0:
-            return 'datetime'
+        # All floats are treated as floats for consistency
+        result = 'float'
+    else:
+        # For strings and other types, try to parse
+        # Convert to string for parsing
+        val_str = str(val).strip()
+        if not val_str or val_str.lower() == 'nan' or val_str.lower() == 'null':
+            result = None
+        # Check if it's a boolean
+        elif val_str.lower() in ('true', 'false', 't', 'f', 'yes', 'no', 'y', 'n'):
+            result = 'boolean'
         else:
-            return 'date'
-    except (ValueError, TypeError):
-        pass
+            # Check if it's a number
+            try:
+                # Try to convert to int first
+                int(val_str)
+                result = 'integer'
+            except (ValueError, TypeError):
+                try:
+                    # Then try float
+                    float(val_str)
+                    result = 'float'
+                except (ValueError, TypeError):
+                    # Check if it's a date using common formats first (faster)
+                    is_date = False
+                    for fmt in DATE_FORMATS:
+                        try:
+                            import datetime
+                            dt = datetime.datetime.strptime(val_str, fmt)
+                            # If it parsed successfully, it's a date
+                            if dt.hour == 0 and dt.minute == 0 and dt.second == 0:
+                                result = 'date'
+                            else:
+                                result = 'datetime'
+                            is_date = True
+                            break
+                        except (ValueError, TypeError):
+                            continue
+                    
+                    if not is_date:
+                        # Only use expensive pd.to_datetime as a last resort
+                        try:
+                            dt = pd.to_datetime(val_str)
+                            # If it has time components with non-zero values
+                            if dt.hour != 0 or dt.minute != 0 or dt.second != 0:
+                                result = 'datetime'
+                            else:
+                                result = 'date'
+                        except (ValueError, TypeError):
+                            # Default to string if nothing else matches
+                            result = 'string'
     
-    # Default to string if nothing else matches
-    return 'string'
+    # Cache the result for future use
+    type_cache[val] = result
+    return result
+
+# Cache for column type detection results
+column_type_cache = {}
 
 def detect_type_mismatch(df, column_name, schema_type):
     """Detects if the schema type matches the actual data types in a column.
@@ -108,17 +162,28 @@ def detect_type_mismatch(df, column_name, schema_type):
     Returns:
         (boolean, string) - Whether there's a mismatch and the recommended type
     """
+    # Check if we've already analyzed this column
+    cache_key = f"{id(df)}_{column_name}_{schema_type}"
+    if cache_key in column_type_cache:
+        return column_type_cache[cache_key]
+        
     if column_name not in df.columns:
-        return False, schema_type
+        result = (False, schema_type)
+        column_type_cache[cache_key] = result
+        return result
     
     # Get non-null values for type checking
     values = df[column_name].dropna()
     if len(values) == 0:
-        return False, schema_type  # No data to infer from
+        result = (False, schema_type)  # No data to infer from
+        column_type_cache[cache_key] = result
+        return result
     
-    # Sample values to determine actual types (all values if few, or a sample if many)
-    sample_size = min(len(values), 100)
-    samples = values.sample(sample_size) if len(values) > 100 else values
+    # Use a smaller sample size to improve performance
+    sample_size = min(len(values), 20)  # Reduced from 100 to 20
+    
+    # Use a fixed random seed for reproducibility and to avoid resampling
+    samples = values.sample(sample_size, random_state=42) if len(values) > 20 else values
     
     # Count types in sample
     type_counts = {}
@@ -128,7 +193,9 @@ def detect_type_mismatch(df, column_name, schema_type):
             type_counts[inferred_type] = type_counts.get(inferred_type, 0) + 1
     
     if not type_counts:  # All null values
-        return False, schema_type
+        result = (False, schema_type)
+        column_type_cache[cache_key] = result
+        return result
     
     # Find the most common type
     most_common_type = max(type_counts.items(), key=lambda x: x[1])[0]
@@ -136,23 +203,29 @@ def detect_type_mismatch(df, column_name, schema_type):
     # Check type compatibility
     compatible = False
     
-    # Schema type string can hold any data type - no mismatch
-    if schema_type == 'string':
-        compatible = True
+    # If schema doesn't specify a type, use the inferred type
+    if not schema_type:
+        result = (True, most_common_type)
+        column_type_cache[cache_key] = result
+        return result
     
-    # Schema type float can hold int values
+    # Check compatibility between schema type and inferred type
+    if schema_type == most_common_type:
+        compatible = True
+    # Integer can be stored as float
     elif schema_type == 'float' and most_common_type == 'integer':
         compatible = True
-    
-    # Schema type datetime includes dates
+    # String can store anything
+    elif schema_type == 'string':
+        compatible = True
+    # Date can be stored as datetime
     elif schema_type == 'datetime' and most_common_type == 'date':
         compatible = True
     
-    # Exact type match
-    elif schema_type == most_common_type:
-        compatible = True
-    
-    return not compatible, most_common_type
+    # If compatible, use schema type, otherwise recommend the inferred type
+    result = (not compatible, most_common_type if not compatible else schema_type)
+    column_type_cache[cache_key] = result
+    return result
 
 def cast_value(value, target_type):
     """Attempts to cast a value to the specified Neo4j type."""
@@ -205,105 +278,39 @@ def cast_value(value, target_type):
 
 def clean_non_json_chars(value):
     """Clean and prepare a string for JSON parsing by removing problematic characters."""
-    if pd.isna(value) or value == '':
-        return None
-    
-    # Common replacements for JSON-like strings that don't parse correctly
-    value_str = str(value)
-    
-    # Remove any leading/trailing whitespace or quotes
-    value_str = value_str.strip()
-    
-    # Handle JSON array format with single quotes
-    if value_str.startswith('[{') or value_str.startswith('{'):
-        # Make sure single quotes are converted to double quotes for JSON
-        value_str = value_str.replace("'", '"')
-        
-        # Fix common JSON formatting issues
-        value_str = value_str.replace('None', 'null')
-        
-        # Make sure property names are in double quotes
-        value_str = re.sub(r'([{,])\s*([a-zA-Z0-9_() %]+):', r'\1"\2":', value_str)
-    
-    # Remove leading/trailing quotes if they exist
-    if value_str.startswith('"') and value_str.endswith('"'):
-        value_str = value_str[1:-1]
-    
-    return value_str
+    # Directly use the optimized version
+    return clean_non_json_chars_optimized(value)
 
 def parse_json_data(value):
-    """Attempts to parse a JSON string into a Python object."""
-    if pd.isna(value) or value == '':
-        return None
-    
-    # First clean the string
-    cleaned_value = clean_non_json_chars(value)
-    if not cleaned_value:
-        return None
-    
-    try:
-        # First try standard JSON parsing
-        return json.loads(cleaned_value)
-    except json.JSONDecodeError:
-        try:
-            # If that fails, try Python's literal_eval which can parse some non-standard JSON
-            # This helps with cases where single quotes are used instead of double quotes
-            return ast.literal_eval(cleaned_value)
-        except (SyntaxError, ValueError) as e:
-            # Last attempt with regex-based parsing for array-like string representation
-            if cleaned_value.startswith('[{') and "}" in cleaned_value and "]" in cleaned_value:
-                try:
-                    # Extract individual objects from the array-like string
-                    items = []
-                    # Crude but effective approach: split by "},{" to get individual objects
-                    parts = cleaned_value.strip('[]').split('},{')
-                    for i, part in enumerate(parts):
-                        if i > 0:
-                            part = '{' + part
-                        if i < len(parts) - 1:
-                            part = part + '}'
-                        try:
-                            # Try to parse each part
-                            item_dict = {}
-                            # Extract key-value pairs using regex
-                            for match in re.finditer(r'"([^"]+)"\s*:\s*([^,}]+)', part):
-                                key = match.group(1)
-                                value_str = match.group(2).strip()
-                                
-                                # Parse the value based on its format
-                                if value_str.lower() == 'null':
-                                    value = None
-                                elif value_str.lower() == 'true':
-                                    value = True
-                                elif value_str.lower() == 'false':
-                                    value = False
-                                elif value_str.startswith('"') and value_str.endswith('"'):
-                                    value = value_str[1:-1]
-                                else:
-                                    try:
-                                        value = float(value_str)
-                                        if value.is_integer():
-                                            value = int(value)
-                                    except:
-                                        value = value_str
-                                
-                                item_dict[key] = value
-                            
-                            if item_dict:
-                                items.append(item_dict)
-                        except Exception as e3:
-                            logging.debug(f"Error parsing object part: {e3}")
-                    
-                    if items:
-                        return items
-                except Exception as e2:
-                    logging.debug(f"Error parsing array string: {e2}")
-            
-            logging.warning(f"Error parsing JSON value. Value: '{cleaned_value[:50]}...' Error: {e}")
-            return None
+    """Attempts to parse a JSON string into a Python object with caching for performance."""
+    # Directly use the optimized version
+    return parse_json_data_optimized(value)
 
 def generate_node_id(node_schema, row):
     """Generates a unique ID for a node based on schema rules or primary property."""
+    # Check if the node schema defines a specific ID generation rule
+    id_rule = node_schema.get('id_rule')
+    if id_rule:
+        # Use the specified rule to generate the ID
+        if id_rule.get('type') == 'property':
+            # Use a specific property as the ID
+            prop_name = id_rule.get('property')
+            if prop_name and prop_name in row and not pd.isna(row[prop_name]):
+                return f"{node_schema.get('label')}-{row[prop_name]}"
+        elif id_rule.get('type') == 'composite':
+            # Use multiple properties to form a composite ID
+            properties = id_rule.get('properties', [])
+            if properties:
+                parts = []
+                for prop in properties:
+                    if prop in row and not pd.isna(row[prop]):
+                        parts.append(str(row[prop]))
+                    else:
+                        # If any part is missing, we can't form a complete ID
+                        return None
+                if parts:
+                    return f"{node_schema.get('label')}-{'_'.join(parts)}"
+    
     # Handle old schema format with explicit ID specifications
     id_config = node_schema.get('id', {})
     if id_config and 'property' in id_config:
@@ -313,8 +320,10 @@ def generate_node_id(node_schema, row):
             if not pd.isna(id_val) and id_val != '':
                 return f"{node_schema['label']}-{id_val}"
     
-    # If no explicit ID is specified in the schema, use heuristics to determine the best ID property
-    # This is a more robust way to determine the primary ID property for each node type
+    # If no specific rule or rule application failed, use the primary property
+    primary_prop = node_schema.get('primary_property')
+    if primary_prop and primary_prop in row and not pd.isna(row[primary_prop]):
+        return f"{node_schema.get('label')}-{row[primary_prop]}"
     
     # Try to find a property with the same name as the label
     for prop_name in node_schema.get('properties', {}).keys():
@@ -330,21 +339,29 @@ def generate_node_id(node_schema, row):
             if not pd.isna(id_val) and id_val != '':
                 return f"{node_schema['label']}-{id_val}"
     
-    # If no appropriate ID property was found, use a UUID-like approach with a combination of the first value and row index
-    if not row.empty:
-        first_val = row.iloc[0]
-        if not pd.isna(first_val) and first_val != '':
-            # Use row index as a unique identifier if available, otherwise use the first value
-            if hasattr(row, 'name'):
-                return f"{node_schema['label']}-{row.name}"
-            else:
-                hash_val = hash(str(first_val))
-                return f"{node_schema['label']}-{hash_val}"
+    # If no explicit ID is specified in the schema, use heuristics to determine the best ID property
+    # Try to find a property that looks like an ID
+    for col in row.index:
+        if 'id' in col.lower() and not pd.isna(row[col]):
+            return f"{node_schema.get('label')}-{row[col]}"
     
-    # Last resort - use a random ID if everything else fails
-    import uuid
-    logging.info(f"Using random UUID for {node_schema['label']} node - no suitable ID property found")
-    return f"{node_schema['label']}-{uuid.uuid4()}"
+    # If we still don't have an ID, use a hash of the row values
+    row_hash = hash(tuple(str(v) for v in row.values if not pd.isna(v)))
+    return f"{node_schema.get('label')}-{abs(row_hash)}"
+
+
+# Set the reference to this function in the optimized module
+try:
+    # Try to set it in the imported module
+    import sys
+    if 'api.kgdata_loader.json_processing_optimizations' in sys.modules:
+        sys.modules['api.kgdata_loader.json_processing_optimizations'].generate_node_id = generate_node_id
+        sys.modules['api.kgdata_loader.json_processing_optimizations'].cast_value = cast_value
+    elif 'json_processing_optimizations' in sys.modules:
+        sys.modules['json_processing_optimizations'].generate_node_id = generate_node_id
+        sys.modules['json_processing_optimizations'].cast_value = cast_value
+except Exception as e:
+    logging.warning(f"Could not set function references in optimized module: {e}")
 
 # --- Main Processing Function ---
 
@@ -368,18 +385,24 @@ def create_neo4j_import_files(schema_path, data_path, output_dir):
         logging.error(f"Error parsing schema JSON: {e}")
         return
     
-    logging.info(f"Loading data from: {data_path}")
+    logging.info(f"Loading data from {data_path}")
     try:
-        original_df = pd.read_csv(data_path)
-    except FileNotFoundError:
-        logging.error(f"Data file not found: {data_path}")
-        return
+        # Use optimized CSV reading parameters
+        df = pd.read_csv(
+            data_path, 
+            low_memory=False,
+            # Only parse dates when needed later, not during initial load
+            parse_dates=False,
+            # Use a more efficient engine
+            engine='c' if 'c' in pd.read_csv.__doc__ else 'python'
+        )
+        logging.info(f"Loaded {len(df)} rows of data")
     except Exception as e:
-        logging.error(f"Error reading CSV data: {e}")
-        return
+        logging.error(f"Error loading data: {e}")
+        raise
     
     # Add indexes to the DataFrame to help with lookups later
-    original_df = original_df.reset_index(drop=True)
+    original_df = df.reset_index(drop=True)
     
     logging.info(f"Loaded CSV has {len(original_df)} rows and {len(original_df.columns)} columns")
     logging.info(f"First few columns: {list(original_df.columns[:5])}")
@@ -672,216 +695,154 @@ def create_neo4j_import_files(schema_path, data_path, output_dir):
                                         rel_headers.update(rel_data.keys())
                                         processed_relationship_types.add(relationship_type)
     
-    # Process JSON arrays and create related nodes/relationships
+    # Process JSON arrays in CSV columns
     logging.info("Processing JSON arrays in CSV columns...")
-    for json_col, mapping in json_array_mappings.items():
-        source_label = mapping['source_node']
-        target_label = mapping['target_node']
-        relationship_type = mapping['relationship_type']
-        
-        # Make sure target node label has a data dictionary
-        if target_label not in nodes_data:
-            nodes_data[target_label] = {}
-            node_headers[target_label] = set([':ID', ':LABEL'])
-            node_headers[target_label].update(mapping['property_schema'].keys())
-            
-        logging.info(f"Processing column '{json_col}' to create {target_label} nodes")
-        
-        # Initialize counters for reporting
-        json_nodes_created = 0
-        json_relationships_created = 0
-        
-        # For each row that has data in this column
-        for index, row in original_df.iterrows():
-            if json_col not in row or pd.isna(row[json_col]):
-                continue
-                
-            # Get the source node ID for this row
-            source_node_schema = next((n for n in schema.get('nodes', []) if n.get('label') == source_label), None)
-            if not source_node_schema:
-                continue
-                
-            source_node_id = generate_node_id(source_node_schema, row)
-            if not source_node_id or source_node_id not in nodes_data.get(source_label, {}):
-                continue
-                
-            # Parse the JSON data
-            json_str = clean_non_json_chars(row[json_col])
-            json_data = parse_json_data(json_str)
-            
-            if not json_data:
-                # If parsing failed, log a debug message with a sample
-                if index < 5:  # Only log the first few failures to avoid log spam
-                    logging.debug(f"Failed to parse JSON data in row {index}, column '{json_col}': {str(row[json_col])[:100]}")
-                continue
-                
-            # If it's not a list, convert it to a list with one item
-            if not isinstance(json_data, list):
-                json_data = [json_data]
-                
-            # Process each item in the JSON data
-            for i, item in enumerate(json_data):
-                if not isinstance(item, dict):
-                    logging.warning(f"JSON array item is not a dictionary: {item}")
-                    continue
-                    
-                # Generate a unique ID for this node
-                # Try to use a name-like field from the item first, if available
-                name_field = None
-                for key in item.keys():
-                    if 'name' in key.lower() or key.lower() == 'id':
-                        name_field = item[key]
-                        break
-                        
-                if name_field:
-                    # Use the name field to ensure consistent IDs across rows
-                    target_node_id = f"{target_label}-{name_field}"
-                else:
-                    # Fallback to position-based ID
-                    target_node_id = f"{target_label}-{source_node_id}-{i}"
-                    
-                # Skip if this node was already processed
-                if target_node_id in nodes_data[target_label]:
-                    # Still create the relationship if it doesn't already exist
-                    existing_rel = False
-                    for rel in relationships_output:
-                        if (rel[':START_ID'] == source_node_id and 
-                            rel[':END_ID'] == target_node_id and 
-                            rel[':TYPE'] == relationship_type):
-                            existing_rel = True
-                            break
-                            
-                    if not existing_rel:
-                        rel_data = {
-                            ':START_ID': source_node_id,
-                            ':END_ID': target_node_id,
-                            ':TYPE': relationship_type
-                        }
-                        relationships_output.append(rel_data)
-                        json_relationships_created += 1
-                    continue
-                    
-                # Create the node data
-                node_data = {
-                    ":ID": target_node_id,
-                    ":LABEL": target_label
-                }
-                
-                # Add all properties from the JSON item
-                for key, value in item.items():
-                    # Map to a property that exists in the schema if possible
-                    prop_name = next((p for p in mapping['property_schema'].keys() if p.lower() == key.lower()), key)
-                    
-                    # Get the target type from the schema or default to string
-                    target_type = None
-                    if prop_name in mapping['property_schema']:
-                        prop_details = mapping['property_schema'][prop_name]
-                        if isinstance(prop_details, dict):
-                            target_type = prop_details.get('type', 'string')
-                        elif isinstance(prop_details, str):
-                            target_type = prop_details
-                            
-                    if not target_type:
-                        # Guess the type based on the value
-                        if isinstance(value, bool):
-                            target_type = 'boolean'
-                        elif isinstance(value, int):
-                            target_type = 'integer'
-                        elif isinstance(value, float):
-                            target_type = 'float'
-                        else:
-                            target_type = 'string'
-                    
-                    # Convert value to the right type
-                    if target_type in ['string', 'integer', 'float', 'boolean', 'date', 'datetime']:
-                        node_data[prop_name] = cast_value(value, target_type)
-                    else:
-                        node_data[prop_name] = value
-                        
-                    # Track headers
-                    node_headers[target_label].add(prop_name)
-                    
-                # Add node to the data
-                nodes_data[target_label][target_node_id] = node_data
-                json_nodes_created += 1
-                
-                # Create the relationship
-                rel_data = {
-                    ':START_ID': source_node_id,
-                    ':END_ID': target_node_id,
-                    ':TYPE': relationship_type
-                }
-                relationships_output.append(rel_data)
-                rel_headers.update(rel_data.keys())
-                processed_relationship_types.add(relationship_type)
-                json_relationships_created += 1
-                
-        logging.info(f"Generated {json_nodes_created} {target_label} nodes from '{json_col}' column")
-        logging.info(f"Generated {json_relationships_created} {relationship_type} relationships from '{json_col}' column")
     
-    # --- Write Node Files ---
-    logging.info("Writing node files...")
-    for label, data_list in nodes_data.items():
-        if data_list:
-            # Get the schema for this node label
-            node_schema = next((n for n in schema['nodes'] if n['label'] == label), None)
-            df = pd.DataFrame(list(data_list.values()))
+    # Directly use the optimized function for all JSON mappings
+    for mapping in schema.get('json_mappings', []):
+        json_col = mapping.get('source_column')
+        target_label = mapping.get('target_label')
+        relationship_type = mapping.get('relationship_type')
+        source_label = mapping.get('source_label')
+        
+        if not json_col or not target_label or not relationship_type or not source_label:
+            continue
             
-            # Create a mapping from schema property names to original CSV column names with type information
-            column_rename_map = {':ID': ':ID', ':LABEL': ':LABEL'}  # Special columns always stay the same
-            
-            # Create a header with Neo4j type information
-            neo4j_headers = {':ID': ':ID', ':LABEL': ':LABEL'}  # Special columns stay the same
-            
-            if node_schema and 'properties' in node_schema:
-                for prop_name, prop_details in node_schema['properties'].items():
-                    if isinstance(prop_details, dict):
-                        # Get the source column and data type
-                        source_col = prop_details.get('source_column', prop_name)
-                        data_type = prop_details.get('type', 'string')
-                        
-                        # Map the column name with type information for Neo4j
-                        neo4j_type = convert_to_neo4j_type(data_type)
-                        if neo4j_type:
-                            neo4j_headers[prop_name] = f"{prop_name}:{neo4j_type}"
-                        else:
-                            neo4j_headers[prop_name] = prop_name
-                            
-                        # Store the original mapping for renaming
-                        column_rename_map[prop_name] = source_col
-                    elif isinstance(prop_details, str):
-                        # For simple string type definitions
-                        neo4j_type = convert_to_neo4j_type(prop_details)
-                        if neo4j_type:
-                            neo4j_headers[prop_name] = f"{prop_name}:{neo4j_type}"
-                        else:
-                            neo4j_headers[prop_name] = prop_name
-                        
-                        column_rename_map[prop_name] = prop_name
-            
-            # Apply the column renaming to the DataFrame
-            df.rename(columns=column_rename_map, inplace=True)
-            
-            # Create a new DataFrame with the typed headers
-            typed_df = df.copy()
-            typed_df.columns = [neo4j_headers.get(col, col) for col in df.columns]
-            
-            # Write the file with type information in the headers
-            output_path = os.path.join(output_dir, f"{label}_nodes.csv")
-            typed_df.to_csv(output_path, index=False, lineterminator='\n')
-            logging.info(f"Successfully wrote node file: {output_path}")
-        else:
-            logging.warning(f"No data generated for node label: {label}")
+        if json_col not in original_df.columns:
+            logging.warning(f"JSON column '{json_col}' not found in data")
+            continue
+        
+        # Use the optimized function to process the JSON column
+        nodes_created, rels_created, new_rel_types = process_json_column_optimized(
+            original_df, json_col, source_label, target_label, relationship_type,
+            schema, nodes_data, node_headers, relationships_output, BATCH_SIZE
+        )
+        
+        # Update processed relationship types
+        processed_relationship_types.update(new_rel_types)
+    
+        # Create a new DataFrame with the typed headers
+        typed_df = df.copy()
+        typed_df.columns = [neo4j_headers.get(col, col) for col in df.columns]
+        
+        # Write the file with type information in the headers
+        output_path = os.path.join(output_dir, f"{label}_nodes.csv")
+        typed_df.to_csv(output_path, index=False, lineterminator='\n')
+        logging.info(f"Successfully wrote node file: {output_path}")
+    else:
+        logging.warning(f"No data generated for node label: {label}")
 
     # --- Process Relationships ---
     logging.info("Processing relationships...")
     
-    # Process each relationship defined in the schema
-    for rel_schema in schema.get('relationships', []):
-        rel_type = rel_schema.get('type')
-        from_label = rel_schema.get('startNode')
-        to_label = rel_schema.get('endNode')
+    # Process relationships defined in the schema
+    for rel_schema in schema['relationships']:
+        rel_type = rel_schema['type']
+        from_label = rel_schema['source']
+        to_label = rel_schema['target']
         
+        logging.info(f"Processing relationship type: {rel_type} ({from_label} -> {to_label})")
+        
+        # Generic handling for relationships with JSON array columns
+        # Check if this relationship involves a JSON array column
+        json_array_column = None
+        for column in original_df.columns:
+            if column.endswith('_Members') or column.endswith('_Array') or column.endswith('_List'):
+                # Check if this column contains JSON arrays
+                sample_value = original_df[column].dropna().iloc[0] if not original_df[column].dropna().empty else None
+                if sample_value and isinstance(sample_value, str) and (sample_value.startswith('[') or sample_value.startswith('{')):
+                    # Find if this column is related to the current relationship
+                    if (column.replace('_Members', '').replace('_Array', '').replace('_List', '') == to_label or 
+                        to_label.lower() in column.lower()):
+                        json_array_column = column
+                        logging.info(f"Found JSON array column {json_array_column} for relationship {rel_type}")
+                        break
+        
+        if json_array_column:
+            # Process JSON array column to create target nodes and relationships
+            logging.info(f"Special handling for {rel_type} relationship using {json_array_column}")
+            relationship_count = 0
+            
+            for index, row in original_df.iterrows():
+                if json_array_column in row and not pd.isna(row[json_array_column]):
+                    # Get the source node ID
+                    source_schema = next((n for n in schema['nodes'] if n['label'] == from_label), None)
+                    source_id = generate_node_id(source_schema, row)
+                    
+                    if not source_id:
+                        continue
+                        
+                    # Ensure source node exists
+                    if source_id not in nodes_data.get(from_label, {}):
+                        logging.info(f"Creating {from_label} node {source_id} for {rel_type} relationship")
+                        nodes_data.setdefault(from_label, {})[source_id] = {
+                            ':ID': source_id,
+                            ':LABEL': from_label
+                        }
+                    
+                    # Process JSON array data
+                    json_data = parse_json_data_optimized(clean_non_json_chars_optimized(row[json_array_column]))
+                    
+                    if json_data and isinstance(json_data, list):
+                        for item in json_data:
+                            if isinstance(item, dict):
+                                # Determine a unique ID for the target node
+                                # Try to use a name-like field from the item first, if available
+                                name_field = None
+                                for key in item.keys():
+                                    if 'name' in key.lower() or key.lower() == 'id':
+                                        name_field = item[key]
+                                        break
+                                        
+                                if name_field:
+                                    target_id = f"{to_label}-{name_field}"
+                                else:
+                                    # Fallback to a position-based ID
+                                    target_id = f"{to_label}-{source_id}-{hash(str(item))}"
+                                
+                                # Create target node if it doesn't exist
+                                if target_id not in nodes_data.get(to_label, {}):
+                                    node_data = {
+                                        ':ID': target_id,
+                                        ':LABEL': to_label
+                                    }
+                                    # Add properties from the JSON item
+                                    for key, value in item.items():
+                                        node_data[key] = value
+                                        node_headers.setdefault(to_label, set()).add(key)
+                                    
+                                    # Add to nodes_data
+                                    nodes_data.setdefault(to_label, {})[target_id] = node_data
+                                
+                                # Create relationship
+                                rel_data = {
+                                    ':START_ID': source_id,
+                                    ':END_ID': target_id,
+                                    ':TYPE': rel_type
+                                }
+                                
+                                # Add relationship properties if defined in schema
+                                rel_props = rel_schema.get('properties', {})
+                                for prop_name, prop_details in rel_props.items():
+                                    if isinstance(prop_details, dict):
+                                        target_type = prop_details.get('type')
+                                    else:
+                                        target_type = prop_details
+                                        
+                                    # Get property value from JSON item
+                                    if prop_name in item:
+                                        rel_data[prop_name] = cast_value(item[prop_name], target_type)
+                                
+                                relationships_output.append(rel_data)
+                                rel_headers.update(rel_data.keys())
+                                relationship_count += 1
+                                processed_relationship_types.add(rel_type)
+            
+            if relationship_count > 0:
+                logging.info(f"Generated {relationship_count} relationships of type {rel_type}")
+            continue
+            
+        # Skip if either node type doesn't exist in our data
         if from_label not in nodes_data or to_label not in nodes_data:
             logging.warning(f"Skipping relationship type {rel_type} due to missing node data for {from_label} or {to_label}")
             continue
@@ -969,6 +930,72 @@ def create_neo4j_import_files(schema_path, data_path, output_dir):
         if relationship_count > 0:
             logging.info(f"Generated {relationship_count} relationships of type {rel_type}")
                     
+    # --- Write Node Files ---
+    logging.info("Writing node files...")
+    for label, nodes in nodes_data.items():
+        if not nodes:
+            logging.warning(f"No data generated for node label: {label}")
+            continue
+            
+        # Convert the nodes dictionary to a DataFrame
+        node_df = pd.DataFrame(list(nodes.values()))
+        
+        # Ensure all headers are included
+        for header in node_headers.get(label, set()):
+            if header not in node_df.columns:
+                node_df[header] = None
+        
+        # Add Neo4j type information to headers
+        neo4j_headers = {}
+        for header in node_df.columns:
+            if header in [':ID', ':LABEL']:
+                neo4j_headers[header] = header
+                continue
+                
+            # Find the property type in the schema
+            prop_type = None
+            for node_schema in schema.get('nodes', []):
+                if node_schema.get('label') == label and header in node_schema.get('properties', {}):
+                    prop_details = node_schema['properties'][header]
+                    if isinstance(prop_details, dict):
+                        prop_type = prop_details.get('type')
+                    else:
+                        prop_type = prop_details
+                    break
+            
+            # If no type found in schema, infer from data
+            if not prop_type and header in node_df.columns:
+                non_null_values = node_df[header].dropna()
+                if not non_null_values.empty:
+                    sample_values = non_null_values.head(5)
+                    sample_types = [type(val).__name__ for val in sample_values]
+                    
+                    if all(t == 'float' for t in sample_types):
+                        prop_type = 'float'
+                    elif all(t == 'int' for t in sample_types):
+                        prop_type = 'integer'
+                    elif all(t == 'bool' for t in sample_types):
+                        prop_type = 'boolean'
+                    else:
+                        prop_type = 'string'
+            
+            # Convert to Neo4j type
+            neo4j_type = convert_to_neo4j_type(prop_type) if prop_type else None
+            if neo4j_type:
+                neo4j_headers[header] = f"{header}:{neo4j_type}"
+            else:
+                neo4j_headers[header] = header
+        
+        # Write the node file with Neo4j type information in headers
+        output_path = os.path.join(output_dir, f"{label}_nodes.csv")
+        
+        # Rename columns to include type information
+        node_df_with_types = node_df.copy()
+        node_df_with_types.columns = [neo4j_headers[col] for col in node_df.columns]
+        
+        node_df_with_types.to_csv(output_path, index=False, lineterminator='\n')
+        logging.info(f"Successfully wrote {len(node_df_with_types)} {label} nodes to {output_path}")
+    
     # --- Write Relationships File ---
     logging.info("Writing relationships file...")
     if relationships_output:
