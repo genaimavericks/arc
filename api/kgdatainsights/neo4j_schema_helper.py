@@ -11,8 +11,8 @@ import os
 # Fix import paths for both direct and module imports
 try:
     # When imported as a module
-    from api.kginsights.neo4j_config import get_neo4j_config
-    from api.kginsights.neo4j_connection_manager import Neo4jConnectionManager
+    from api.kgdatainsights.neo4j_config import get_neo4j_config
+    from api.kgdatainsights.neo4j_connection_manager import Neo4jConnectionManager
 except ImportError:
     # When run directly
     from .neo4j_config import get_neo4j_config
@@ -44,6 +44,7 @@ async def get_neo4j_node_labels() -> List[str]:
                 result = session.run("CALL db.labels()")
                 labels = [record["label"] for record in result]
                 logger.info(f"Retrieved {len(labels)} node labels from Neo4j using db.labels(): {labels}")
+                return labels
             except Exception as proc_error:
                 # If that fails, try a more direct query
                 logger.warning(f"Error using db.labels() procedure: {str(proc_error)}. Trying alternative query.")

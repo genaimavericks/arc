@@ -261,19 +261,17 @@ async def direct_websocket_endpoint(websocket: WebSocket, schema_id: str):
                     })
                 
                 elif message_type == "suggest":
-                    # Get context-aware query suggestions
+                    # Get query suggestions with current text and cursor position
                     current_text = content.get("text", "")
                     cursor_position = content.get("cursor_position", len(current_text))
                     
-                    # Get enhanced query suggestions with context awareness
+                    # Get schema-based query suggestions
                     suggestions = await get_query_suggestions(schema_id, dummy_user, current_text, cursor_position)
                     
                     await websocket.send_json({
                         "type": "suggestions",
                         "content": {
-                            "suggestions": suggestions,
-                            "current_text": current_text,
-                            "cursor_position": cursor_position
+                            "suggestions": suggestions
                         }
                     })
                 
