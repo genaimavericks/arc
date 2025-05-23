@@ -589,6 +589,7 @@ async def generate_prompts_for_schema(
         schema_record = db.query(Schema).filter(Schema.id == schema_id).first()
         if not schema_record or not schema_record.schema or not schema_record.db_id:
             raise HTTPException(status_code=404, detail="Schema not found or incomplete for given schema_id")
+        # Pass gen_schema=True to optimize initialization for schema generation only
         assistant = get_schema_aware_assistant(schema_record.db_id, schema_id, schema_record.schema)
         # This will trigger prompt and query file generation via _ensure_prompt
         assistant._ensure_prompt()

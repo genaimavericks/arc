@@ -28,8 +28,8 @@ class CsvToCypherGenerator:
         self.provider_name = provider_name
         self.model_name = model_name
         
-        self.dataframe = self._load_csv()
-        self.llm = self._initialize_llm()
+        self.dataframe = None
+        self.llm = None
 
     def _load_csv(self) -> Optional[pd.DataFrame]:
         """Loads the data from the CSV file."""
@@ -61,36 +61,25 @@ class CsvToCypherGenerator:
             return None
 
     def _select_rows(self) -> List[Dict[str, Any]]:
-        """Selects the 2nd, middle, and last data rows from the DataFrame."""
+        """Selects only one middle row from the DataFrame."""
         selected_rows = []
-        if self.dataframe is None or len(self.dataframe) < 2:
-            print("Warning: DataFrame is missing or has less than 2 data rows. Cannot select rows.")
+        if self.dataframe is None or len(self.dataframe) < 1:
+            print("Warning: DataFrame is missing or empty. Cannot select rows.")
             return selected_rows
 
         num_rows = len(self.dataframe)
-        indices_to_select = []
-
-        # 2nd data row (index 1)
-        if num_rows >= 2:
-            indices_to_select.append(1)
         
-        # Last data row (index num_rows - 1)
-        last_index = num_rows - 1
-        if last_index not in indices_to_select:
-            indices_to_select.append(last_index)
+        # Select the middle row
+        middle_index = num_rows // 2
         
-        # Remove duplicates potentially introduced by small DFs and logic above
-        indices_to_select = sorted(list(set(indices_to_select)))
-
-        print(f"Selecting data rows at indices: {indices_to_select}")
+        print(f"Selecting middle data row at index: {middle_index}")
         
-        for index in indices_to_select:
-            try:
-                # Convert row to dictionary {column_name: value}
-                row_dict = self.dataframe.iloc[index].to_dict()
-                selected_rows.append(row_dict)
-            except IndexError:
-                 print(f"Warning: Could not access row at index {index}.")
+        try:
+            # Convert row to dictionary {column_name: value}
+            row_dict = self.dataframe.iloc[middle_index].to_dict()
+            selected_rows.append(row_dict)
+        except IndexError:
+            print(f"Warning: Could not access row at index {middle_index}.")
                  
         return selected_rows
 
@@ -133,6 +122,10 @@ class CsvToCypherGenerator:
             A list containing the generated Cypher query string for each selected row,
             or None for rows where generation failed or was not possible.
         """
+
+        self.dataframe = self._load_csv()
+        self.llm = self._initialize_llm()
+
         if self.schema is None or self.dataframe is None or self.llm is None:
             print("Error: Cannot generate Cypher queries due to missing schema, dataframe, or LLM.")
             return []

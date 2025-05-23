@@ -489,8 +489,8 @@ def create_neo4j_import_files(schema_path, data_path, output_dir):
                             if test_parse is not None:
                                 logging.info(f"Found structured data in '{col}' column - mapping to {target_label} nodes via {rel_type}")
                                 json_array_mappings[col] = {
-                                    'source_node': source_label,
-                                    'target_node': target_label,
+                                    'startNode': source_label,
+                                    'endNode': target_label,
                                     'relationship_type': rel_type,
                                     'property_schema': target_node_schema.get('properties', {})
                                 }
@@ -544,8 +544,8 @@ def create_neo4j_import_files(schema_path, data_path, output_dir):
                 if target_node_type and relationship_type and source_col in original_df.columns:
                     logging.info(f"Found JSON array mapping: {source_col} -> {target_node_type} via {relationship_type}")
                     json_array_mappings[source_col] = {
-                        'source_node': label,
-                        'target_node': target_node_type,
+                        'startNode': label,
+                        'endNode': target_node_type,
                         'relationship_type': relationship_type,
                         'property_schema': prop_details.get('properties', {})
                     }
@@ -561,14 +561,14 @@ def create_neo4j_import_files(schema_path, data_path, output_dir):
                     logging.info(f"Found potential JSON array in column: {prop_name}")
                     # We'll detect the relationship type from the schema later
                     for rel_schema in schema.get('relationships', []):
-                        if rel_schema.get('endNode') == label:
-                            target_node_type = rel_schema.get('endNode')
+                        if rel_schema.get('endNode', rel_schema.get('target')) == label:
+                            target_node_type = rel_schema.get('endNode', rel_schema.get('target'))
                             relationship_type = rel_schema.get('type')
                             if target_node_type and relationship_type:
                                 logging.info(f"Identified JSON array mapping: {prop_name} -> {target_node_type} via {relationship_type}")
                                 json_array_mappings[prop_name] = {
-                                    'source_node': rel_schema.get('startNode'),
-                                    'target_node': target_node_type,
+                                    'startNode': rel_schema.get('startNode', rel_schema.get('source')),
+                                    'endNode': target_node_type,
                                     'relationship_type': relationship_type,
                                     'property_schema': {}  # Will be detected from the data
                                 }
@@ -644,9 +644,9 @@ def create_neo4j_import_files(schema_path, data_path, output_dir):
             processed_node_relationships = set()
             for rel_schema in schema.get('relationships', []):
                 # Check if this relationship involves the current node as source or target
-                if rel_schema.get('startNode') == label:
+                if rel_schema.get('startNode', rel_schema.get('source')) == label:
                     # This node is the source of the relationship
-                    target_label = rel_schema.get('endNode')
+                    target_label = rel_schema.get('endNode', rel_schema.get('target'))
                     relationship_type = rel_schema.get('type')
                     
                     # Skip if we have already processed this relationship type for this node
@@ -701,9 +701,11 @@ def create_neo4j_import_files(schema_path, data_path, output_dir):
     # Directly use the optimized function for all JSON mappings
     for mapping in schema.get('json_mappings', []):
         json_col = mapping.get('source_column')
-        target_label = mapping.get('target_label')
+        # Use endNode with fallback to target_label for backward compatibility
+        target_label = mapping.get('endNode', mapping.get('target_label'))
         relationship_type = mapping.get('relationship_type')
-        source_label = mapping.get('source_label')
+        # Use startNode with fallback to source_label for backward compatibility
+        source_label = mapping.get('startNode', mapping.get('source_label'))
         
         if not json_col or not target_label or not relationship_type or not source_label:
             continue
@@ -738,8 +740,9 @@ def create_neo4j_import_files(schema_path, data_path, output_dir):
     # Process relationships defined in the schema
     for rel_schema in schema['relationships']:
         rel_type = rel_schema['type']
-        from_label = rel_schema['source']
-        to_label = rel_schema['target']
+        # Use startNode and endNode consistently (fallback to source/target for backward compatibility)
+        from_label = rel_schema.get('startNode', rel_schema.get('source'))
+        to_label = rel_schema.get('endNode', rel_schema.get('target'))
         
         logging.info(f"Processing relationship type: {rel_type} ({from_label} -> {to_label})")
         
@@ -849,7 +852,7 @@ def create_neo4j_import_files(schema_path, data_path, output_dir):
             
         logging.info(f"Processing relationship type: {rel_type} ({from_label} -> {to_label})")
         
-        # Get node schemas for ID generation
+        # Get node schemas for ID generation using the startNode/endNode labels
         startNode_schema = next((n for n in schema['nodes'] if n['label'] == from_label), None)
         endNode_schema = next((n for n in schema['nodes'] if n['label'] == to_label), None)
         
@@ -1210,6 +1213,14 @@ def create_neo4j_import_files(schema_path, data_path, output_dir):
     # Validate that all relationship types in the schema are present in the output
     schema_relationship_types = {rel.get('type') for rel in schema.get('relationships', [])}
     missing_relationship_types = schema_relationship_types - processed_relationship_types
+    
+    # Ensure all relationship definitions in the schema use startNode and endNode
+    for rel_schema in schema.get('relationships', []):
+        # Add startNode/endNode properties if only source/target is present
+        if 'source' in rel_schema and 'startNode' not in rel_schema:
+            rel_schema['startNode'] = rel_schema['source']
+        if 'target' in rel_schema and 'endNode' not in rel_schema:
+            rel_schema['endNode'] = rel_schema['target']
     
     if missing_relationship_types:
         logging.warning(f"WARNING: The following relationship types were defined in the schema but not generated: {missing_relationship_types}")
