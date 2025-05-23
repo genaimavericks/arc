@@ -1,5 +1,11 @@
 print("*******Checking if main this is getting called!")
-from fastapi import FastAPI, HTTPException, Depends, Request, Query, WebSocket
+import json
+import logging
+import asyncio
+import uvicorn
+import os
+from pathlib import Path
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, Request, Query, WebSocket
 from starlette.websockets import WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -20,8 +26,10 @@ if os.path.exists(dotenv_path):
     dotenv.load_dotenv(dotenv_path)
     print(f"OPENAI_API_KEY is {'set' if os.getenv('OPENAI_API_KEY') else 'not set'}")
 
-from api.models import User
+from api.models import User, Schema
 from api.db_config import get_db, init_db
+from api.auth import router as auth_router, has_any_permission
+#from api.ingestion import router as ingestion_router
 from api.auth import router as auth_router, has_any_permission
 #from api.ingestion import router as ingestion_router
 from api.datapuur import router as datapuur_router
@@ -152,6 +160,50 @@ async def startup_event():
         print("Updated role permissions")
     except Exception as e:
         print(f"Error updating role permissions: {str(e)}")
+    
+    # Initialize query suggestion cache
+    try:
+        import asyncio
+        from api.kgdatainsights.query_processor import refresh_cache_task
+        
+        # Get all schema IDs from the database
+        schemas = db.query(Schema).all()
+        schema_ids = [str(schema.id) for schema in schemas]
+        
+        if schema_ids:
+            # Initialize cache for each schema
+            for schema_id in schema_ids:
+                asyncio.create_task(refresh_cache_task(schema_id))
+                print(f"Initialized query suggestion cache for schema {schema_id}")
+            
+            # Set up background task to periodically refresh the cache
+            async def periodic_cache_refresh():
+                while True:
+                    try:
+                        # Refresh cache for all schemas every 5 minutes
+                        await asyncio.sleep(300)  # 5 minutes
+                        # Get fresh list of schemas in case they've changed
+                        try:
+                            db_refresh = next(get_db())
+                            schemas_refresh = db_refresh.query(Schema).all()
+                            schema_ids_refresh = [str(schema.id) for schema in schemas_refresh]
+                            for schema_id in schema_ids_refresh:
+                                asyncio.create_task(refresh_cache_task(schema_id))
+                        except Exception as inner_e:
+                            print(f"Error refreshing schema list: {str(inner_e)}")
+                            # Fall back to original schema list
+                            for schema_id in schema_ids:
+                                asyncio.create_task(refresh_cache_task(schema_id))
+                    except Exception as e:
+                        print(f"Error in periodic cache refresh: {str(e)}")
+            
+            # Start the background task
+            asyncio.create_task(periodic_cache_refresh())
+            print("Started background task for periodic cache refresh")
+        else:
+            print("No schemas found for query suggestion cache initialization")
+    except Exception as e:
+        print(f"Error initializing query suggestion cache: {str(e)}")
         
     # Register WebSocket API
     try:
@@ -262,16 +314,88 @@ async def direct_websocket_endpoint(websocket: WebSocket, schema_id: str):
                 
                 elif message_type == "suggest":
                     # Get query suggestions with current text and cursor position
-                    current_text = content.get("text", "")
+                    # The frontend sends 'query' instead of 'text'
+                    current_text = content.get("query", "")
                     cursor_position = content.get("cursor_position", len(current_text))
                     
-                    # Get schema-based query suggestions
+                    # Get schema-based query suggestions with filtering
                     suggestions = await get_query_suggestions(schema_id, dummy_user, current_text, cursor_position)
+                    
+                    # Log the schema ID and suggestions for debugging
+                    print(f"Direct WebSocket: Generated suggestions for schema_id: {schema_id}, text: '{current_text}', found {len(suggestions)} suggestions")
+                    
+                    # Print detailed information about each suggestion
+                    for i, suggestion in enumerate(suggestions):
+                        print(f"  Suggestion {i+1}: '{suggestion}'")
+                    
+                    # Print the file paths that were checked
+                    output_dir = Path("runtime-data/output/kgdatainsights")
+                    
+                    # Try different possible filenames for the schema
+                    possible_query_filenames = [
+                        f"{schema_id}_queries.json",  # Original format with spaces
+                        f"{schema_id.replace(' ', '_')}_queries.json",  # Replace spaces with underscores
+                        f"{schema_id.split()[0]}_queries.json" if ' ' in schema_id else None,  # First word only
+                        "3_queries.json"  # Hardcoded ID that we know exists
+                    ]
+                    possible_query_filenames = [f for f in possible_query_filenames if f]
+                    
+                    possible_history_filenames = [
+                        f"{schema_id}_history.json",  # Original format with spaces
+                        f"{schema_id.replace(' ', '_')}_history.json",  # Replace spaces with underscores
+                        f"{schema_id.split()[0]}_history.json" if ' ' in schema_id else None,  # First word only
+                        "3_history.json"  # Hardcoded ID that we know exists
+                    ]
+                    possible_history_filenames = [f for f in possible_history_filenames if f]
+                    
+                    # Check if any of the possible files exist
+                    found_query_file = None
+                    for filename in possible_query_filenames:
+                        file_path = output_dir / "queries" / filename
+                        if os.path.exists(file_path):
+                            found_query_file = file_path
+                            break
+                    
+                    found_history_file = None
+                    for filename in possible_history_filenames:
+                        file_path = output_dir / "history" / filename
+                        if os.path.exists(file_path):
+                            found_history_file = file_path
+                            break
+                    
+                    # Print the results
+                    print(f"  Checked possible canned queries files:")
+                    for filename in possible_query_filenames:
+                        file_path = output_dir / "queries" / filename
+                        print(f"    - {file_path} (exists: {os.path.exists(file_path)})")
+                    
+                    print(f"  Checked possible history files:")
+                    for filename in possible_history_filenames:
+                        file_path = output_dir / "history" / filename
+                        print(f"    - {file_path} (exists: {os.path.exists(file_path)})")
+                    
+                    # If no files were found, suggest creating them
+                    if not found_query_file and not found_history_file:
+                        print(f"  Note: No suggestion files found for schema_id: {schema_id}. This may affect suggestion quality.")
+                        print(f"  Suggestions are primarily coming from schema-based generation.")
+                    else:
+                        sources = ["schema"]
+                        if found_query_file:
+                            sources.append("canned queries")
+                        if found_history_file:
+                            sources.append("history")
+                        print(f"  Suggestions are coming from combined sources: {', '.join(sources)}.")
+                        if found_query_file:
+                            print(f"  Using canned queries from: {found_query_file}")
+                        if found_history_file:
+                            print(f"  Using history from: {found_history_file}")
+                    
                     
                     await websocket.send_json({
                         "type": "suggestions",
                         "content": {
-                            "suggestions": suggestions
+                            "suggestions": suggestions,
+                            "schema_id": schema_id  # Include schema_id in response for verification
                         }
                     })
                 

@@ -3,6 +3,8 @@ import logging
 import random
 import json
 import os
+import re
+from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
@@ -26,37 +28,29 @@ async def get_schema_data(schema_id: str) -> Dict[str, Any]:
     if schema_id in schema_cache:
         return schema_cache[schema_id]
     
+    # For testing, use the sample schema data
     try:
-        # Import the Neo4j schema helper
-        try:
-            # When imported as a module
-            from api.kgdatainsights.neo4j_schema_helper import merge_schema_data
-        except ImportError:
-            # When run directly
-            from .neo4j_schema_helper import merge_schema_data
-        
-        # First try to load from the sample schema file or database
-        db_schema = {}
+        # First try to load from the sample schema file
         sample_schema_path = os.path.join(os.path.dirname(__file__), "sample_schema.json")
         if os.path.exists(sample_schema_path):
             with open(sample_schema_path, "r") as f:
-                db_schema = json.load(f)
-        else:
-            try:
-                db = next(get_db())
-                schema = db.query(Schema).filter(Schema.id == schema_id).first()
-                if schema:
-                    # Parse schema data from the schema field
-                    db_schema = json.loads(schema.schema)
-            except Exception as db_error:
-                logger.error(f"Error getting schema from database: {str(db_error)}")
+                schema_data = json.load(f)
+                # Cache the schema data
+                schema_cache[schema_id] = schema_data
+                return schema_data
         
-        # Merge with Neo4j schema data to get actual nodes and relationships
-        schema_data = await merge_schema_data(schema_id, db_schema)
-        
-        # Cache the schema data
-        schema_cache[schema_id] = schema_data
-        return schema_data
+        # If sample schema not found, try database
+        try:
+            db = next(get_db())
+            schema = db.query(Schema).filter(Schema.id == schema_id).first()
+            if schema:
+                # Parse schema data from the schema field
+                schema_data = json.loads(schema.schema)
+                # Cache the schema data
+                schema_cache[schema_id] = schema_data
+                return schema_data
+        except Exception as db_error:
+            logger.error(f"Error getting schema from database: {str(db_error)}")
         
         # If all else fails, return empty schema
         return {"nodes": [], "relationships": []}
@@ -203,44 +197,183 @@ async def validate_query(schema_id: str, query_text: str, user: User) -> List[Di
     return errors
 
 async def get_query_suggestions(schema_id: str, user: User, current_text: str = "", cursor_position: int = 0) -> List[str]:
-    """Get query suggestions based on schema
-    
-    Args:
-        schema_id: ID of the schema
-        user: User object
-        current_text: Current text in the input field (for context-aware suggestions)
-        cursor_position: Current cursor position in the text
-        
-    Returns:
-        List of suggested queries
-    """
+    """Get query suggestions based on schema, canned queries, and query history"""
     # Get entity suggestions from schema
     entities = await get_entity_suggestions(schema_id)
     node_labels = entities["node_labels"]
     relationship_types = entities["relationship_types"]
     
     # Generate suggestions based on schema entities
-    suggestions = []
+    schema_suggestions = []
     
     # Add node-based suggestions
     for label in node_labels[:3]:  # Limit to first 3 node types to avoid too many suggestions
-        suggestions.append(f"Show me all {label} nodes")
-        suggestions.append(f"Count {label} nodes")
+        schema_suggestions.append(f"Show me all {label} nodes")
+        schema_suggestions.append(f"Count {label} nodes")
     
     # Add relationship-based suggestions
     if len(node_labels) >= 2 and len(relationship_types) > 0:
-        suggestions.append(f"Find relationships between {node_labels[0]} and {node_labels[1]}")
+        schema_suggestions.append(f"Find relationships between {node_labels[0]} and {node_labels[1]}")
     
     # Add general suggestions if we don't have enough
-    if len(suggestions) < 5:
+    if len(schema_suggestions) < 5:
         general_suggestions = [
             "Show the most connected nodes",
             "Find the shortest path between two nodes",
-            "Count nodes by type"
+            "What are the main entities in this graph?"
         ]
-        suggestions.extend(general_suggestions)
+        schema_suggestions.extend(general_suggestions)
     
-    return suggestions[:10]  # Return at most 10 suggestions
+    # Get canned queries from file
+    canned_queries = []
+    try:
+        # Directory to store query history and predefined queries as JSON files
+        OUTPUT_DIR = Path("runtime-data/output/kgdatainsights")
+        QUERIES_DIR = OUTPUT_DIR / "queries"
+        
+        # Try different possible filenames for the schema
+        possible_filenames = [
+            f"{schema_id}_queries.json",  # Original format with spaces
+            f"{schema_id.replace(' ', '_')}_queries.json",  # Replace spaces with underscores
+            f"{schema_id.split()[0]}_queries.json" if ' ' in schema_id else None,  # First word only
+            "3_queries.json"  # Hardcoded ID that we know exists
+        ]
+        
+        # Filter out None values
+        possible_filenames = [f for f in possible_filenames if f]
+        
+        # Try each filename
+        for filename in possible_filenames:
+            canned_queries_file = QUERIES_DIR / filename
+            logger.info(f"Trying to load canned queries from: {canned_queries_file}")
+            
+            if os.path.exists(canned_queries_file):
+                with open(canned_queries_file, "r") as f:
+                    queries_data = json.load(f)
+                    # Extract queries from the general category
+                    if "general" in queries_data:
+                        canned_queries = [item.get("query", "") for item in queries_data["general"] if "query" in item]
+                        logger.info(f"Loaded {len(canned_queries)} canned queries from file: {filename}")
+                        break  # Stop after finding a valid file
+    except Exception as e:
+        logger.error(f"Error loading canned queries from file: {str(e)}")
+    
+    # Get query history from file
+    history_queries = []
+    try:
+        # Directory for history
+        HISTORY_DIR = OUTPUT_DIR / "history"
+        
+        # Try different possible filenames for the schema
+        possible_filenames = [
+            f"{schema_id}_history.json",  # Original format with spaces
+            f"{schema_id.replace(' ', '_')}_history.json",  # Replace spaces with underscores
+            f"{schema_id.split()[0]}_history.json" if ' ' in schema_id else None,  # First word only
+            "3_history.json"  # Hardcoded ID that we know exists
+        ]
+        
+        # Filter out None values
+        possible_filenames = [f for f in possible_filenames if f]
+        
+        # Try each filename
+        for filename in possible_filenames:
+            history_file = HISTORY_DIR / filename
+            logger.info(f"Trying to load query history from: {history_file}")
+            
+            if os.path.exists(history_file):
+                with open(history_file, "r") as f:
+                    history_data = json.load(f)
+                    # Extract queries from history
+                    history_queries = [item.get("query", "") for item in history_data if "query" in item]
+                    logger.info(f"Loaded {len(history_queries)} history queries from file: {filename}")
+                    break  # Stop after finding a valid file
+    except Exception as e:
+        logger.error(f"Error loading query history from file: {str(e)}")
+    
+    # Log detailed information about the sources
+    logger.info(f"Schema-based suggestions for {schema_id}: {len(schema_suggestions)} items")
+    logger.info(f"Canned queries for {schema_id}: {len(canned_queries)} items")
+    logger.info(f"History queries for {schema_id}: {len(history_queries)} items")
+    
+    # Prioritize canned queries and history over schema-based suggestions
+    # First add canned queries and history
+    prioritized_suggestions = []
+    
+    # Add canned queries first (they're curated for quality)
+    prioritized_suggestions.extend(canned_queries)
+    
+    # Then add history queries (they represent user's actual usage)
+    for query in history_queries:
+        if query not in prioritized_suggestions:  # Avoid duplicates
+            prioritized_suggestions.append(query)
+    
+    # Finally, add schema-based suggestions to fill any remaining slots
+    for suggestion in schema_suggestions:
+        if suggestion not in prioritized_suggestions:  # Avoid duplicates
+            prioritized_suggestions.append(suggestion)
+    
+    # Filter suggestions based on user input if provided
+    filtered_suggestions = prioritized_suggestions
+    logger.info(f"Current text for filtering: '{current_text}'")
+    
+    if current_text and current_text.strip():
+        # Extract all words from user input, including partial words
+        current_text_lower = current_text.lower().strip()
+        
+        # Log the exact text being used for filtering
+        logger.info(f"Filtering suggestions based on text: '{current_text_lower}'")
+        
+        # Score each suggestion based on whether it contains the user's input
+        scored_suggestions = []
+        for suggestion in prioritized_suggestions:
+            suggestion_lower = suggestion.lower()
+            
+            # Direct match gets highest score
+            if current_text_lower in suggestion_lower:
+                # Calculate how early in the suggestion the match occurs (earlier = better)
+                position_score = 1.0 - (suggestion_lower.find(current_text_lower) / len(suggestion_lower))
+                # Higher score for matches at the beginning
+                score = 10 + (position_score * 5)
+                scored_suggestions.append((suggestion, score))
+                logger.info(f"  Direct match: '{suggestion}' (score: {score:.2f})")
+            # Word-by-word partial matching as fallback
+            else:
+                # Extract words from user input (ignore very short words)
+                user_words = [word for word in re.findall(r'\b\w+\b', current_text_lower) if len(word) > 2]
+                
+                if user_words:
+                    # Count how many user words are in this suggestion
+                    matches = [word for word in user_words if word in suggestion_lower]
+                    if matches:
+                        # Score based on number of matching words and their coverage of input
+                        word_score = len(matches) / len(user_words)
+                        score = word_score * 5  # Scale to be lower than direct matches
+                        scored_suggestions.append((suggestion, score))
+                        logger.info(f"  Word match: '{suggestion}' matches words {matches} (score: {score:.2f})")
+        
+        # Sort by score (highest first)
+        scored_suggestions.sort(key=lambda x: x[1], reverse=True)
+        
+        # If we have filtered suggestions, use them
+        if scored_suggestions:
+            filtered_suggestions = [item[0] for item in scored_suggestions]
+            logger.info(f"Found {len(filtered_suggestions)} suggestions matching user input '{current_text_lower}'")
+        else:
+            logger.info(f"No suggestions match user input '{current_text_lower}', using unfiltered list")
+    
+    # Log the final list of suggestions with their sources
+    logger.info(f"Final suggestions for {schema_id}: {len(filtered_suggestions)} items")
+    for i, suggestion in enumerate(filtered_suggestions[:10]):
+        source = "unknown"
+        if suggestion in schema_suggestions:
+            source = "schema"
+        elif suggestion in canned_queries:
+            source = "canned"
+        elif suggestion in history_queries:
+            source = "history"
+        logger.info(f"  Suggestion {i+1}: '{suggestion}' (source: {source})")
+    
+    return filtered_suggestions[:10]  # Return at most 10 suggestions
 
 def generate_dummy_visualization(query_text: str) -> Dict[str, Any]:
     """Generate dummy visualization data for testing"""

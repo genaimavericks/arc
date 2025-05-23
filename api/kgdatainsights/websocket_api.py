@@ -215,7 +215,12 @@ async def websocket_endpoint(
                 
                 elif message_type == "suggest":
                     # Handle suggestion request
+                    # The frontend sends 'query' instead of 'text'
                     query_text = content.get("query", "")
+                    cursor_position = content.get("cursor_position", len(query_text))
+                    
+                    # Log the received suggestion request
+                    logger.info(f"Received suggestion request with query: '{query_text}', cursor_position: {cursor_position}")
                     
                     # Process suggestions asynchronously
                     asyncio.create_task(
@@ -225,7 +230,8 @@ async def websocket_endpoint(
                             schema_id=schema_id,
                             query_text=query_text,
                             request_id=content.get("request_id"),
-                            user=user
+                            user=user,
+                            cursor_position=cursor_position
                         )
                     )
                 
@@ -482,7 +488,8 @@ async def handle_suggestions(
     schema_id: str,
     query_text: str,
     request_id: Optional[str] = None,
-    user: Optional[User] = None
+    user: Optional[User] = None,
+    cursor_position: Optional[int] = None
 ):
     """Handle a suggestions request asynchronously"""
     try:
@@ -508,8 +515,22 @@ async def handle_suggestions(
                         # Create a user object with the ID if not found in DB
                         user = User(id=int(user_id), username="user", email="user@example.com", role="user")
         
-        # Get schema-based query suggestions
-        suggestions = await get_query_suggestions(schema_id, user)
+        # Get schema-based query suggestions with current text for filtering
+        if cursor_position is None:
+            cursor_position = len(query_text) if query_text else 0  # Default to end of text if not specified
+        
+        # Log the input parameters for debugging
+        logger.info(f"Generating suggestions for schema_id: {schema_id}, text: '{query_text}', cursor_position: {cursor_position}")
+        
+        # Call the query suggestions function with the text and cursor position
+        suggestions = await get_query_suggestions(schema_id, user, query_text, cursor_position)
+        
+        # Log the results
+        logger.info(f"Generated {len(suggestions)} suggestions for schema_id: {schema_id}")
+        for i, suggestion in enumerate(suggestions[:5]):
+            logger.info(f"  Suggestion {i+1}: '{suggestion}'")
+        if len(suggestions) > 5:
+            logger.info(f"  ... and {len(suggestions) - 5} more suggestions")
         
         # Send suggestions
         await manager.send_message(
@@ -518,7 +539,8 @@ async def handle_suggestions(
             content={
                 "request_id": request_id,
                 "query": query_text,
-                "suggestions": suggestions
+                "suggestions": suggestions,
+                "schema_id": schema_id  # Include schema_id in response for verification
             }
         )
     

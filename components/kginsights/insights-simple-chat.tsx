@@ -477,8 +477,12 @@ export function InsightsSimpleChat() {
     
     // Request suggestions if input is not empty
     if (value.trim()) {
+      // Get cursor position from input element
+      const cursorPosition = inputRef.current?.selectionStart || value.length;
+      
       sendWebSocketMessage(socket, 'suggest', {
         query: value,
+        cursor_position: cursorPosition,
         request_id: `suggest-${Date.now()}`
       })
     } else {
