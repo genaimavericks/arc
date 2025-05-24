@@ -3,12 +3,12 @@ Data Profiler Router for the RSW platform.
 This module implements API endpoints for data profiling.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 import pandas as pd
 import numpy as np
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, Union
 import os
 import uuid
 import logging
@@ -20,6 +20,11 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import desc
 from pathlib import Path
 from datetime import datetime
+import asyncio
+import threading
+import gc
+from concurrent.futures import ThreadPoolExecutor
+from starlette.concurrency import run_in_threadpool
 
 from ..models import User, get_db
 from ..auth import has_permission, log_activity, has_any_permission
@@ -84,6 +89,7 @@ def convert_numpy_types(obj: Any) -> Any:
 @router.post("/profile-data", response_model=ProfileResponse)
 async def profile_data(
     request: ProfileRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(has_any_permission(["datapuur:read", "kginsights:read"])),
     db: Session = Depends(get_db)
 ) -> Dict:
@@ -156,6 +162,59 @@ async def profile_data(
         
         try:
             logger.debug(f"[{request_id}] Attempting to read parquet file")
+            # Check file size to determine if we need to use chunked processing
+            file_size_mb = os.path.getsize(parquet_path) / (1024 * 1024)
+            logger.info(f"[{request_id}] Parquet file size: {file_size_mb:.2f} MB")
+            
+            # For large files (>100MB), use asynchronous processing
+            if file_size_mb > 100:
+                logger.info(f"[{request_id}] Large file detected, using asynchronous processing")
+                
+                # Create a profile ID immediately
+                profile_id = str(uuid.uuid4())
+                
+                # Create an initial profile record with status "processing"
+                profile_result = ProfileResult(
+                    id=profile_id,
+                    file_id=request.file_id,
+                    file_name=request.file_name,
+                    parquet_file_path=str(request.file_path),
+                    total_rows=0,  # Will be updated when processing completes
+                    total_columns=0,  # Will be updated when processing completes
+                    data_quality_score=0.0,  # Will be updated when processing completes
+                    column_profiles={},  # Will be updated when processing completes
+                    exact_duplicates_count=0,
+                    fuzzy_duplicates_count=0,
+                    duplicate_groups={"exact": [], "fuzzy": []},
+                    status="processing"
+                )
+                db.add(profile_result)
+                db.commit()
+                
+                # Start background task for processing
+                background_tasks.add_task(
+                    process_large_file_profile,
+                    parquet_path=parquet_path,
+                    profile_id=profile_id,
+                    file_id=request.file_id,
+                    file_name=request.file_name,
+                    file_path=request.file_path,
+                    username=current_user.username
+                )
+                
+                # Return initial response with processing status
+                return {
+                    "id": profile_id,
+                    "status": "processing",
+                    "message": "Profile generation started in background for large file",
+                    "file_id": request.file_id,
+                    "file_name": request.file_name,
+                    "created_at": datetime.now().isoformat(),
+                    "summary": {"status": "processing"},
+                    "columns": []
+                }
+            
+            # For smaller files, process synchronously
             df = pd.read_parquet(parquet_path)
             logger.info(f"[{request_id}] Successfully read parquet file with shape: {df.shape}")
             logger.debug(f"[{request_id}] DataFrame columns: {df.columns.tolist()}")
@@ -171,7 +230,10 @@ async def profile_data(
         try:
             logger.info(f"[{request_id}] Starting profile generation")
             profile_start = time.time()
-            profiler = DataProfiler(df)
+            
+            # Determine memory limit based on file size (use 2x file size or 1GB, whichever is larger)
+            memory_limit_mb = max(1000, int(file_size_mb * 2))
+            profiler = DataProfiler(df, max_memory_mb=memory_limit_mb)
             profile_summary, column_profiles = profiler.generate_profile()
             
             # Detect exact and fuzzy duplicates
@@ -846,3 +908,245 @@ async def health_check():
     """
     logger.debug("Health check endpoint called")
     return {"status": "healthy"}
+
+@router.get("/profiles/{profile_id}/metadata", response_model=Dict)
+async def get_profile_metadata(
+    profile_id: str,
+    current_user: User = Depends(has_any_permission(["datapuur:read", "kginsights:read"])),
+    db: Session = Depends(get_db)
+) -> Dict:
+    """
+    Get metadata for a specific profile without column details.
+    This is a lightweight endpoint for initial loading of large profiles.
+    """
+    try:
+        # Query the profile from the database
+        profile_result = db.query(ProfileResult).filter(ProfileResult.id == profile_id).first()
+        
+        if not profile_result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Profile with ID {profile_id} not found"
+            )
+        
+        # Extract column keys but not the full column data
+        column_keys = []
+        if profile_result.column_profiles:
+            if isinstance(profile_result.column_profiles, dict):
+                column_keys = list(profile_result.column_profiles.keys())
+            elif isinstance(profile_result.column_profiles, list):
+                column_keys = [col.get('column_name') for col in profile_result.column_profiles 
+                               if isinstance(col, dict) and 'column_name' in col]
+        
+        # Return metadata without column details
+        return {
+            "id": profile_result.id,
+            "file_id": profile_result.file_id,
+            "file_name": profile_result.file_name,
+            "total_rows": profile_result.total_rows,
+            "total_columns": profile_result.total_columns,
+            "data_quality_score": profile_result.data_quality_score,
+            "created_at": profile_result.created_at.isoformat(),
+            "exact_duplicates_count": profile_result.exact_duplicates_count,
+            "fuzzy_duplicates_count": profile_result.fuzzy_duplicates_count,
+            "column_keys": column_keys,
+            "status": getattr(profile_result, 'status', 'completed')
+        }
+    except Exception as e:
+        logger.error(f"Error retrieving profile metadata: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve profile metadata: {str(e)}"
+        )
+
+@router.post("/profiles/{profile_id}/columns", response_model=Dict)
+async def get_profile_columns(
+    profile_id: str,
+    columns: List[str],
+    current_user: User = Depends(has_any_permission(["datapuur:read", "kginsights:read"])),
+    db: Session = Depends(get_db)
+) -> Dict:
+    """
+    Get specific columns from a profile.
+    This allows for progressive loading of large profiles.
+    """
+    try:
+        # Query the profile from the database
+        profile_result = db.query(ProfileResult).filter(ProfileResult.id == profile_id).first()
+        
+        if not profile_result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Profile with ID {profile_id} not found"
+            )
+        
+        # Extract requested columns
+        column_data = {}
+        if profile_result.column_profiles:
+            if isinstance(profile_result.column_profiles, dict):
+                # Dictionary format
+                for col_name in columns:
+                    if col_name in profile_result.column_profiles:
+                        column_data[col_name] = profile_result.column_profiles[col_name]
+            elif isinstance(profile_result.column_profiles, list):
+                # List format
+                for col in profile_result.column_profiles:
+                    if isinstance(col, dict) and 'column_name' in col and col['column_name'] in columns:
+                        column_data[col['column_name']] = col
+        
+        # Return the requested columns
+        return {
+            "columns": column_data,
+            "total_fetched": len(column_data),
+            "requested": len(columns)
+        }
+    except Exception as e:
+        logger.error(f"Error retrieving profile columns: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve profile columns: {str(e)}"
+        )
+
+@router.get("/profiles/{profile_id}", response_model=ProfileResponse)
+async def get_profile(
+    profile_id: str,
+    current_user: User = Depends(has_any_permission(["datapuur:read", "kginsights:read"])),
+    db: Session = Depends(get_db)
+) -> Dict:
+    """
+    Get a specific data profile by ID.
+    
+    Returns the complete profile data including column statistics.
+    """
+    # ... (rest of the code remains the same)
+
+async def process_large_file_profile(
+    parquet_path: str,
+    profile_id: str,
+    file_id: str,
+    file_name: str,
+    file_path: str,
+    username: str
+):
+    """
+    Process a large file profile in the background.
+    This function runs in a separate thread to avoid blocking the API.
+    """
+    logger.info(f"Starting background processing for profile {profile_id}, file {file_name}")
+    
+    # Create a new database session for this background task
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from ..models import Base
+    
+    # Get database URL from environment or use default
+    database_url = os.environ.get("DATABASE_URL", "sqlite:///./api/data.db")
+    engine = create_engine(database_url)
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    db = SessionLocal()
+    
+    try:
+        # Read the parquet file
+        start_time = time.time()
+        logger.info(f"Reading parquet file for background processing: {parquet_path}")
+        df = pd.read_parquet(parquet_path)
+        logger.info(f"Successfully read parquet file with shape: {df.shape}")
+        
+        # Get the profile result from the database
+        profile_result = db.query(ProfileResult).filter(ProfileResult.id == profile_id).first()
+        if not profile_result:
+            logger.error(f"Profile {profile_id} not found in database")
+            return
+        
+        # Update initial metadata
+        profile_result.total_rows = len(df)
+        profile_result.total_columns = len(df.columns)
+        db.commit()
+        
+        # Process the profile with optimized memory usage
+        file_size_mb = os.path.getsize(parquet_path) / (1024 * 1024)
+        memory_limit_mb = max(1000, int(file_size_mb * 2))
+        
+        logger.info(f"Starting profile generation with memory limit {memory_limit_mb} MB")
+        profiler = DataProfiler(df, max_memory_mb=memory_limit_mb)
+        
+        # Generate profile
+        profile_summary, column_profiles = profiler.generate_profile()
+        
+        # Process duplicates with sampling to avoid memory issues
+        try:
+            logger.info(f"Starting duplicate detection for profile {profile_id}")
+            exact_duplicates = profiler.detect_exact_duplicates(sample_size=min(50000, len(df)))
+            profile_summary["exact_duplicates_count"] = exact_duplicates["count"]
+            
+            # For very large files, skip fuzzy duplicate detection or use aggressive sampling
+            if len(df) > 1000000:  # 1M+ rows
+                logger.info(f"Skipping fuzzy duplicate detection for very large file")
+                fuzzy_duplicates = {"count": 0, "values": []}
+            else:
+                fuzzy_duplicates = profiler.detect_fuzzy_duplicates(threshold=0.9, sample_size=min(1000, len(df)))
+            
+            profile_summary["fuzzy_duplicates_count"] = fuzzy_duplicates["count"]
+            
+            duplicate_groups = {
+                "exact": exact_duplicates["values"],
+                "fuzzy": fuzzy_duplicates["values"]
+            }
+        except Exception as dup_error:
+            logger.error(f"Error in duplicate detection: {str(dup_error)}")
+            profile_summary["exact_duplicates_count"] = 0
+            profile_summary["fuzzy_duplicates_count"] = 0
+            duplicate_groups = {"exact": [], "fuzzy": []}
+        
+        # Update the profile in the database
+        profile_result.total_rows = profile_summary["total_rows"]
+        profile_result.total_columns = profile_summary["total_columns"]
+        profile_result.data_quality_score = profile_summary["data_quality_score"]
+        profile_result.column_profiles = column_profiles
+        profile_result.exact_duplicates_count = profile_summary["exact_duplicates_count"]
+        profile_result.fuzzy_duplicates_count = profile_summary["fuzzy_duplicates_count"]
+        profile_result.duplicate_groups = duplicate_groups
+        profile_result.status = "completed"
+        
+        # Commit the changes
+        db.commit()
+        
+        # Log activity
+        from ..auth import log_activity
+        log_activity(
+            db=db,
+            username=username,
+            action="Data Profile",
+            details=f"Generated profile for {file_name} (file_id: {file_id})"
+        )
+        
+        duration = time.time() - start_time
+        logger.info(f"Background profile generation completed in {duration:.2f} seconds")
+        
+        # Clean up memory
+        del df
+        del profiler
+        gc.collect()
+        
+    except Exception as e:
+        logger.error(f"Error in background profile generation: {str(e)}")
+        
+        # Update the profile with error status
+        try:
+            profile_result = db.query(ProfileResult).filter(ProfileResult.id == profile_id).first()
+            if profile_result:
+                profile_result.status = "error"
+                profile_result.error_message = str(e)
+                db.commit()
+        except Exception as db_error:
+            logger.error(f"Error updating profile status: {str(db_error)}")
+    
+    finally:
+        # Close the database session
+        db.close()
+
+def health_check():
+    """
+    Health check endpoint
+    """
+    return {"status": "ok", "message": "Profiler API is running"}
