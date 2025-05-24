@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from typing import Dict, List, Tuple, Optional, Any, Generator
 import re
-from datetime import datetime
+from datetime import datetime, date
 import jellyfish  # For fuzzy string matching
 from collections import defaultdict
 import uuid
@@ -18,6 +18,21 @@ from functools import partial
 
 # Configure logger
 logger = logging.getLogger("profiler.engine")
+
+# Helper function for JSON serialization
+def json_serializable(obj):
+    """Convert objects to JSON serializable types."""
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    elif pd.isna(obj):
+        return None
+    elif isinstance(obj, (np.int64, np.int32, np.int16, np.int8)):
+        return int(obj)
+    elif isinstance(obj, (np.float64, np.float32, np.float16)):
+        return float(obj)
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    return obj
 
 class DataProfiler:
     def __init__(self, df: pd.DataFrame, max_memory_mb: int = 1000, chunk_size: int = 100000):
@@ -720,8 +735,12 @@ class DataProfiler:
         duplicate_count = int(len(duplicates) * scaling_factor)
         logger.info(f"Found {len(duplicates)} duplicates in sample, estimated {duplicate_count} in full dataset")
         
-        # Store only a reasonable number of examples
-        duplicate_values = duplicates.head(10).to_dict(orient='records')
+        # Store only a reasonable number of examples and ensure all values are JSON serializable
+        duplicate_values = []
+        for record in duplicates.head(10).to_dict(orient='records'):
+            # Convert each value to a JSON serializable format
+            serialized_record = {k: json_serializable(v) for k, v in record.items()}
+            duplicate_values.append(serialized_record)
         
         duration = time.time() - start_time
         logger.info(f"Exact duplicate detection completed in {duration:.2f} seconds")
@@ -731,31 +750,21 @@ class DataProfiler:
             "values": duplicate_values
         }
 
-    def detect_fuzzy_duplicates(self, threshold: float = 0.9, max_comparisons: int = 5000, sample_size: int = 1000) -> Dict:
+    def detect_fuzzy_duplicates(self, threshold: float = 0.95, max_rows: int = 1000) -> Dict:
         """Detect fuzzy duplicate rows in the DataFrame.
         
         For large DataFrames, this uses aggressive sampling to avoid memory issues.
-        
-        Args:
-            threshold: Similarity threshold (0.0 to 1.0) for considering rows as duplicates
-            max_comparisons: Maximum number of pairwise comparisons to perform
-            sample_size: Maximum number of rows to sample for fuzzy duplicate detection
-            
-        Returns:
-            Dictionary with count of fuzzy duplicates and sample values
-        """
-        start_time = time.time()
-        logger.info(f"Starting fuzzy duplicate detection with threshold {threshold}")
-        """
-        Detect fuzzy duplicates across string columns in the DataFrame using Jaro-Winkler similarity.
         
         Args:
             threshold: Similarity threshold (0.0-1.0), higher means more similar
             max_rows: Maximum number of rows to process for performance
             
         Returns:
-            Dictionary with duplicate counts and their values
+            Dictionary with count of fuzzy duplicates and sample values
         """
+        start_time = time.time()
+        logger.info(f"Starting fuzzy duplicate detection with threshold {threshold}")
+        
         # This is a performance optimization to make the feature usable
         # Only examine a sample of rows for fuzzy duplicates
         sample_size = min(max_rows, len(self.df))
@@ -1006,10 +1015,10 @@ class DataProfiler:
                         existing_group = group
                         break
                 
-                # Add the row data with the index for tracking
-                row1_dict = df_sample.loc[idx1].to_dict()
+                # Add the row data with the index for tracking and ensure all values are JSON serializable
+                row1_dict = {k: json_serializable(v) for k, v in df_sample.loc[idx1].to_dict().items()}
                 row1_dict['__index__'] = idx1
-                row2_dict = df_sample.loc[idx2].to_dict()
+                row2_dict = {k: json_serializable(v) for k, v in df_sample.loc[idx2].to_dict().items()}
                 row2_dict['__index__'] = idx2
                 
                 if existing_group:
@@ -1050,6 +1059,13 @@ class DataProfiler:
         # Calculate total count of fuzzy duplicates and sort groups by count
         total_count = sum(group['count'] - 1 for group in fuzzy_groups)
         fuzzy_groups.sort(key=lambda g: g['count'], reverse=True)
+        
+        # Log execution time
+        duration = time.time() - start_time
+        logger.info(f"Fuzzy duplicate detection completed in {duration:.2f} seconds, found {total_count} potential duplicates")
+        
+        # Force garbage collection to free memory
+        gc.collect()
         
         return {
             "count": total_count,
