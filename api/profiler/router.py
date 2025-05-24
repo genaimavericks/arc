@@ -173,10 +173,19 @@ async def profile_data(
                 # Create a profile ID immediately
                 profile_id = str(uuid.uuid4())
                 
+                # If file_id is not provided or empty, use the parquet_file_path as file_id
+                file_id = request.file_id
+                if not file_id or file_id.strip() == "":
+                    # Remove .parquet extension if present
+                    file_id = str(request.file_path)
+                    if file_id.endswith(".parquet"):
+                        file_id = os.path.splitext(file_id)[0]  # Remove .parquet extension
+                    logger.info(f"[{request_id}] Empty file_id detected, using parquet_file_path without extension as file_id: {file_id}")
+                
                 # Create an initial profile record with status "processing"
                 profile_result = ProfileResult(
                     id=profile_id,
-                    file_id=request.file_id,
+                    file_id=file_id,
                     file_name=request.file_name,
                     parquet_file_path=str(request.file_path),
                     total_rows=0,  # Will be updated when processing completes
@@ -280,6 +289,14 @@ async def profile_data(
             profile_id = str(uuid.uuid4())
             file_id = request.file_id
             
+            # If file_id is not provided or empty, use the parquet_file_path as file_id
+            if not file_id or file_id.strip() == "":
+                # Remove .parquet extension if present
+                file_id = str(request.file_path)
+                if file_id.endswith(".parquet"):
+                    file_id = os.path.splitext(file_id)[0]  # Remove .parquet extension
+                logger.info(f"[{request_id}] Empty file_id detected, using parquet_file_path without extension as file_id: {file_id}")
+            
             # Convert NumPy types in profile_summary to Python native types
             profile_summary = convert_numpy_types(profile_summary)
             
@@ -332,6 +349,15 @@ async def profile_data(
                 fuzzy_duplicates_count=profile_summary["fuzzy_duplicates_count"],
                 duplicate_groups=duplicate_groups
             )
+            
+            # Verify file_id is populated
+            if not profile_result.file_id or profile_result.file_id.strip() == "":
+                logger.error(f"[{request_id}] file_id is still empty after profile generation")
+                file_id = profile_result.parquet_file_path
+                if file_id and file_id.endswith(".parquet"):
+                    file_id = os.path.splitext(file_id)[0]  # Remove .parquet extension
+                profile_result.file_id = file_id
+                logger.info(f"[{request_id}] Setting file_id from parquet_file_path without extension: {profile_result.file_id}")
             db.add(profile_result)
             
             # Log the number of column profiles saved
@@ -368,7 +394,7 @@ async def profile_data(
         # Prepare response
         response_data = {
             "id": profile_result.id,
-            "file_id": request.file_id,
+            "file_id": file_id,  # Use the file_id variable which may have been updated
             "file_name": request.file_name,
             **profile_summary,
             "columns": column_dict,
@@ -1045,6 +1071,14 @@ async def process_large_file_profile(
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     db = SessionLocal()
     
+    # If file_id is not provided or empty, use the parquet_file_path as file_id
+    if not file_id or file_id.strip() == "":
+        # Remove .parquet extension if present
+        file_id = file_path
+        if file_id.endswith(".parquet"):
+            file_id = os.path.splitext(file_id)[0]  # Remove .parquet extension
+        logger.info(f"Empty file_id detected, using parquet_file_path without extension as file_id: {file_id}")
+    
     try:
         # Read the parquet file
         start_time = time.time()
@@ -1106,7 +1140,22 @@ async def process_large_file_profile(
         profile_result.exact_duplicates_count = profile_summary["exact_duplicates_count"]
         profile_result.fuzzy_duplicates_count = profile_summary["fuzzy_duplicates_count"]
         profile_result.duplicate_groups = duplicate_groups
-        profile_result.status = "completed"
+        
+        # Ensure file_id is populated - if not, use parquet_file_path without extension
+        if not profile_result.file_id or profile_result.file_id.strip() == "":
+            file_id = profile_result.parquet_file_path
+            if file_id and file_id.endswith(".parquet"):
+                file_id = os.path.splitext(file_id)[0]  # Remove .parquet extension
+            profile_result.file_id = file_id
+            logger.info(f"Setting file_id from parquet_file_path without extension: {profile_result.file_id}")
+        
+        # Verify file_id is populated
+        if not profile_result.file_id or profile_result.file_id.strip() == "":
+            logger.error(f"file_id is still empty after profile generation for profile {profile_id}")
+            profile_result.status = "error"
+            profile_result.error_message = "file_id is empty after profile generation"
+        else:
+            profile_result.status = "completed"
         
         # Commit the changes
         db.commit()
