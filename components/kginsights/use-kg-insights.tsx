@@ -27,6 +27,8 @@ export interface KGInsightsHookResult {
   sendQuery: (query: string) => void;
   validateQuery: (query: string) => void;
   disconnect: () => void;
+  registerQueryResultHandler: (handler: (content: any) => void) => void;
+  unregisterQueryResultHandler: (handler: (content: any) => void) => void;
 }
 
 /**
@@ -159,6 +161,18 @@ export function useKGInsights(
     });
   };
   
+  // Function to register a query result handler
+  const registerQueryResultHandler = (handler: (content: any) => void) => {
+    if (!webSocketServiceRef.current) return;
+    webSocketServiceRef.current.registerHandler('query_result', handler);
+  };
+  
+  // Function to unregister a query result handler
+  const unregisterQueryResultHandler = (handler: (content: any) => void) => {
+    if (!webSocketServiceRef.current) return;
+    webSocketServiceRef.current.unregisterHandler('query_result', handler);
+  };
+  
   // Function to validate a query
   const validateQuery = (query: string) => {
     if (!webSocketServiceRef.current) return;
@@ -188,6 +202,8 @@ export function useKGInsights(
     getAutocompleteSuggestions,
     sendQuery,
     validateQuery,
-    disconnect
+    disconnect,
+    registerQueryResultHandler,
+    unregisterQueryResultHandler
   };
 }

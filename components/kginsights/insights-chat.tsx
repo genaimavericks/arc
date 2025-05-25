@@ -107,6 +107,7 @@ export default function InsightsChat() {
   const [webSocketConnected, setWebSocketConnected] = useState(false)
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [showAutocomplete, setShowAutocomplete] = useState(false)
+  const [cursorPosition, setCursorPosition] = useState(0)
   const [saveHistory, setSaveHistory] = useState(true)
   
   const { toast } = useToast()
@@ -124,7 +125,9 @@ export default function InsightsChat() {
     autocompleteSuggestions,
     getSuggestions,
     getAutocompleteSuggestions,
-    sendQuery
+    sendQuery,
+    registerQueryResultHandler,
+    unregisterQueryResultHandler
   } = useKGInsights(sourceId, authToken, {
     suggestionOptions: {
       maxSuggestions: 5,
@@ -394,17 +397,9 @@ export default function InsightsChat() {
     setShowAutocomplete(false)
     
     try {
-      // Try to use WebSocket if connected
-      if (webSocketConnected) {
-        // Send query via WebSocket
-        sendQuery(message)
-        
-        // The response will be handled by the WebSocket connection
-        // We'll add a loading message that will be replaced when the response comes
-        return
-      }
+      // Always use the REST API for queries (original behavior)
+      console.log("Sending query via REST API:", message)
       
-      // Fallback to REST API if WebSocket is not available
       // Get schema ID from the source name
       const schemaId = window.schemaIdMap?.[sourceId] || -1
       
@@ -414,6 +409,7 @@ export default function InsightsChat() {
         headers: {
           'Authorization': localStorage.getItem("token") ? `Bearer ${localStorage.getItem("token")}` : '',
           'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache' // Ensure we don't get cached responses
         },
         body: JSON.stringify({ query: message }),
       })
@@ -461,10 +457,12 @@ export default function InsightsChat() {
     }
   }
 
-  // Handle WebSocket message responses
+  // Register handler for WebSocket query responses
   useEffect(() => {
-    // Register a handler for WebSocket query results
-    const handleQueryResult = (content: any) => {
+    // Create a handler for WebSocket query results
+    const handleQueryResponse = (content: any) => {
+      console.log("Received WebSocket query response:", content)
+      
       // Create assistant message from response
       const assistantMessage: ChatMessage = {
         id: `assistant-${Date.now()}`,
@@ -486,13 +484,18 @@ export default function InsightsChat() {
       setLoading(false)
     }
     
-    // Normally, you would register this handler with the WebSocketService
-    // However, our useKGInsights hook already handles this internally
+    // Register the query result handler
+    if (registerQueryResultHandler) {
+      registerQueryResultHandler(handleQueryResponse)
+    }
     
     return () => {
-      // Cleanup would go here
+      // Cleanup by unregistering the handler
+      if (unregisterQueryResultHandler) {
+        unregisterQueryResultHandler(handleQueryResponse)
+      }
     }
-  }, [saveHistory, sourceId])
+  }, [saveHistory, sourceId, registerQueryResultHandler, unregisterQueryResultHandler])
 
   // Update WebSocket connection status when WebSocket connection changes
   useEffect(() => {
@@ -539,6 +542,54 @@ export default function InsightsChat() {
         timestamp: new Date(),
       }
     ])
+  }
+  
+  // Handle using a full suggestion
+  const handleUseSuggestion = (suggestion: string) => {
+    setInput(suggestion)
+    setShowSuggestions(false)
+    setShowAutocomplete(false)
+    
+    // Focus the input
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus()
+      }
+    }, 0)
+  }
+  
+  // Handle selecting an autocomplete suggestion - with smart word replacement
+  const handleSelectSuggestion = (suggestion: string) => {
+    if (!inputRef.current) return
+    
+    const currentValue = input
+    const textBeforeCursor = currentValue.substring(0, cursorPosition)
+    const textAfterCursor = currentValue.substring(cursorPosition)
+    
+    // Find the word being completed
+    const lastSpacePos = textBeforeCursor.lastIndexOf(" ")
+    const wordStart = lastSpacePos >= 0 ? lastSpacePos + 1 : 0
+    
+    // Replace the current word with the suggestion
+    const newValue = 
+      currentValue.substring(0, wordStart) + 
+      suggestion + 
+      (textAfterCursor.startsWith(" ") ? "" : " ") + 
+      textAfterCursor
+    
+    setInput(newValue)
+    setShowAutocomplete(false)
+    setShowSuggestions(false)
+    
+    // Focus the input and set cursor position after the inserted suggestion
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus()
+        const newCursorPos = wordStart + suggestion.length + 1
+        inputRef.current.setSelectionRange(newCursorPos, newCursorPos)
+        setCursorPosition(newCursorPos)
+      }
+    }, 0)
   }
 
   // Log WebSocket connection status changes
@@ -975,12 +1026,7 @@ export default function InsightsChat() {
                         <div 
                           key={index}
                           className="p-2 hover:bg-accent cursor-pointer text-sm"
-                          onClick={() => {
-                            setInput(suggestion)
-                            setShowSuggestions(false)
-                            setShowAutocomplete(false)
-                            inputRef.current?.focus()
-                          }}
+                          onClick={() => handleUseSuggestion(suggestion)}
                         >
                           {suggestion}
                         </div>
@@ -1000,12 +1046,7 @@ export default function InsightsChat() {
                         <div 
                           key={index}
                           className="p-2 hover:bg-accent cursor-pointer"
-                          onClick={() => {
-                            setInput(suggestion.text)
-                            setShowSuggestions(false)
-                            setShowAutocomplete(false)
-                            inputRef.current?.focus()
-                          }}
+                          onClick={() => handleSelectSuggestion(suggestion.text)}
                         >
                           <div className="font-medium text-sm">{suggestion.text}</div>
                           {suggestion.description && (
@@ -1025,15 +1066,17 @@ export default function InsightsChat() {
                   value={input}
                   onChange={(e) => {
                     const value = e.target.value
+                    // Use the event target value directly to prevent state timing issues
                     setInput(value)
                     
                     // Get cursor position
-                    const cursorPosition = e.target.selectionStart || value.length
+                    const currentCursorPosition = e.target.selectionStart || value.length
+                    setCursorPosition(currentCursorPosition)
                     
                     // Get suggestions if the input is not empty
                     if (value.trim()) {
-                      getSuggestions(value, cursorPosition)
-                      getAutocompleteSuggestions(value, cursorPosition)
+                      getSuggestions(value, currentCursorPosition)
+                      getAutocompleteSuggestions(value, currentCursorPosition)
                       setShowSuggestions(true)
                       setShowAutocomplete(true)
                     } else {
