@@ -1083,8 +1083,3 @@ async def process_large_file_profile(
         # Close the database session
         db.close()
 
-def health_check():
-    """
-    Health check endpoint
-    """
-    return {"status": "ok", "message": "Profiler API is running"}
