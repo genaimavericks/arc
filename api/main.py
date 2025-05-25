@@ -1,5 +1,12 @@
 print("*******Checking if main this is getting called!")
-from fastapi import FastAPI, HTTPException, Depends, Request, Query
+import json
+import logging
+import asyncio
+import uvicorn
+import os
+from pathlib import Path
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, Request, Query, WebSocket
+from starlette.websockets import WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
@@ -19,8 +26,10 @@ if os.path.exists(dotenv_path):
     dotenv.load_dotenv(dotenv_path)
     print(f"OPENAI_API_KEY is {'set' if os.getenv('OPENAI_API_KEY') else 'not set'}")
 
-from api.models import User
+from api.models import User, Schema
 from api.db_config import get_db, init_db
+from api.auth import router as auth_router, has_any_permission
+#from api.ingestion import router as ingestion_router
 from api.auth import router as auth_router, has_any_permission
 #from api.ingestion import router as ingestion_router
 from api.datapuur import router as datapuur_router
@@ -29,6 +38,7 @@ from api.datapuur import get_all_jobs_admin, stop_job_admin, delete_job_admin
 from api.kginsights import router as kginsights_router
 from api.kgdatainsights.data_insights_api import router as kgdatainsights_router, get_query_history, get_predefined_queries
 from api.kginsights.graphschemaapi import router as graphschema_router, build_schema_from_source, SourceIdInput, SchemaResult
+from api.kgdatainsights.register_websocket import setup_websocket_api
 from api.profiler import router as profiler_router
 from api.admin import router as admin_router
 from api.gen_ai_layer.router import router as gen_ai_router
@@ -45,11 +55,12 @@ from api.log_filter_middleware import LogFilterMiddleware
 #     print(f"Error running database migrations: {str(e)}")
 
 app = FastAPI(
-    title="RSW API",
-    description="API for RSW platform",
-    version="1.0.0",
-    docs_url=None,  # Disable default docs URL
-    redoc_url=None  # Disable default redoc URL
+    title="Knowledge Graph API",
+    description="API for interacting with Knowledge Graphs",
+    version="0.1.0",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None
 )
 
 # Configure CORS
@@ -158,23 +169,290 @@ async def startup_event():
         print("Updated role permissions")
     except Exception as e:
         print(f"Error updating role permissions: {str(e)}")
+    
+    # Initialize query suggestion cache
+    try:
+        import asyncio
+        from api.kgdatainsights.query_processor import refresh_cache_task
+        
+        # Get all schema IDs from the database
+        schemas = db.query(Schema).all()
+        schema_ids = [str(schema.id) for schema in schemas]
+        
+        if schema_ids:
+            # Initialize cache for each schema
+            for schema_id in schema_ids:
+                asyncio.create_task(refresh_cache_task(schema_id))
+                print(f"Initialized query suggestion cache for schema {schema_id}")
+            
+            # Set up background task to periodically refresh the cache
+            async def periodic_cache_refresh():
+                while True:
+                    try:
+                        # Refresh cache for all schemas every 5 minutes
+                        await asyncio.sleep(300)  # 5 minutes
+                        # Get fresh list of schemas in case they've changed
+                        try:
+                            db_refresh = next(get_db())
+                            schemas_refresh = db_refresh.query(Schema).all()
+                            schema_ids_refresh = [str(schema.id) for schema in schemas_refresh]
+                            for schema_id in schema_ids_refresh:
+                                asyncio.create_task(refresh_cache_task(schema_id))
+                        except Exception as inner_e:
+                            print(f"Error refreshing schema list: {str(inner_e)}")
+                            # Fall back to original schema list
+                            for schema_id in schema_ids:
+                                asyncio.create_task(refresh_cache_task(schema_id))
+                    except Exception as e:
+                        print(f"Error in periodic cache refresh: {str(e)}")
+            
+            # Start the background task
+            asyncio.create_task(periodic_cache_refresh())
+            print("Started background task for periodic cache refresh")
+        else:
+            print("No schemas found for query suggestion cache initialization")
+    except Exception as e:
+        print(f"Error initializing query suggestion cache: {str(e)}")
+        
+    # Register WebSocket API
+    try:
+        from api.kgdatainsights.websocket_api import router as websocket_router
+        app.include_router(websocket_router, prefix="/api/kgdatainsights")
+        print("Registered WebSocket API for KG Insights directly in startup_event")
+    except Exception as e:
+        print(f"Error registering WebSocket API in startup_event: {str(e)}")
+
+# Register WebSocket API again outside of startup event to ensure it's registered
+try:
+    from api.kgdatainsights.register_websocket import setup_websocket_api
+    setup_websocket_api(app)
+    print("Registered WebSocket API for KG Insights")
+except Exception as e:
+    print(f"Error registering WebSocket API: {str(e)}")
+
+# Add a direct WebSocket endpoint in the main app
+@app.websocket("/api/kgdatainsights/ws/direct/{schema_id}")
+async def direct_websocket_endpoint(websocket: WebSocket, schema_id: str):
+    # Import the necessary modules with proper error handling
+    try:
+        # When imported as a module
+        from api.kgdatainsights.query_processor import get_query_suggestions, get_autocomplete_suggestions, validate_query
+        from api.models import User
+    except ImportError:
+        # When run directly
+        from api.kgdatainsights.query_processor import get_query_suggestions, get_autocomplete_suggestions, validate_query
+        from api.models import User
+    import json
+    
+    await websocket.accept()
+    try:
+        # Create a dummy user for testing
+        dummy_user = User(id=999, username="anonymous", email="anonymous@example.com", role="user")
+        dummy_user.permissions = ["kginsights:read"]
+        
+        # Send a welcome message with schema-based suggestions
+        suggestions = await get_query_suggestions(schema_id, dummy_user)
+        await websocket.send_json({
+            "type": "connection_established", 
+            "message": "Connected to direct WebSocket API",
+            "suggestions": suggestions
+        })
+        
+        # Keep the connection open and handle messages
+        while True:
+            try:
+                data = await websocket.receive_text()
+                message = json.loads(data)
+                message_type = message.get("type", "")
+                content = message.get("content", {})
+                
+                # Process different message types
+                if message_type == "query":
+                    query_text = content.get("query", "")
+                    if not query_text:
+                        await websocket.send_json({"type": "error", "content": {"error": "Empty query"}})
+                        continue
+                    
+                    # Send a dummy response for now
+                    await websocket.send_json({
+                        "type": "query_result",
+                        "content": {
+                            "query": query_text,
+                            "result": f"Response to: {query_text}",
+                            "timestamp": datetime.datetime.now().isoformat()
+                        }
+                    })
+                
+                elif message_type == "autocomplete":
+                    partial_text = content.get("text", "")
+                    cursor_position = content.get("cursor_position", len(partial_text))
+                    
+                    # Get schema-based autocomplete suggestions
+                    suggestions = await get_autocomplete_suggestions(schema_id, partial_text, cursor_position, dummy_user)
+                    
+                    # Extract the current word being typed
+                    if not partial_text or cursor_position == 0:
+                        current_word = ""
+                    else:
+                        text_before_cursor = partial_text[:cursor_position]
+                        last_space_pos = text_before_cursor.rfind(" ")
+                        current_word = text_before_cursor[last_space_pos + 1:] if last_space_pos >= 0 else text_before_cursor
+                    
+                    await websocket.send_json({
+                        "type": "autocomplete_suggestions",
+                        "content": {
+                            "suggestions": suggestions,
+                            "current_word": current_word,
+                            "cursor_position": cursor_position
+                        }
+                    })
+                
+                elif message_type == "validate":
+                    query_text = content.get("query", "")
+                    
+                    # Validate query against schema
+                    errors = await validate_query(schema_id, query_text, dummy_user)
+                    
+                    await websocket.send_json({
+                        "type": "validation_results",
+                        "content": {
+                            "query": query_text,
+                            "errors": errors
+                        }
+                    })
+                
+                elif message_type == "suggest":
+                    # Get query suggestions with current text and cursor position
+                    # The frontend sends 'query' instead of 'text'
+                    current_text = content.get("query", "")
+                    cursor_position = content.get("cursor_position", len(current_text))
+                    
+                    # Get schema-based query suggestions with filtering
+                    suggestions = await get_query_suggestions(schema_id, dummy_user, current_text, cursor_position)
+                    
+                    # Log the schema ID and suggestions for debugging
+                    print(f"Direct WebSocket: Generated suggestions for schema_id: {schema_id}, text: '{current_text}', found {len(suggestions)} suggestions")
+                    
+                    # Print detailed information about each suggestion
+                    for i, suggestion in enumerate(suggestions):
+                        print(f"  Suggestion {i+1}: '{suggestion}'")
+                    
+                    # Print the file paths that were checked
+                    output_dir = Path("runtime-data/output/kgdatainsights")
+                    
+                    # Try different possible filenames for the schema
+                    possible_query_filenames = [
+                        f"{schema_id}_queries.json",  # Original format with spaces
+                        f"{schema_id.replace(' ', '_')}_queries.json",  # Replace spaces with underscores
+                        f"{schema_id.split()[0]}_queries.json" if ' ' in schema_id else None,  # First word only
+                        "3_queries.json"  # Hardcoded ID that we know exists
+                    ]
+                    possible_query_filenames = [f for f in possible_query_filenames if f]
+                    
+                    possible_history_filenames = [
+                        f"{schema_id}_history.json",  # Original format with spaces
+                        f"{schema_id.replace(' ', '_')}_history.json",  # Replace spaces with underscores
+                        f"{schema_id.split()[0]}_history.json" if ' ' in schema_id else None,  # First word only
+                        "3_history.json"  # Hardcoded ID that we know exists
+                    ]
+                    possible_history_filenames = [f for f in possible_history_filenames if f]
+                    
+                    # Check if any of the possible files exist
+                    found_query_file = None
+                    for filename in possible_query_filenames:
+                        file_path = output_dir / "queries" / filename
+                        if os.path.exists(file_path):
+                            found_query_file = file_path
+                            break
+                    
+                    found_history_file = None
+                    for filename in possible_history_filenames:
+                        file_path = output_dir / "history" / filename
+                        if os.path.exists(file_path):
+                            found_history_file = file_path
+                            break
+                    
+                    # Print the results
+                    print(f"  Checked possible canned queries files:")
+                    for filename in possible_query_filenames:
+                        file_path = output_dir / "queries" / filename
+                        print(f"    - {file_path} (exists: {os.path.exists(file_path)})")
+                    
+                    print(f"  Checked possible history files:")
+                    for filename in possible_history_filenames:
+                        file_path = output_dir / "history" / filename
+                        print(f"    - {file_path} (exists: {os.path.exists(file_path)})")
+                    
+                    # If no files were found, suggest creating them
+                    if not found_query_file and not found_history_file:
+                        print(f"  Note: No suggestion files found for schema_id: {schema_id}. This may affect suggestion quality.")
+                        print(f"  Suggestions are primarily coming from schema-based generation.")
+                    else:
+                        sources = ["schema"]
+                        if found_query_file:
+                            sources.append("canned queries")
+                        if found_history_file:
+                            sources.append("history")
+                        print(f"  Suggestions are coming from combined sources: {', '.join(sources)}.")
+                        if found_query_file:
+                            print(f"  Using canned queries from: {found_query_file}")
+                        if found_history_file:
+                            print(f"  Using history from: {found_history_file}")
+                    
+                    
+                    await websocket.send_json({
+                        "type": "suggestions",
+                        "content": {
+                            "suggestions": suggestions,
+                            "schema_id": schema_id  # Include schema_id in response for verification
+                        }
+                    })
+                
+                elif message_type == "ping":
+                    # Respond to ping with pong
+                    await websocket.send_json({
+                        "type": "pong",
+                        "content": {"received_at": content.get("sent_at")}
+                    })
+                
+                else:
+                    # Unknown message type
+                    await websocket.send_json({
+                        "type": "error",
+                        "content": {"error": f"Unknown message type: {message_type}"}
+                    })
+            
+            except json.JSONDecodeError:
+                # Invalid JSON
+                await websocket.send_json({
+                    "type": "error",
+                    "content": {"error": "Invalid JSON message"}
+                })
+            
+            except Exception as e:
+                # General error
+                print(f"Error processing WebSocket message: {str(e)}")
+                await websocket.send_json({
+                    "type": "error",
+                    "content": {"error": "Internal server error"}
+                })
+    except WebSocketDisconnect:
+        print(f"WebSocket client disconnected")
+    except Exception as e:
+        print(f"WebSocket error: {str(e)}")
+
+# Add a health check endpoint for WebSockets
+@app.get("/api/kgdatainsights/ws/health")
+async def websocket_health():
+    return {"status": "ok", "websocket": "available"}
 
 # Mount static files directory if it exists
 static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
+    # Add a fallback route for API paths that aren't handled by other routers
+    @app.get("/api/{path:path}", include_in_schema=False)
+    async def api_not_found(path: str):
+        raise HTTPException(status_code=404, detail=f"API endpoint not found: {path}")
+    
+    # Mount static files at the root path to ensure all assets are accessible
     app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
-
-    # Serve index.html for all non-API routes to support client-side routing
-    @app.get("/{full_path:path}")
-    async def serve_frontend(request: Request, full_path: str):
-        # Skip API routes
-        if full_path.startswith("api/"):
-            raise HTTPException(status_code=404, detail="Not Found")
-            
-        # Check if the path exists as a file
-        file_path = static_dir / full_path
-        if file_path.exists() and file_path.is_file():
-            return FileResponse(str(file_path))
-            
-        # Otherwise serve index.html for client-side routing
-        return FileResponse(str(static_dir / "index.html"))

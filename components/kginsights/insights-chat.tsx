@@ -49,6 +49,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { motion } from "framer-motion"
 import { SparklesCore } from "@/components/sparkles"
 import { FloatingChart } from "@/components/floating-chart"
+// Import our WebSocket services
+import { useKGInsights } from "./use-kg-insights"
+import { AutocompleteSuggestion } from "./autocomplete-service"
 
 // Message type for chat history
 export interface ChatMessage {
@@ -85,7 +88,6 @@ export interface PredefinedQuery {
 export default function InsightsChat() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [loading, setLoading] = useState(false)
   const [sourceId, setSourceId] = useState("default")
   const [availableSources, setAvailableSources] = useState<string[]>([])
   const [loadingSources, setLoadingSources] = useState(false)
@@ -95,16 +97,48 @@ export default function InsightsChat() {
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [input, setInput] = useState("")
+  const [loading, setLoading] = useState(false)
   const [chartTheme, setChartTheme] = useState<ChartTheme>({
     colors: ["#6366f1", "#8b5cf6", "#ec4899", "#f43f5e", "#f97316", "#eab308", "#22c55e", "#06b6d4"],
     backgroundColor: "transparent",
     textColor: "#64748b", 
     gridColor: "#e2e8f0"
   })
-  const { toast } = useToast()
-  // Update ref type to match the component interface
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const [webSocketConnected, setWebSocketConnected] = useState(false)
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [showAutocomplete, setShowAutocomplete] = useState(false)
+  const [cursorPosition, setCursorPosition] = useState(0)
+  const [saveHistory, setSaveHistory] = useState(true)
   
+  const { toast } = useToast()
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  // Get token from localStorage
+  const authToken = localStorage.getItem("token") || "";
+  
+  // Use the KG Insights hook directly at the top level
+  const {
+    connected: wsConnected,
+    connectionStatus,
+    suggestions,
+    autocompleteSuggestions,
+    getSuggestions,
+    getAutocompleteSuggestions,
+    sendQuery,
+    registerQueryResultHandler,
+    unregisterQueryResultHandler
+  } = useKGInsights(sourceId, authToken, {
+    suggestionOptions: {
+      maxSuggestions: 5,
+      debounceTime: 300
+    },
+    autocompleteOptions: {
+      maxSuggestions: 5,
+      debounceTime: 150
+    }
+  })
+
   // Initialize component
   useEffect(() => {
     // Load available knowledge graph sources first, as it will set the welcome message
@@ -343,46 +377,45 @@ export default function InsightsChat() {
 
   // Handle sending a message
   const handleSendMessage = async (message: string) => {
-    if (!message.trim()) return
+    if (!message.trim() || loading) return
     
-    // Create a new user message
-    const userMessage: ChatMessage = {
+    setLoading(true)
+    
+    // Create a new message object for the user's message
+    const newUserMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       role: "user",
       content: message,
       timestamp: new Date(),
-      sourceId
     }
     
-    // Update messages with user message
-    setMessages((prevMessages) => [...prevMessages, userMessage])
+    // Add the user's message to the chat
+    setMessages(prev => [...prev, newUserMessage])
     
-    // Show loading state
-    setLoading(true)
+    // Clear suggestions and autocomplete
+    setShowSuggestions(false)
+    setShowAutocomplete(false)
     
     try {
-      // Get the token from localStorage
-      const token = localStorage.getItem("token")
-      if (!token) {
-        console.warn("No authentication token found in localStorage")
-      }
+      // Always use the REST API for queries (original behavior)
+      console.log("Sending query via REST API:", message)
       
       // Get schema ID from the source name
       const schemaId = window.schemaIdMap?.[sourceId] || -1
       
-      // Send request to API with proper authorization header
+      // Send request to API
       const response = await fetch(`/api/datainsights/${schemaId}/query`, {
         method: "POST",
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': localStorage.getItem("token") ? `Bearer ${localStorage.getItem("token")}` : '',
           'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache',
+          'Cache-Control': 'no-cache' // Ensure we don't get cached responses
         },
         body: JSON.stringify({ query: message }),
       })
       
       if (!response.ok) {
-        throw new Error("Failed to get response from Knowledge Graph")
+        throw new Error(`API responded with status: ${response.status}`)
       }
       
       const data = await response.json()
@@ -391,21 +424,23 @@ export default function InsightsChat() {
       const assistantMessage: ChatMessage = {
         id: `assistant-${Date.now()}`,
         role: "assistant",
-        content: data.result,
+        content: data.result || data.response || "I processed your request but couldn't generate a proper response.",
         timestamp: new Date(),
-        sourceId: data.source_id,
-        metadata: data.intermediate_steps,
-        visualization: data.visualization  // Add visualization data from API response
+        // Add visualization data if present
+        ...(data.visualization ? { visualization: data.visualization } : {}),
       }
       
-      // Update messages with assistant response
-      setMessages((prevMessages) => [...prevMessages, assistantMessage])
+      // Add the assistant's response to the chat
+      setMessages(prev => [...prev, assistantMessage])
+      
+      // Save to history
+      saveToHistory(message, assistantMessage.content)
     } catch (error) {
       console.error("Error sending message:", error)
       toast({
         title: "Error",
         description: "Failed to get a response. Please try again.",
-        variant: "destructive",
+        variant: "destructive"
       })
       
       // Add error message
@@ -416,17 +451,87 @@ export default function InsightsChat() {
         timestamp: new Date(),
       }
       
-      setMessages((prevMessages) => [...prevMessages, errorMessage])
+      setMessages(prev => [...prev, errorMessage])
     } finally {
       setLoading(false)
     }
   }
 
-  // Handle using a predefined query
-  const handlePredefinedQuery = (query: string) => {
-    handleSendMessage(query)
-  }
+  // Register handler for WebSocket query responses
+  useEffect(() => {
+    // Create a handler for WebSocket query results
+    const handleQueryResponse = (content: any) => {
+      console.log("Received WebSocket query response:", content)
+      
+      // Create assistant message from response
+      const assistantMessage: ChatMessage = {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        content: content.result || "I processed your request but couldn't generate a proper response.",
+        timestamp: new Date(),
+        // Add visualization data if present
+        ...(content.visualization ? { visualization: content.visualization } : {}),
+      }
+      
+      // Add the assistant's response to the chat
+      setMessages(prev => [...prev, assistantMessage])
+      
+      // Save to history if needed
+      if (content.query) {
+        saveToHistory(content.query, assistantMessage.content)
+      }
+      
+      setLoading(false)
+    }
+    
+    // Register the query result handler
+    if (registerQueryResultHandler) {
+      registerQueryResultHandler(handleQueryResponse)
+    }
+    
+    return () => {
+      // Cleanup by unregistering the handler
+      if (unregisterQueryResultHandler) {
+        unregisterQueryResultHandler(handleQueryResponse)
+      }
+    }
+  }, [saveHistory, sourceId, registerQueryResultHandler, unregisterQueryResultHandler])
 
+  // Update WebSocket connection status when WebSocket connection changes
+  useEffect(() => {
+    setWebSocketConnected(wsConnected)
+  }, [wsConnected])
+  
+  // Helper function to save query to history
+  const saveToHistory = (query: string, result: string) => {
+    if (!saveHistory) return;
+    
+    // Format the date
+    const timestamp = new Date();
+    
+    // Add to history items
+    const newHistoryItem = {
+      id: `history-${Date.now()}`,
+      query,
+      result,
+      timestamp
+    };
+    
+    setHistoryItems(prev => [newHistoryItem, ...prev]);
+    
+    // Save to localStorage or API if needed
+    try {
+      const authToken = localStorage.getItem("token");
+      const schemaId = window.schemaIdMap?.[sourceId] || -1;
+      
+      // Save to API - this would be the actual implementation
+      // This is a placeholder - you would implement the actual API call
+      console.log("Saving to history:", { schemaId, query, result });
+    } catch (error) {
+      console.error("Error saving to history:", error);
+    }
+  }
+  
   // Clear chat
   const handleClearChat = () => {
     setMessages([
@@ -439,6 +544,64 @@ export default function InsightsChat() {
     ])
   }
   
+  // Handle using a full suggestion
+  const handleUseSuggestion = (suggestion: string) => {
+    setInput(suggestion)
+    setShowSuggestions(false)
+    setShowAutocomplete(false)
+    
+    // Focus the input
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus()
+      }
+    }, 0)
+  }
+  
+  // Handle selecting an autocomplete suggestion - with smart word replacement
+  const handleSelectSuggestion = (suggestion: string) => {
+    if (!inputRef.current) return
+    
+    const currentValue = input
+    const textBeforeCursor = currentValue.substring(0, cursorPosition)
+    const textAfterCursor = currentValue.substring(cursorPosition)
+    
+    // Find the word being completed
+    const lastSpacePos = textBeforeCursor.lastIndexOf(" ")
+    const wordStart = lastSpacePos >= 0 ? lastSpacePos + 1 : 0
+    
+    // Replace the current word with the suggestion
+    const newValue = 
+      currentValue.substring(0, wordStart) + 
+      suggestion + 
+      (textAfterCursor.startsWith(" ") ? "" : " ") + 
+      textAfterCursor
+    
+    setInput(newValue)
+    setShowAutocomplete(false)
+    setShowSuggestions(false)
+    
+    // Focus the input and set cursor position after the inserted suggestion
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus()
+        const newCursorPos = wordStart + suggestion.length + 1
+        inputRef.current.setSelectionRange(newCursorPos, newCursorPos)
+        setCursorPosition(newCursorPos)
+      }
+    }, 0)
+  }
+
+  // Log WebSocket connection status changes
+  useEffect(() => {
+    console.log(`WebSocket connection status: ${connectionStatus}`);
+  }, [connectionStatus])
+
+  // Handle using a predefined query
+  const handlePredefinedQuery = (query: string) => {
+    handleSendMessage(query)
+  }
+
   // Format date display
   const formatDate = (date: Date) => {
     return date.toLocaleString(undefined, {
@@ -852,19 +1015,87 @@ export default function InsightsChat() {
             
             <div className="flex-1 flex items-center gap-2 relative">
               <div className="relative w-full">
+                {/* Suggestions */}
+                {showSuggestions && suggestions.length > 0 && (
+                  <div className="absolute bottom-full left-0 right-0 mb-2 border border-border rounded-md overflow-hidden z-20 bg-background/95 backdrop-blur-sm shadow-lg">
+                    <div className="p-2 bg-secondary text-secondary-foreground text-xs font-medium">
+                      Suggested Queries
+                    </div>
+                    <div className="divide-y divide-border max-h-[200px] overflow-y-auto">
+                      {suggestions.map((suggestion: string, index: number) => (
+                        <div 
+                          key={index}
+                          className="p-2 hover:bg-accent cursor-pointer text-sm"
+                          onClick={() => handleUseSuggestion(suggestion)}
+                        >
+                          {suggestion}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Autocomplete suggestions */}
+                {showAutocomplete && autocompleteSuggestions.length > 0 && (
+                  <div className="absolute bottom-full left-0 right-0 mb-2 border border-border rounded-md overflow-hidden z-20 bg-background/95 backdrop-blur-sm shadow-lg">
+                    <div className="p-2 bg-secondary text-secondary-foreground text-xs font-medium">
+                      Autocomplete
+                    </div>
+                    <div className="divide-y divide-border max-h-[200px] overflow-y-auto">
+                      {autocompleteSuggestions.map((suggestion: AutocompleteSuggestion, index: number) => (
+                        <div 
+                          key={index}
+                          className="p-2 hover:bg-accent cursor-pointer"
+                          onClick={() => handleSelectSuggestion(suggestion.text)}
+                        >
+                          <div className="font-medium text-sm">{suggestion.text}</div>
+                          {suggestion.description && (
+                            <div className="text-xs text-muted-foreground">{suggestion.description}</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
                 <div className="absolute right-12 bottom-2 text-xs text-muted-foreground bg-card/80 px-1.5 py-0.5 rounded-sm z-10">
                   Shift+Enter for new line
                 </div>
                 <Textarea
+                  ref={inputRef}
                   value={input}
-                  onChange={(e) => setInput(e.target.value)}
+                  onChange={(e) => {
+                    const value = e.target.value
+                    // Use the event target value directly to prevent state timing issues
+                    setInput(value)
+                    
+                    // Get cursor position
+                    const currentCursorPosition = e.target.selectionStart || value.length
+                    setCursorPosition(currentCursorPosition)
+                    
+                    // Get suggestions if the input is not empty
+                    if (value.trim()) {
+                      getSuggestions(value, currentCursorPosition)
+                      getAutocompleteSuggestions(value, currentCursorPosition)
+                      setShowSuggestions(true)
+                      setShowAutocomplete(true)
+                    } else {
+                      setShowSuggestions(false)
+                      setShowAutocomplete(false)
+                    }
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault()
                       if (input.trim()) {
                         handleSendMessage(input)
                         setInput("")
+                        setShowSuggestions(false)
+                        setShowAutocomplete(false)
                       }
+                    } else if (e.key === 'Escape') {
+                      setShowSuggestions(false)
+                      setShowAutocomplete(false)
                     }
                   }}
                   placeholder="Ask a question about your knowledge graph..."

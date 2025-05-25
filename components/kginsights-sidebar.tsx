@@ -20,6 +20,12 @@ export default function KGInsightsSidebar() {
       href: "/kginsights/insights",
       icon: MessageSquare,
     },
+    // Hidden but still accessible via direct URL
+    // {
+    //   name: "KG Insights Simple",
+    //   href: "/kginsights/insights-simple",
+    //   icon: MessageSquare,
+    // },
     {
       name: "Generate Graph",
       href: "/kginsights/generate",
