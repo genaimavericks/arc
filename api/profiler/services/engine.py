@@ -1,24 +1,289 @@
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional, Any, Generator
 import re
-from datetime import datetime
+from datetime import datetime, date
 import jellyfish  # For fuzzy string matching
 from collections import defaultdict
 import uuid
 from scipy import stats  # Import scipy.stats properly
 import math
+import os
+import gc
+import time
+import logging
+import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import partial
+
+# Configure logger
+logger = logging.getLogger("profiler.engine")
+
+# Helper function for JSON serialization
+def json_serializable(obj):
+    """Convert objects to JSON serializable types."""
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    elif pd.isna(obj):
+        return None
+    elif isinstance(obj, (np.int64, np.int32, np.int16, np.int8)):
+        return int(obj)
+    elif isinstance(obj, (np.float64, np.float32, np.float16)):
+        return float(obj)
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    return obj
 
 class DataProfiler:
-    def __init__(self, df: pd.DataFrame):
+    def __init__(self, df: pd.DataFrame, max_memory_mb: int = 1000, chunk_size: int = 100000):
+        """Initialize the DataProfiler with a DataFrame.
+        
+        Args:
+            df: The DataFrame to profile
+            max_memory_mb: Maximum memory usage in MB (default: 1000MB/1GB)
+            chunk_size: Number of rows to process in each chunk for large files
+        """
         self.df = df
         self.total_rows = len(df)
         self.total_columns = len(df.columns)
-        # Cache data types to avoid repeated detection
+        self.max_memory_mb = max_memory_mb
+        self.chunk_size = chunk_size
         self.column_data_types = {}
-        # Pre-compute data types for all columns
-        for col in df.columns:
-            self.column_data_types[col] = self._detect_data_type(df[col])
+        
+        # Determine if we need chunked processing based on DataFrame size
+        df_size_mb = self.df.memory_usage(deep=True).sum() / (1024 * 1024)
+        self.use_chunked_processing = df_size_mb > (max_memory_mb / 2)
+        logger.info(f"DataFrame size: {df_size_mb:.2f} MB, Using chunked processing: {self.use_chunked_processing}")
+        
+        # Pre-compute data types for all columns (using sample for large dataframes)
+        if self.use_chunked_processing:
+            # Use a sample for initial data type detection
+            sample_size = min(10000, self.total_rows)
+            sample_df = self.df.sample(sample_size) if self.total_rows > sample_size else self.df
+            for col in self.df.columns:
+                self.column_data_types[col] = self._detect_data_type(sample_df[col])
+        else:
+            # For smaller dataframes, use the full dataset
+            for col in self.df.columns:
+                self.column_data_types[col] = self._detect_data_type(self.df[col])
+
+    def generate_profile(self) -> Tuple[Dict, Dict]:
+        """Generate a complete profile of the DataFrame.
+        
+        Returns:
+            Tuple containing (profile_summary, column_profiles)
+        """
+        start_time = time.time()
+        logger.info(f"Starting profile generation for DataFrame with {self.total_rows} rows and {self.total_columns} columns")
+        
+        # Calculate overall data quality score and summary statistics
+        profile_summary = {
+            "total_rows": self.total_rows,
+            "total_columns": self.total_columns,
+            "data_quality_score": 0.0,  # Will be updated after column profiling
+            "column_names": list(self.df.columns),
+            "original_headers": list(self.df.columns),
+            "exact_duplicates_count": 0,  # Will be set later
+            "fuzzy_duplicates_count": 0,  # Will be set later
+        }
+        
+        # Profile columns
+        if self.use_chunked_processing:
+            logger.info(f"Using chunked processing for {self.total_columns} columns")
+            column_profiles = self._profile_columns_chunked()
+        else:
+            logger.info(f"Using standard processing for {self.total_columns} columns")
+            column_profiles = {}
+            for col in self.df.columns:
+                column_profiles[col] = self.profile_column(col)
+        
+        # Calculate overall data quality score (average of column scores)
+        if column_profiles:
+            if isinstance(column_profiles, dict):
+                quality_scores = [col_profile.get('quality_score', 0) 
+                                for col_profile in column_profiles.values() 
+                                if isinstance(col_profile, dict)]
+            else:  # List of column profiles
+                quality_scores = [col_profile.get('quality_score', 0) 
+                                for col_profile in column_profiles 
+                                if isinstance(col_profile, dict)]
+                
+            if quality_scores:
+                profile_summary["data_quality_score"] = float(sum(quality_scores) / len(quality_scores))
+        
+        duration = time.time() - start_time
+        logger.info(f"Profile generation completed in {duration:.2f} seconds")
+        
+        return profile_summary, column_profiles
+    
+    def _profile_columns_chunked(self) -> Dict:
+        """Profile columns using chunked processing to reduce memory usage.
+        
+        Returns:
+            Dictionary of column profiles
+        """
+        column_profiles = {}
+        
+        # Process columns in parallel with a maximum of 4 workers
+        # This helps with CPU-bound operations while controlling memory usage
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            # Submit all column profiling tasks
+            future_to_column = {}
+            for col in self.df.columns:
+                future = executor.submit(self._profile_column_chunked, col)
+                future_to_column[future] = col
+            
+            # Process results as they complete
+            for future in as_completed(future_to_column):
+                col = future_to_column[future]
+                try:
+                    column_profiles[col] = future.result()
+                except Exception as e:
+                    logger.error(f"Error profiling column {col}: {str(e)}")
+                    # Provide a minimal profile for failed columns
+                    column_profiles[col] = {
+                        "column_name": col,
+                        "data_type": self.column_data_types.get(col, "unknown"),
+                        "count": 0,
+                        "null_count": 0,
+                        "unique_count": 0,
+                        "quality_score": 0.0,
+                        "error": str(e)
+                    }
+                
+                # Force garbage collection after each column to free memory
+                gc.collect()
+        
+        return column_profiles
+    
+    def _profile_column_chunked(self, column_name: str) -> Dict:
+        """Profile a column using chunked processing for large datasets.
+        
+        Args:
+            column_name: Name of the column to profile
+            
+        Returns:
+            Column profile dictionary
+        """
+        # Get the data type from cache
+        data_type = self.column_data_types[column_name]
+        
+        # Initialize counters and aggregators
+        null_count = 0
+        empty_string_count = 0
+        value_counts = defaultdict(int)
+        unique_values = set()
+        numeric_values = []
+        
+        # Process in chunks
+        chunk_size = self.chunk_size
+        for i in range(0, self.total_rows, chunk_size):
+            # Get chunk
+            chunk_end = min(i + chunk_size, self.total_rows)
+            chunk = self.df.iloc[i:chunk_end][column_name]
+            
+            # Count nulls
+            null_count += chunk.isnull().sum()
+            
+            # Process non-null values
+            non_null_chunk = chunk.dropna()
+            
+            # Count empty strings for string columns
+            if data_type == "string":
+                empty_string_mask = (non_null_chunk.astype(str).str.strip() == "")
+                empty_string_count += empty_string_mask.sum()
+            
+            # Update value counts (limit to most frequent values)
+            chunk_value_counts = non_null_chunk.value_counts().head(20).to_dict()
+            for val, count in chunk_value_counts.items():
+                value_counts[str(val)] += count
+            
+            # Update unique values (limit to reasonable number to avoid memory issues)
+            if len(unique_values) < 1000:  # Cap unique values to avoid memory explosion
+                unique_values.update(non_null_chunk.unique())
+            
+            # Collect numeric values for statistics (sample to avoid memory issues)
+            if data_type in ['integer', 'float'] and len(numeric_values) < 10000:
+                # Take a sample if the chunk is large
+                if len(non_null_chunk) > 1000:
+                    numeric_values.extend(non_null_chunk.sample(1000).tolist())
+                else:
+                    numeric_values.extend(non_null_chunk.tolist())
+            
+            # Free memory
+            del chunk
+            del non_null_chunk
+            gc.collect()
+        
+        # Calculate metrics
+        total_missing = null_count + empty_string_count
+        completeness = float(1 - (total_missing / self.total_rows)) if self.total_rows > 0 else 0.0
+        
+        # Calculate uniqueness (capped by our unique value collection)
+        unique_count = min(len(unique_values), self.total_rows - null_count)
+        uniqueness = float(unique_count / self.total_rows) if self.total_rows > 0 else 0.0
+        
+        # Calculate validity (simplified for chunked processing)
+        validity = 0.9  # Default validity score
+        
+        # Calculate quality score
+        quality_score = self._calculate_column_quality_score(completeness, uniqueness, validity)
+        
+        # Create profile
+        profile = {
+            "column_name": column_name,
+            "data_type": data_type,
+            "count": self.total_rows - total_missing,
+            "null_count": null_count,
+            "unique_count": unique_count,
+            "frequent_values": dict(sorted(value_counts.items(), key=lambda x: x[1], reverse=True)[:10]),
+            "quality_score": quality_score,
+            "completeness": completeness,
+            "uniqueness": uniqueness,
+            "validity": validity
+        }
+        
+        # Add numeric statistics if applicable
+        if data_type in ['integer', 'float'] and numeric_values:
+            try:
+                numeric_array = np.array(numeric_values, dtype=float)
+                profile.update({
+                    "min_value": str(float(np.min(numeric_array))),
+                    "max_value": str(float(np.max(numeric_array))),
+                    "mean_value": float(np.mean(numeric_array)),
+                    "median_value": float(np.median(numeric_array)),
+                    "std_dev": float(np.std(numeric_array))
+                })
+                
+                # Simple outlier detection on the sample
+                z_scores = np.abs(stats.zscore(numeric_array))
+                outliers = numeric_array[z_scores > 3]
+                if len(outliers) > 0:
+                    outlier_dict = {str(float(o)): 1 for o in outliers[:5]}
+                    profile["outliers"] = {"z_score": outlier_dict, "iqr": {}}
+                else:
+                    profile["outliers"] = {"z_score": {}, "iqr": {}}
+            except Exception as e:
+                logger.warning(f"Error calculating numeric statistics for {column_name}: {str(e)}")
+                profile.update({
+                    "min_value": None,
+                    "max_value": None,
+                    "mean_value": None,
+                    "median_value": None,
+                    "std_dev": None,
+                    "outliers": {"z_score": {}, "iqr": {}}
+                })
+        else:
+            profile.update({
+                "min_value": None,
+                "max_value": None,
+                "mean_value": None,
+                "median_value": None,
+                "std_dev": None,
+                "outliers": {"z_score": {}, "iqr": {}}
+            })
+        
+        return profile
 
     def profile_column(self, column_name: str) -> Dict:
         """
@@ -438,38 +703,68 @@ class DataProfiler:
             "data_quality_score": quality_score
         }, column_profiles
 
-    def detect_exact_duplicates(self) -> Dict:
+    def detect_exact_duplicates(self, sample_size: int = 100000) -> Dict:
+        """Detect exact duplicate rows in the DataFrame.
+        
+        For large DataFrames, this uses sampling to avoid memory issues.
+        
+        Args:
+            sample_size: Maximum number of rows to sample for duplicate detection
+            
+        Returns:
+            Dictionary with count of duplicates and sample values
+        """
+        start_time = time.time()
+        logger.info(f"Starting exact duplicate detection on {self.total_rows} rows")
         """
         Detect exact duplicates across all columns in the DataFrame.
         Returns a dictionary with duplicate counts and their values.
         """
-        # Only process a sample if the DataFrame is large
-        if len(self.df) > 10000:
-            # Sample at most 10,000 rows for performance
-            sample_df = self.df.sample(min(10000, len(self.df)))
-            duplicates = sample_df.duplicated().sum()
-            # Store only a reasonable number of examples
-            duplicate_values = sample_df[sample_df.duplicated()].head(10).to_dict(orient='records')
-        else:
-            duplicates = self.df.duplicated().sum()
-            duplicate_values = self.df[self.df.duplicated()].head(10).to_dict(orient='records')
+        # For all datasets, use a sample to avoid excessive computation
+        # For large datasets, use an even smaller sample
+        if self.total_rows > 10000:
+            sample_size = min(sample_size, 1000)  # Cap at 1000 for very large datasets
+            
+        # Sample rows for fuzzy matching
+        df_sample = self.df.sample(min(sample_size, self.total_rows))
+        
+        # Find duplicates in the sample
+        duplicates = df_sample[df_sample.duplicated(keep='first')]
+        # Scale up the count based on sampling ratio
+        scaling_factor = self.total_rows / len(df_sample)
+        duplicate_count = int(len(duplicates) * scaling_factor)
+        logger.info(f"Found {len(duplicates)} duplicates in sample, estimated {duplicate_count} in full dataset")
+        
+        # Store only a reasonable number of examples and ensure all values are JSON serializable
+        duplicate_values = []
+        for record in duplicates.head(10).to_dict(orient='records'):
+            # Convert each value to a JSON serializable format
+            serialized_record = {k: json_serializable(v) for k, v in record.items()}
+            duplicate_values.append(serialized_record)
+        
+        duration = time.time() - start_time
+        logger.info(f"Exact duplicate detection completed in {duration:.2f} seconds")
         
         return {
-            "count": duplicates,
+            "count": duplicate_count,
             "values": duplicate_values
         }
 
     def detect_fuzzy_duplicates(self, threshold: float = 0.95, max_rows: int = 1000) -> Dict:
-        """
-        Detect fuzzy duplicates across string columns in the DataFrame using Jaro-Winkler similarity.
+        """Detect fuzzy duplicate rows in the DataFrame.
+        
+        For large DataFrames, this uses aggressive sampling to avoid memory issues.
         
         Args:
             threshold: Similarity threshold (0.0-1.0), higher means more similar
             max_rows: Maximum number of rows to process for performance
             
         Returns:
-            Dictionary with duplicate counts and their values
+            Dictionary with count of fuzzy duplicates and sample values
         """
+        start_time = time.time()
+        logger.info(f"Starting fuzzy duplicate detection with threshold {threshold}")
+        
         # This is a performance optimization to make the feature usable
         # Only examine a sample of rows for fuzzy duplicates
         sample_size = min(max_rows, len(self.df))
@@ -720,10 +1015,10 @@ class DataProfiler:
                         existing_group = group
                         break
                 
-                # Add the row data with the index for tracking
-                row1_dict = df_sample.loc[idx1].to_dict()
+                # Add the row data with the index for tracking and ensure all values are JSON serializable
+                row1_dict = {k: json_serializable(v) for k, v in df_sample.loc[idx1].to_dict().items()}
                 row1_dict['__index__'] = idx1
-                row2_dict = df_sample.loc[idx2].to_dict()
+                row2_dict = {k: json_serializable(v) for k, v in df_sample.loc[idx2].to_dict().items()}
                 row2_dict['__index__'] = idx2
                 
                 if existing_group:
@@ -764,6 +1059,13 @@ class DataProfiler:
         # Calculate total count of fuzzy duplicates and sort groups by count
         total_count = sum(group['count'] - 1 for group in fuzzy_groups)
         fuzzy_groups.sort(key=lambda g: g['count'], reverse=True)
+        
+        # Log execution time
+        duration = time.time() - start_time
+        logger.info(f"Fuzzy duplicate detection completed in {duration:.2f} seconds, found {total_count} potential duplicates")
+        
+        # Force garbage collection to free memory
+        gc.collect()
         
         return {
             "count": total_count,
