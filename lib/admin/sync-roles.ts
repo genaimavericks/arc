@@ -65,7 +65,22 @@ export async function syncRoles() {
         id: 1,
         name: "admin",
         description: "Administrator with full access",
-        permissions: ["datapuur:read", "datapuur:write", "datapuur:manage", "user:read", "user:create", "user:update", "user:delete", "role:read", "role:create", "role:update", "role:delete", "kginsights:read", "kginsights:write", "kginsights:manage"],
+        permissions: [
+          // Command Center permissions
+          "command:read", "command:write", "command:manage",
+          // Personal Dashboard permissions
+          "dashboard:read", "dashboard:write", "dashboard:manage",
+          // Djinni Assistant permissions
+          "djinni:read", "djinni:write", "djinni:manage",
+          // DataPuur permissions
+          "datapuur:read", "datapuur:write", "datapuur:manage", 
+          // User permissions
+          "user:read", "user:create", "user:update", "user:delete", 
+          // Role permissions
+          "role:read", "role:create", "role:update", "role:delete", 
+          // KGInsights permissions
+          "kginsights:read", "kginsights:write", "kginsights:manage"
+        ],
         is_system_role: true
       },
       {
@@ -102,6 +117,15 @@ export async function syncAvailablePermissions() {
       console.warn(`Failed to fetch permissions: ${response.statusText}. Using default permissions.`)
       // Use default permissions if the API call fails
       const defaultPermissions = [
+        // Command Center permissions
+        "command:read", "command:write", "command:manage",
+        
+        // Personal Dashboard permissions
+        "dashboard:read", "dashboard:write", "dashboard:manage",
+        
+        // Djinni Assistant permissions
+        "djinni:read", "djinni:write", "djinni:manage",
+        
         // DataPuur permissions
         "datapuur:read", "datapuur:write", "datapuur:manage",
         
@@ -136,6 +160,15 @@ export async function syncAvailablePermissions() {
     
     // If the API call fails, use default permissions
     const defaultPermissions = [
+      // Command Center permissions
+      "command:read", "command:write", "command:manage",
+      
+      // Personal Dashboard permissions
+      "dashboard:read", "dashboard:write", "dashboard:manage",
+      
+      // Djinni Assistant permissions
+      "djinni:read", "djinni:write", "djinni:manage",
+      
       // DataPuur permissions
       "datapuur:read", "datapuur:write", "datapuur:manage",
       

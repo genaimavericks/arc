@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useIngestion } from "@/lib/ingestion-context"
+import { getApiBaseUrl } from "@/lib/config"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
@@ -61,6 +62,37 @@ export function FloatingJobCard() {
     }
   }, [isMinimized])
   
+  // IMPORTANT: Force cleanup of any database-related messages
+  useEffect(() => {
+    // This effect runs on mount and when processingStatus changes
+    // to ensure database-related messages are never displayed in the jobs card
+    if (processingStatus && (
+        // Database connection management messages
+        processingStatus.toLowerCase().includes('database') || 
+        processingStatus.includes('DATABASE_TEMP_MESSAGE') ||
+        processingStatus.includes('Loaded connection') ||
+        processingStatus.includes('will be extracted from') ||
+        processingStatus.includes('stored in parquet format') ||
+        // Test connection messages
+        processingStatus.includes('Testing connection') ||
+        processingStatus.includes('Connection successful') ||
+        processingStatus.includes('Connection failed') ||
+        // Schema load messages
+        processingStatus.includes('Fetching schema') ||
+        processingStatus.includes('Schema fetched')
+    )) {
+      console.log("Filtering out database/connection/schema message from jobs card:", processingStatus);
+      
+      // Clear the processing status
+      setProcessingStatus("");
+      
+      // Also clear from localStorage
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('processingStatus');
+      }
+    }
+  }, [processingStatus, setProcessingStatus]);
+  
   // Update visibility based on active jobs and processing status
   useEffect(() => {
     const hasActiveJobs = jobs.some(job => job.status === "running" || job.status === "queued");
@@ -100,11 +132,12 @@ export function FloatingJobCard() {
     })
   }, [jobs])
   
-  // Show active jobs plus recently completed ones
+  // Show active jobs plus recently completed ones, but exclude removed jobs
   const activeJobs = jobs.filter(job => 
-    job.status === "running" || 
-    job.status === "queued" || 
-    recentlyCompletedJobs.includes(job.id)
+    (job.status === "running" || 
+     job.status === "queued" || 
+     recentlyCompletedJobs.includes(job.id)) && 
+    job.status !== "removed"
   )
   
   // Only show the card if there are active jobs (running or queued) or there's a processing status
@@ -190,6 +223,7 @@ export function FloatingJobCard() {
     try {
       // Add job to cancelling list to show loading state
       setCancellingJobs(prev => [...prev, jobId])
+      setIsCancelling(true)
       
       // Immediately update UI to show job is being cancelled
       const jobToUpdate = jobs.find(job => job.id === jobId)
@@ -200,13 +234,28 @@ export function FloatingJobCard() {
         })
       }
       
-      const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || ""
+      const apiBaseUrl = getApiBaseUrl()
       const response = await fetch(`${apiBaseUrl}/api/datapuur/cancel-job/${jobId}`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
       })
+      
+      // Handle 404 Not Found responses - job no longer exists
+      if (response.status === 404) {
+        console.log(`Job ${jobId} no longer exists (404), marking as removed`)
+        
+        // Mark the job as removed since it no longer exists on the server
+        updateJob({
+          ...jobToUpdate!,
+          status: "removed",
+          markedForRemoval: true,
+          endTime: new Date().toISOString(),
+          details: "Job no longer exists on server"
+        })
+        return
+      }
       
       if (response.ok) {
         // Update the job status in the UI
@@ -222,6 +271,7 @@ export function FloatingJobCard() {
     } finally {
       // Remove job from cancelling list
       setCancellingJobs(prev => prev.filter(id => id !== jobId))
+      setIsCancelling(false)
     }
   }
 
@@ -299,7 +349,11 @@ export function FloatingJobCard() {
             {activeTab === "active" && (
               <div className="space-y-3">
                 {/* Display processing status as part of the active jobs tab */}
-                {processingStatus && (
+                {/* COMPLETELY DISABLE processing status display for database operations */}
+                {processingStatus && 
+                 !processingStatus.toLowerCase().includes("database") &&
+                 !processingStatus.includes("DATABASE") &&
+                 !processingStatus.includes("Loaded connection") && (
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -308,14 +362,24 @@ export function FloatingJobCard() {
                     <div className="flex justify-between items-start">
                       <div className="flex items-center">
                         <div className="mr-2 p-1 rounded-full bg-background">
-                          <FileText className="h-4 w-4 text-blue-500" />
+                          {processingStatus.includes("DATABASE_INGESTION") || processingStatus.toLowerCase().includes("database") ? (
+                            <Database className="h-4 w-4 text-green-500" />
+                          ) : (
+                            <FileText className="h-4 w-4 text-blue-500" />
+                          )}
                         </div>
                         <div>
                           <h4 className="font-medium text-foreground text-sm">
-                            File Processing
+                            {processingStatus.includes("DATABASE_INGESTION") || processingStatus.toLowerCase().includes("database") ? 
+                              "Database Ingestion" : 
+                              (processingStatus.toLowerCase().includes("file") ? 
+                                "File Processing" : 
+                                "Processing")}
                           </h4>
                           <p className="text-xs text-muted-foreground">
-                            {processingStatus}
+                            {processingStatus.includes("DATABASE_INGESTION") ? 
+                              processingStatus.replace("DATABASE_INGESTION: ", "") : 
+                              processingStatus}
                           </p>
                         </div>
                       </div>
@@ -379,10 +443,10 @@ export function FloatingJobCard() {
                       {/* Progress bar background for running jobs */}
                       {job.status === "running" && (
                         <div 
-                          className="absolute inset-0 bg-blue-500/5 z-0"
+                          className="absolute inset-0 bg-blue-500/10 z-0"
                           style={{ 
                             width: `${job.progress}%`,
-                            transition: 'width 0.5s ease-in-out'
+                            transition: 'width 0.3s ease-in-out'
                           }}
                         />
                       )}

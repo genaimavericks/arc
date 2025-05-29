@@ -8,6 +8,7 @@ import json
 import uuid
 import time
 import traceback
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from sqlalchemy.orm import Session
@@ -23,6 +24,7 @@ import traceback
 import re
 from langchain_google_genai import ChatGoogleGenerativeAI
 from unittest.mock import MagicMock
+import pandas as pd
 
 # Utility function to update schema status
 def update_schema_status(db=None, schema=None, db_id=None, schema_id=None, schema_generated=None, db_loaded=None):
@@ -400,6 +402,7 @@ async def build_schema_from_source(
     print(f"DEBUG: build_schema_from_source called with source_id: {source_input.source_id}")
     try:
         source_id = source_input.source_id
+        temp_json_file = None
         
         # Check if file_path is provided directly in the request
         if source_input.file_path:
@@ -413,9 +416,11 @@ async def build_schema_from_source(
                     detail=f"File not found at path: {file_path}. Current OS: {os.name}"
                 )
                 
-            # Validate file is a CSV or JSON
-            if not (file_path.lower().endswith('.csv') or file_path.lower().endswith('.json')):
-                raise HTTPException(status_code=400, detail="Only CSV and JSON files are supported")
+            # Validate file is a CSV, JSON, or parquet
+            if not (file_path.lower().endswith('.csv') or 
+                   file_path.lower().endswith('.json') or 
+                   file_path.lower().endswith('.parquet')):
+                raise HTTPException(status_code=400, detail="Only CSV, JSON, and parquet files are supported")
         else:
             # If file_path is not provided, try to get it from the source_id
             print(f"DEBUG: No file path provided, retrieving from source_id: {source_id}")
@@ -480,6 +485,30 @@ async def build_schema_from_source(
             # If not valid JSON, use as is (simple string)
             print(f"DEBUG: Using metadata as plain text: {metadata}")
             pass
+        
+        # Check if the file is a parquet file and convert it to JSON if necessary
+        if file_path.lower().endswith('.parquet'):
+            print(f"DEBUG: Converting parquet file to JSON: {file_path}")
+            try:
+                # Read the parquet file
+                df = pd.read_parquet(file_path)
+                
+                # Create a temporary JSON file
+                with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as tmp:
+                    temp_json_file = tmp.name
+                    # Convert DataFrame to JSON and save to temp file
+                    df.to_json(temp_json_file, orient='records', lines=True)
+                    print(f"DEBUG: Successfully converted parquet to JSON at {temp_json_file}")
+                
+                # Use the JSON file instead of the parquet file
+                orig_file_path = file_path  # Save original path for reference
+                file_path = temp_json_file
+                print(f"DEBUG: Using converted JSON file: {file_path}")
+            except Exception as e:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to convert parquet file to JSON: {str(e)}"
+                )
         
         # Initialize agent with the provided file path and metadata
         print(f"DEBUG: Initializing GraphSchemaAgent with file_path: {file_path}")
@@ -547,8 +576,22 @@ async def build_schema_from_source(
             'csv_file_path': file_path  # Include the CSV file path in the response
         }
     except HTTPException:
+        # Clean up temporary file if exception occurred
+        if 'temp_json_file' in locals() and temp_json_file and os.path.exists(temp_json_file):
+            try:
+                os.unlink(temp_json_file)
+                print(f"DEBUG: Deleted temporary JSON file after exception: {temp_json_file}")
+            except:
+                pass
         raise
     except Exception as e:
+        # Clean up temporary file if exception occurred
+        if 'temp_json_file' in locals() and temp_json_file and os.path.exists(temp_json_file):
+            try:
+                os.unlink(temp_json_file)
+                print(f"DEBUG: Deleted temporary JSON file after exception: {temp_json_file}")
+            except:
+                pass
         print(f"Error in build_schema_from_source: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Schema generation failed: {str(e)}")
 
@@ -562,6 +605,7 @@ async def refine_schema(
     print(f"DEBUG: refine_schema called with source_id: {refine_input.source_id}")
     try:
         source_id = refine_input.source_id
+        temp_json_file = None
         
         # Check if file_path is provided directly in the request
         if refine_input.file_path:
@@ -575,9 +619,11 @@ async def refine_schema(
                     detail=f"File not found at path: {file_path}. Current OS: {os.name}"
                 )
                 
-            # Validate file is a CSV or JSON
-            if not (file_path.lower().endswith('.csv') or file_path.lower().endswith('.json')):
-                raise HTTPException(status_code=400, detail="Only CSV and JSON files are supported")
+            # Validate file is a CSV, JSON, or parquet
+            if not (file_path.lower().endswith('.csv') or 
+                   file_path.lower().endswith('.json') or 
+                   file_path.lower().endswith('.parquet')):
+                raise HTTPException(status_code=400, detail="Only CSV, JSON, and parquet files are supported")
         else:
             # If file_path not provided, get it from the database (legacy approach)
             print(f"DEBUG: No file path provided, retrieving from database")
@@ -635,9 +681,11 @@ async def refine_schema(
                 detail=f"File not found at path: {file_path}. Current OS: {os.name}"
             )
         
-        # Validate file is a CSV or JSON
-        if not (file_path.lower().endswith('.csv') or file_path.lower().endswith('.json')):
-            raise HTTPException(status_code=400, detail="Only CSV and JSON files are supported")
+        # Validate file is a CSV, JSON, or parquet
+        if not (file_path.lower().endswith('.csv') or 
+               file_path.lower().endswith('.json') or 
+               file_path.lower().endswith('.parquet')):
+            raise HTTPException(status_code=400, detail="Only CSV, JSON, and parquet files are supported")
         
         # Additional debugging for file path
         print(f"DEBUG: File exists check passed for: {file_path}")
@@ -651,6 +699,30 @@ async def refine_schema(
                 print(f"DEBUG: First few lines of file: {first_few_lines}")
         except Exception as e:
             print(f"WARNING: Could not read from file: {e}")
+            
+        # Check if the file is a parquet file and convert it to JSON if necessary
+        if file_path.lower().endswith('.parquet'):
+            print(f"DEBUG: Converting parquet file to JSON: {file_path}")
+            try:
+                # Read the parquet file
+                df = pd.read_parquet(file_path)
+                
+                # Create a temporary JSON file
+                with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as tmp:
+                    temp_json_file = tmp.name
+                    # Convert DataFrame to JSON and save to temp file
+                    df.to_json(temp_json_file, orient='records', lines=True)
+                    print(f"DEBUG: Successfully converted parquet to JSON at {temp_json_file}")
+                
+                # Use the JSON file instead of the parquet file
+                orig_file_path = file_path  # Save original path for reference
+                file_path = temp_json_file
+                print(f"DEBUG: Using converted JSON file: {file_path}")
+            except Exception as e:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to convert parquet file to JSON: {str(e)}"
+                )
         
         # Use the already initialized Google Gemini model
         # This uses the global 'llm' variable initialized at the module level
@@ -719,12 +791,24 @@ async def refine_schema(
             cypher = ""
             
         # Format data to match what frontend expects
+        print(f"DEBUG: Formatting schema and cypher")
         formatted_schema, formatted_cypher = format_schema_response(schema, cypher)
-            
+        
+        # Clean up temporary file if created
+        if temp_json_file and os.path.exists(temp_json_file):
+            try:
+                os.unlink(temp_json_file)
+                print(f"DEBUG: Deleted temporary JSON file: {temp_json_file}")
+            except Exception as e:
+                print(f"WARNING: Failed to delete temporary JSON file {temp_json_file}: {str(e)}")
+        
+        # If this was a parquet file, return the original parquet path in the response
+        response_file_path = orig_file_path if 'orig_file_path' in locals() else file_path
+        
         return {
-            "schema": formatted_schema,
-            "cypher": formatted_cypher,
-            "csv_file_path": file_path  # Include the CSV file path in the response
+            'schema': formatted_schema,
+            'cypher': formatted_cypher,
+            'csv_file_path': response_file_path  # Include the original file path in the response
         }
     except HTTPException as e:
         raise

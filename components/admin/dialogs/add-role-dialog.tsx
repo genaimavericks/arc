@@ -84,6 +84,9 @@ export function AddRoleDialog({ open, onOpenChange }: AddRoleDialogProps) {
 
   // Group permissions by category
   const permissionCategories = {
+    "Command Centers": availablePermissions.filter(p => p.startsWith("command:")),
+    "Personal Dashboard": availablePermissions.filter(p => p.startsWith("dashboard:")),
+    "Djinni Assistant": availablePermissions.filter(p => p.startsWith("djinni:")),
     "DataPuur Platform": availablePermissions.filter(p => p.startsWith("datapuur:")),
     "Knowledge Graph Insights": availablePermissions.filter(p => p.startsWith("kginsights:"))
   };

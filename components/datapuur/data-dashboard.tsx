@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { PlusCircle, Search, Eye, BarChart2, Wand2, RefreshCw, Trash2, ChevronLeft, ChevronRight, FileDown } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { DatasetPreviewModal } from "@/components/datapuur/dataset-preview-modal"
-import { format } from "date-fns"
+import { format, formatDistanceToNow } from "date-fns"
 import { useToast } from "@/components/ui/use-toast"
 import {
   AlertDialog,
@@ -24,6 +24,7 @@ import {
 interface DataSource {
   id: string
   name: string
+  dataset?: string  // New property: filename without extension or table name for DB
   type: string
   last_updated: string
   status: string
@@ -224,6 +225,7 @@ export function DataDashboard() {
     // Filter datasets based on search query
     const filtered = datasets.filter((dataset) =>
       dataset.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (dataset.dataset && dataset.dataset.toLowerCase().includes(searchQuery.toLowerCase())) ||
       dataset.type.toLowerCase().includes(searchQuery.toLowerCase()) ||
       dataset.status.toLowerCase().includes(searchQuery.toLowerCase()) ||
       dataset.uploaded_by.toLowerCase().includes(searchQuery.toLowerCase())
@@ -308,7 +310,7 @@ export function DataDashboard() {
   }
 
   const handleDeleteClick = (dataset: DataSource) => {
-    setDatasetToDelete({ id: dataset.id, name: dataset.name })
+    setDatasetToDelete({ id: dataset.id, name: dataset.dataset || dataset.name })
     setDeleteDialogOpen(true)
   }
 
@@ -384,51 +386,108 @@ export function DataDashboard() {
   const formatDate = (dateString: string) => {
     if (!dateString) return "N/A"
     try {
-      return format(new Date(dateString), "yyyy-MM-dd")
+      // Remove debugging logs in production
+      // console.log("Original date string:", dateString);
+      
+      // Create current time for reference
+      const now = new Date();
+      
+      // Parse the date with proper timezone handling
+      let date: Date;
+      
+      // First, normalize the date string format
+      if (dateString.includes('Z')) {
+        // Already has UTC marker - parse directly
+        date = new Date(dateString);
+      } else if (
+        (dateString.includes('+') && dateString.indexOf('T') < dateString.indexOf('+')) ||
+        (dateString.includes('-') && dateString.indexOf('T') < dateString.lastIndexOf('-'))
+      ) {
+        // Has timezone offset like +05:30 - parse directly
+        date = new Date(dateString);
+      } else if (dateString.includes('T')) {
+        // Handle database records: has T separator but no timezone
+        // Always treat these as UTC time by adding the Z marker
+        date = new Date(dateString + 'Z');
+      } else {
+        // Plain date string without time - parse as local time
+        date = new Date(dateString);
+      }
+      
+      // Force conversion to local time by creating a new Date object
+      // This ensures consistent handling for both file and database records
+      const localDate = new Date(date.getTime());
+      // console.log("Date converted to local:", localDate.toString());
+      date = localDate;
+      
+      // Calculate time difference in minutes for debugging
+      const diffMs = now.getTime() - date.getTime();
+      const diffMinutes = Math.floor(diffMs / (1000 * 60));
+      console.log(`Time difference: ${diffMinutes} minutes ago`);
+      
+      // Format for relative time display - using addSuffix ensures we get "X time ago"
+      const relativeTime = formatDistanceToNow(date, { addSuffix: true });
+      
+      // Format the date in local time with seconds
+      const formattedDate = format(date, 'yyyy-MM-dd HH:mm:ss');
+      
+      return (
+        <div>
+          <div>{relativeTime}</div>
+          <div className="text-xs">{formattedDate}</div>
+        </div>
+      )
     } catch (error) {
-      return dateString
+      console.error("Error formatting date:", error, dateString);
+      return dateString;
     }
   }
 
-  // Check if user has permission to delete datasets
   const canDeleteDataset = (dataset: DataSource) => {
     console.log("Current user role:", userRole)
     // For testing, always return true to make the button visible
     return true
     // Uncomment this when testing is complete:
-    return userRole === "admin"
+    // return userRole === "admin"
   }
 
   return (
-    <div className="w-full space-y-6">
-      <div className="flex justify-between items-center mb-8">
-        <div className="flex items-center gap-2">
-          <Button onClick={handleNewDataset} className="flex items-center gap-2">
-            <PlusCircle className="h-4 w-4" />
-            New Dataset
-          </Button>
-          <Button variant="outline" size="icon" onClick={handleRefresh} disabled={isRefreshing} title="Refresh data">
+    <div className="w-full space-y-2 mx-6 max-w-[calc(100%-3rem)]">
+      <div className="flex w-full items-center justify-between pb-2 pt-2">
+        <h2 className="text-2xl font-bold tracking-tight ml-3">Dashboard</h2>
+        <div className="flex items-center space-x-2 mr-3">
+          <div className="flex items-center">
+            <Search className="h-4 w-4 text-muted-foreground absolute ml-2" />
+            <Input 
+              placeholder="Search Datasets..." 
+              className="max-w-sm pl-8" 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+          <Button 
+            variant="outline" 
+            size="icon"
+            onClick={handleRefresh} 
+            disabled={isRefreshing} 
+            title="Refresh datasets"
+          >
             <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
           </Button>
         </div>
-
-        <div className="relative w-80">
-          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search Datasets..."
-            className="pl-8"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
       </div>
 
-      <div className="bg-card/80 backdrop-blur-sm p-6 rounded-lg border border-border shadow-md mb-8">
-        <div className="flex flex-row items-center justify-between mb-6">
-          <h3 className="text-xl font-semibold text-foreground flex items-center">
-            <Table className="w-5 h-5 mr-2 text-primary" />
-            Datasets
-          </h3>
+      <div className="bg-card/80 backdrop-blur-sm p-4 rounded-lg border border-border shadow-md mb-4 overflow-x-auto">
+        <div className="flex flex-row items-center justify-between mb-4">
+          <div className="flex items-center">
+            <h3 className="text-xl font-semibold text-foreground flex items-center">
+              <Table className="w-5 h-5 mr-2 text-primary" />
+              Datasets
+            </h3>
+            <Button onClick={handleNewDataset} className="flex items-center gap-2 ml-4" size="sm">
+              <PlusCircle className="h-4 w-4" />
+            </Button>
+          </div>
           <div className="text-sm text-muted-foreground">Auto-refreshes every 30 seconds</div>
         </div>
         <div>
@@ -438,11 +497,11 @@ export function DataDashboard() {
             </div>
           ) : (
             <>
-              <Table>
+              <Table className="w-full">
                 <TableHeader>
                   <TableRow className="border-t border-b border-border">
                     <TableHead 
-                      className="cursor-pointer hover:text-primary transition-colors"
+                      className="cursor-pointer hover:text-primary transition-colors px-4 py-3"
                       onClick={() => handleSort("name")}
                     >
                       Name
@@ -453,7 +512,7 @@ export function DataDashboard() {
                       )}
                     </TableHead>
                     <TableHead 
-                      className="cursor-pointer hover:text-primary transition-colors"
+                      className="cursor-pointer hover:text-primary transition-colors px-4 py-3"
                       onClick={() => handleSort("type")}
                     >
                       Type
@@ -464,7 +523,7 @@ export function DataDashboard() {
                       )}
                     </TableHead>
                     <TableHead 
-                      className="cursor-pointer hover:text-primary transition-colors"
+                      className="cursor-pointer hover:text-primary transition-colors px-4 py-3"
                       onClick={() => handleSort("last_updated")}
                     >
                       Last Updated
@@ -475,7 +534,7 @@ export function DataDashboard() {
                       )}
                     </TableHead>
                     <TableHead 
-                      className="cursor-pointer hover:text-primary transition-colors"
+                      className="cursor-pointer hover:text-primary transition-colors px-4 py-3"
                       onClick={() => handleSort("status")}
                     >
                       Status
@@ -486,7 +545,7 @@ export function DataDashboard() {
                       )}
                     </TableHead>
                     <TableHead 
-                      className="cursor-pointer hover:text-primary transition-colors"
+                      className="cursor-pointer hover:text-primary transition-colors px-4 py-3"
                       onClick={() => handleSort("uploaded_by")}
                     >
                       Uploaded By
@@ -496,24 +555,24 @@ export function DataDashboard() {
                         </span>
                       )}
                     </TableHead>
-                    <TableHead className="w-[180px] text-center">Actions</TableHead>
+                    <TableHead className="w-[180px] text-center px-4 py-3">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {currentItems.length > 0 ? (
                     currentItems.map((dataset) => (
                       <TableRow key={dataset.id}>
-                        <TableCell className="font-medium">{dataset.name}</TableCell>
-                        <TableCell>{dataset.type}</TableCell>
-                        <TableCell>{formatDate(dataset.last_updated)}</TableCell>
-                        <TableCell className={getStatusClass(dataset.status)}>{dataset.status}</TableCell>
-                        <TableCell>{dataset.uploaded_by}</TableCell>
-                        <TableCell>
+                        <TableCell className="font-medium px-4 py-3">{dataset.dataset || dataset.name}</TableCell>
+                        <TableCell className="px-4 py-3">{dataset.type}</TableCell>
+                        <TableCell className="px-4 py-3">{formatDate(dataset.last_updated)}</TableCell>
+                        <TableCell className={`${getStatusClass(dataset.status)} px-4 py-3`}>{dataset.status}</TableCell>
+                        <TableCell className="px-4 py-3">{dataset.uploaded_by}</TableCell>
+                        <TableCell className="px-4 py-3">
                           <div className="flex justify-center space-x-2">
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => handlePreview(dataset.id, dataset.name)}
+                              onClick={() => handlePreview(dataset.id, dataset.dataset || dataset.name)}
                               title="Preview"
                             >
                               <Eye className="h-4 w-4" />

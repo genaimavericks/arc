@@ -123,7 +123,27 @@ export default function SchemaList() {
                       <FileJson className={`h-4 w-4 ${selectedSchemaId === schema.id ? 'text-primary' : 'text-muted-foreground'}`} />
                     </div>
                     <CardDescription className="text-xs">
-                      Created {formatDistanceToNow(new Date(schema.created_at), { addSuffix: true })}
+                      {(() => {
+                        try {
+                          // Parse the UTC date from the ISO string
+                          const utcDate = new Date(schema.created_at);
+                          
+                          // Get the client's timezone offset in minutes
+                          const timezoneOffset = new Date().getTimezoneOffset();
+                          
+                          // Convert from UTC to client's local time by adjusting for timezone offset
+                          // Note: getTimezoneOffset() returns minutes WEST of UTC, so we negate it
+                          const localDate = new Date(utcDate.getTime() - (timezoneOffset * 60 * 1000));
+                          
+                          // Format the date and time
+                          return (
+                            <>Created {formatDistanceToNow(localDate, { addSuffix: true })}</>
+                          );
+                        } catch (error) {
+                          console.error("Error formatting date:", error, schema.created_at);
+                          return `Created ${schema.created_at || "Unknown"}`;
+                        }
+                      })()}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="p-4 pt-0">

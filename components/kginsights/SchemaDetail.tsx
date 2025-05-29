@@ -201,7 +201,25 @@ export default function SchemaDetail() {
             )}
           </h2>
           <p className="text-sm text-muted-foreground">
-            Created {formatDistanceToNow(new Date(selectedSchema.created_at), { addSuffix: true })}
+            {(() => {
+              try {
+                // Parse the UTC date from the ISO string
+                const utcDate = new Date(selectedSchema.created_at);
+                
+                // Get the client's timezone offset in minutes
+                const timezoneOffset = new Date().getTimezoneOffset();
+                
+                // Convert from UTC to client's local time by adjusting for timezone offset
+                // Note: getTimezoneOffset() returns minutes WEST of UTC, so we negate it
+                const localDate = new Date(utcDate.getTime() - (timezoneOffset * 60 * 1000));
+                
+                // Return formatted date
+                return <>Created {formatDistanceToNow(localDate, { addSuffix: true })}</>;
+              } catch (error) {
+                console.error("Error formatting date:", error, selectedSchema.created_at);
+                return `Created ${selectedSchema.created_at || "Unknown"}`;
+              }
+            })()}
           </p>
         </div>
         
@@ -341,7 +359,25 @@ export default function SchemaDetail() {
         
         {schemaStatus?.last_data_update && (
           <Badge variant="outline" className="transition-colors">
-            Updated {formatDistanceToNow(new Date(schemaStatus.last_data_update), { addSuffix: true })}
+            {(() => {
+              try {
+                // Parse the UTC date from the ISO string
+                const utcDate = new Date(schemaStatus.last_data_update);
+                
+                // Get the client's timezone offset in minutes
+                const timezoneOffset = new Date().getTimezoneOffset();
+                
+                // Convert from UTC to client's local time by adjusting for timezone offset
+                // Note: getTimezoneOffset() returns minutes WEST of UTC, so we negate it
+                const localDate = new Date(utcDate.getTime() - (timezoneOffset * 60 * 1000));
+                
+                // Return formatted date
+                return <>Updated {formatDistanceToNow(localDate, { addSuffix: true })}</>;
+              } catch (error) {
+                console.error("Error formatting date:", error, schemaStatus.last_data_update);
+                return `Updated ${schemaStatus.last_data_update || "Unknown"}`;
+              }
+            })()}
           </Badge>
         )}
         

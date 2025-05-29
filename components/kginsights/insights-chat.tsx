@@ -24,9 +24,8 @@ import {
 } from "@/components/ui/select"
 import { 
   ChevronRight, 
+  ChevronLeft,
   Send, 
-  PanelRightClose, 
-  PanelRightOpen, 
   Sparkles,
   History,
   Settings,
@@ -48,7 +47,7 @@ import { ChartTheme } from "@/components/kginsights/insights/chart-visualization
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { motion } from "framer-motion"
 import { SparklesCore } from "@/components/sparkles"
-import { FloatingChart } from "@/components/floating-chart"
+
 // Import our WebSocket services
 import { useKGInsights } from "./use-kg-insights"
 import { AutocompleteSuggestion } from "./autocomplete-service"
@@ -714,7 +713,7 @@ export default function InsightsChat() {
   }, [messages]);
 
   return (
-    <div className="flex h-full bg-gradient-to-b from-background to-background/95">
+    <div className="flex h-full bg-gradient-to-b from-background to-background/95 insights-chat-container">
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0 opacity-10 pointer-events-none">
         <SparklesCore
           id="insightsparkles"
@@ -727,13 +726,11 @@ export default function InsightsChat() {
         />
       </div>
       
-      <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0 pointer-events-none">
-        <FloatingChart count={3} avoidRightSide={true} zIndex={0} />
-      </div>
+
 
       {/* Sidebar with predefined queries and history */}
       {sidebarOpen && (
-        <div className="w-72 border-r bg-card/50 p-4 flex flex-col h-full max-h-full">
+        <div className="w-72 border-r bg-card/50 p-4 flex flex-col h-full max-h-full sidebar">
           <Tabs defaultValue="queries" className="w-full h-full flex flex-col" onValueChange={(value) => {
               if (value === "history") {
                 loadHistoryData()
@@ -980,7 +977,7 @@ export default function InsightsChat() {
       )}
       
       {/* Main chat area */}
-      <div className="flex-1 flex flex-col relative z-10">
+      <div className="flex-1 flex flex-col relative z-10 main-chat-area">
         {/* Chat messages */}
         <div className="flex-1 overflow-hidden relative">
           <InsightsChatMessages 
@@ -999,20 +996,6 @@ export default function InsightsChat() {
           className="p-3 border-t border-primary/10 bg-background/90 backdrop-blur-md shadow-lg"
         >
           <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors duration-300"
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-            >
-              {sidebarOpen ? (
-                <PanelRightClose className="h-4 w-4" />
-              ) : (
-                <PanelRightOpen className="h-4 w-4" />
-              )}
-            </Button>
-            
             <div className="flex-1 flex items-center gap-2 relative">
               <div className="relative w-full">
                 {/* Suggestions */}
@@ -1130,7 +1113,7 @@ export default function InsightsChat() {
                     }
                   }}
                   size="sm" 
-                  className="h-9 px-3 rounded-l-none bg-primary hover:bg-primary/90 text-primary-foreground transition-all duration-300 hover:shadow"
+                  className="h-9 px-3 bg-primary hover:bg-primary/90 text-primary-foreground transition-all duration-300 hover:shadow mr-1"
                   disabled={loading || !input.trim()}
                 >
                   {loading ? (
@@ -1139,18 +1122,34 @@ export default function InsightsChat() {
                     <Send className="h-4 w-4" />
                   )}
                 </Button>
+                
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-9 px-2 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors duration-300"
+                        onClick={() => setSidebarOpen(!sidebarOpen)}
+                        title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+                      >
+                        {sidebarOpen ? (
+                          <ChevronRight className="h-4 w-4" />
+                        ) : (
+                          <ChevronLeft className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{sidebarOpen ? "Hide sidebar" : "Show sidebar"}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
             </div>
           </div>
           
-          <div className="flex justify-center mt-1">
-            <div className="text-xs text-muted-foreground flex items-center gap-2">
-              <div className="text-center flex items-center">
-                <Sparkles className="h-3 w-3 mr-1 text-primary/60" />
-                <span>Powered by Knowledge Graph AI</span>
-              </div>
-            </div>
-          </div>
+
         </motion.div>
       </div>
     </div>

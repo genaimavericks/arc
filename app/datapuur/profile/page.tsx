@@ -6,7 +6,8 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { DataPuurLayout } from "@/components/datapuur/datapuur-layout"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { RefreshCw } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { RefreshCw, Search } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import LoadingSpinner from "@/components/loading-spinner"
 
@@ -105,16 +106,7 @@ function ProfilePageContent() {
   return (
     <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Data Profiles</h2>
-        <Button 
-          variant="outline" 
-          size="sm" 
-          onClick={handleRefresh}
-          disabled={isRefreshing}
-        >
-          <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? "animate-spin" : ""}`} />
-          Refresh
-        </Button>
+        <h2 className="text-2xl font-bold tracking-tight">Profiles</h2>
       </div>
 
       <div className="grid grid-cols-1 gap-4">
@@ -124,10 +116,61 @@ function ProfilePageContent() {
           </div>
         ) : (
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full max-w-md grid-cols-2">
-              <TabsTrigger value="list">Profile List</TabsTrigger>
-              <TabsTrigger value="details" disabled={!selectedProfileId}>Profile Details</TabsTrigger>
-            </TabsList>
+            <div className="flex items-center justify-between mb-4">
+              <TabsList className="grid w-auto grid-cols-2">
+                <TabsTrigger value="list">Profile List</TabsTrigger>
+                <TabsTrigger value="details" disabled={!selectedProfileId}>Profile Details</TabsTrigger>
+              </TabsList>
+              
+              {activeTab === "list" && (
+                <div className="flex items-center space-x-2">
+                  <div className="flex items-center">
+                    <Search className="h-4 w-4 text-muted-foreground absolute ml-2" />
+                    <Input
+                      type="text"
+                      placeholder="Search profiles..."
+                      className="max-w-sm pl-8"
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                        // Pass the search query to the ProfileList component
+                        const profileListComponent = document.getElementById('profile-list-component') as any;
+                        if (profileListComponent && profileListComponent.setSearchQuery) {
+                          profileListComponent.setSearchQuery(e.target.value);
+                        }
+                      }}
+                    />
+                  </div>
+                  <Button 
+                    type="submit" 
+                    variant="outline" 
+                    size="icon"
+                    onClick={() => {
+                      // Trigger search in the ProfileList component
+                      const profileListComponent = document.getElementById('profile-list-component') as any;
+                      if (profileListComponent && profileListComponent.handleSearch) {
+                        profileListComponent.handleSearch();
+                      }
+                    }}
+                    title="Search profiles"
+                  >
+                    <Search className="h-4 w-4" />
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="icon"
+                    onClick={() => {
+                      // Trigger refresh in the ProfileList component
+                      const profileListComponent = document.getElementById('profile-list-component') as any;
+                      if (profileListComponent && profileListComponent.fetchProfiles) {
+                        profileListComponent.fetchProfiles(true);
+                      }
+                    }}
+                    title="Refresh profiles"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+            </div>
             
             <TabsContent value="list" className="mt-4">
               <ProfileList 

@@ -3,9 +3,8 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
-import { SparklesCore } from "@/components/sparkles"
-import { motion } from "framer-motion"
-import { Bot, User, ArrowLeft, CheckCircle, AlertTriangle, Lock, KeyRound, Check, X, Mail, Send } from "lucide-react"
+import { motion, AnimatePresence } from "framer-motion"
+import { User, ArrowLeft, CheckCircle, AlertTriangle, Lock, KeyRound, Check, X, Mail, Send, ShieldCheck } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -25,6 +24,7 @@ export default function ForgotPasswordPage() {
   const { resetPasswordDirect, useFallbackMode } = useAuth()
   const router = useRouter()
   const [isLogoAnimating, setIsLogoAnimating] = useState(false)
+  const [formFocused, setFormFocused] = useState<"username" | "password" | "confirmPassword" | null>(null)
 
   // Password validation state
   const [passwordValidation, setPasswordValidation] = useState({
@@ -146,27 +146,23 @@ export default function ForgotPasswordPage() {
   }, [isSubmitted, router])
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-background via-background/95 to-background/90 dark:from-black dark:via-black/95 dark:to-black/90 antialiased relative overflow-hidden">
+    <main className="min-h-screen bg-gradient-to-br from-background via-background/95 to-background/90 dark:from-background dark:via-background/95 dark:to-background/90 antialiased relative overflow-hidden">
       {/* Return to login button */}
       <Link
         href="/login"
-        className="absolute top-6 left-6 z-20 w-10 h-10 flex items-center justify-center rounded-full bg-white/10 dark:bg-white/10 hover:bg-white/20 dark:hover:bg-white/20 transition-colors duration-200 backdrop-blur-sm"
+        className="absolute top-6 left-6 z-20 w-10 h-10 flex items-center justify-center rounded-full bg-card/50 hover:bg-card/80 transition-colors duration-200 backdrop-blur-sm border border-border shadow-md"
         aria-label="Return to login page"
       >
         <ArrowLeft className="w-5 h-5 text-foreground" />
       </Link>
 
-      {/* Ambient background with moving particles */}
-      <div className="h-full w-full absolute inset-0 z-0">
-        <SparklesCore
-          id="tsparticlesfullpage"
-          background="transparent"
-          minSize={0.6}
-          maxSize={1.4}
-          particleDensity={80}
-          className="w-full h-full"
-          particleColor="var(--foreground)"
-        />
+
+      
+      {/* Animated gradient orbs in background */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-40 -left-40 w-80 h-80 bg-primary/20 rounded-full filter blur-3xl opacity-30 animate-blob"></div>
+        <div className="absolute top-40 -right-40 w-80 h-80 bg-secondary/20 rounded-full filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
+        <div className="absolute bottom-40 left-20 w-80 h-80 bg-accent/20 rounded-full filter blur-3xl opacity-30 animate-blob animation-delay-4000"></div>
       </div>
 
       <div className="relative z-10 flex items-center justify-center min-h-screen px-4 sm:px-6">
@@ -175,11 +171,11 @@ export default function ForgotPasswordPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
-            className="p-8 bg-white/10 dark:bg-black/40 backdrop-blur-md rounded-2xl border border-white/20 dark:border-white/10 shadow-xl"
+            className="p-8 bg-card/80 backdrop-blur-md rounded-2xl border border-border shadow-xl card-animated"
           >
             <div className="flex flex-col items-center mb-8">
               <motion.div
-                className="relative w-20 h-20"
+                className="relative w-24 h-24"
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onHoverStart={() => setIsLogoAnimating(true)}
@@ -187,7 +183,7 @@ export default function ForgotPasswordPage() {
                 onClick={() => setIsLogoAnimating(true)}
               >
                 <motion.div
-                  className="absolute inset-0 rounded-full bg-gradient-to-r from-primary/30 via-secondary/30 to-accent/30 z-0"
+                  className="absolute inset-0 rounded-full bg-gradient-to-r from-primary/40 via-secondary/40 to-accent/40 z-0"
                   initial={{ scale: 0, opacity: 0 }}
                   animate={{
                     scale: isLogoAnimating ? 1.2 : 0,
@@ -206,57 +202,88 @@ export default function ForgotPasswordPage() {
                   }}
                   className="relative z-10 flex items-center justify-center w-full h-full"
                 >
-                  <Image
-                    src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/no_bg_logo-M7cBq60PCuZ1sN7MH6T2WMZRrdyQMZ.png"
-                    alt="RSW Logo"
-                    width={80}
-                    height={80}
-                    className="object-contain"
-                  />
+                  <div className="relative w-20 h-20 rounded-full bg-card flex items-center justify-center shadow-lg">
+                    <Image
+                      src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/no_bg_logo-M7cBq60PCuZ1sN7MH6T2WMZRrdyQMZ.png"
+                      alt="RSW Logo"
+                      width={80}
+                      height={80}
+                      className="object-contain"
+                    />
+                  </div>
                 </motion.div>
               </motion.div>
               <h1 className="text-2xl font-bold text-foreground text-center mt-4 mb-1">Reset Password</h1>
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary via-secondary to-accent font-semibold text-sm">
+              <motion.span 
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3, duration: 0.5 }}
+                className="text-transparent bg-clip-text bg-gradient-to-r from-primary via-secondary to-accent font-semibold text-sm"
+              >
                 Cognitive Data Expert
-              </span>
+              </motion.span>
             </div>
 
             {isSubmitted ? (
               <motion.div
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="bg-green-500/10 border border-green-500/20 text-green-700 dark:text-green-400 p-6 rounded-lg mb-6 flex flex-col items-center"
+                className="bg-green-500/15 border border-green-500/30 text-green-700 dark:text-green-400 p-6 rounded-lg mb-6 flex flex-col items-center backdrop-blur-sm shadow-md"
               >
-                <CheckCircle className="w-16 h-16 text-green-500 mb-4" />
+                <div className="relative">
+                  <motion.div 
+                    className="absolute inset-0 rounded-full bg-green-500/20 filter blur-md"
+                    animate={{ scale: [1, 1.2, 1] }}
+                    transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
+                  />
+                  <CheckCircle className="w-16 h-16 text-green-500 mb-4 relative z-10" />
+                </div>
                 <h3 className="text-xl font-semibold mb-2">Password Reset Successful</h3>
                 <p className="text-center mb-4">Your password has been reset successfully.</p>
-                <p className="text-sm text-muted-foreground">Redirecting to login page...</p>
+                <motion.div
+                  className="w-full max-w-[120px] h-1 bg-muted rounded-full overflow-hidden mt-2"
+                >
+                  <motion.div
+                    className="h-full bg-green-500"
+                    initial={{ width: 0 }}
+                    animate={{ width: "100%" }}
+                    transition={{ duration: 3, ease: "linear" }}
+                  />
+                </motion.div>
+                <p className="text-sm text-muted-foreground mt-2">Redirecting to login page...</p>
               </motion.div>
             ) : (
               <>
-                {(error || validationError) && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="bg-red-500/10 border border-red-500/20 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg mb-6 shadow-sm relative backdrop-blur-sm"
-                  >
-                    <button 
-                      onClick={() => {
-                        setError(null)
-                        setValidationError(null)
-                      }}
-                      className="absolute top-2 right-2 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
-                      aria-label="Close notification"
+                <AnimatePresence>
+                  {(error || validationError) && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      className="bg-destructive/10 border border-destructive/20 text-destructive-foreground px-4 py-3 rounded-lg mb-6 shadow-sm relative backdrop-blur-sm"
                     >
-                      <X size={18} />
-                    </button>
-                    <p className="font-medium text-center pr-6">{error || validationError}</p>
-                  </motion.div>
-                )}
+                      <button 
+                        onClick={() => {
+                          setError(null)
+                          setValidationError(null)
+                        }}
+                        className="absolute top-2 right-2 text-destructive-foreground/70 hover:text-destructive-foreground"
+                        aria-label="Close notification"
+                      >
+                        <X size={18} />
+                      </button>
+                      <p className="font-medium text-center pr-6">{error || validationError}</p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
                 <form onSubmit={handleSubmit} className="space-y-5">
-                  <div className="space-y-1">
+                  <motion.div 
+                    className="space-y-1"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1, duration: 0.3 }}
+                  >
                     <label
                       htmlFor="username"
                       className="block text-sm font-medium text-foreground mb-1 ml-1"
@@ -264,20 +291,35 @@ export default function ForgotPasswordPage() {
                       Username
                     </label>
                     <div className="relative group">
-                      <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground group-focus-within:text-primary h-5 w-5 transition-colors duration-200" />
+                      <User 
+                        className={cn(
+                          "absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 transition-colors duration-200",
+                          formFocused === "username" ? "text-primary" : "text-muted-foreground"
+                        )}
+                      />
                       <Input
                         id="username"
                         type="text"
                         value={username}
                         onChange={(e) => setUsername(e.target.value)}
-                        className="pl-10 h-11 bg-white/5 dark:bg-white/5 border-white/10 dark:border-white/10 focus:border-primary focus:ring-1 focus:ring-primary text-foreground rounded-lg"
+                        onFocus={() => setFormFocused("username")}
+                        onBlur={() => setFormFocused(null)}
+                        className={cn(
+                          "pl-10 h-11 bg-card/50 border-input/50 focus:border-primary focus:ring-1 focus:ring-primary text-foreground rounded-lg",
+                          formFocused === "username" && "border-primary/50 shadow-sm shadow-primary/20"
+                        )}
                         placeholder="Enter your username"
                         required
                       />
                     </div>
-                  </div>
+                  </motion.div>
 
-                  <div className="space-y-1">
+                  <motion.div 
+                    className="space-y-1"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.2, duration: 0.3 }}
+                  >
                     <label
                       htmlFor="password"
                       className="block text-sm font-medium text-foreground mb-1 ml-1"
@@ -285,25 +327,40 @@ export default function ForgotPasswordPage() {
                       New Password
                     </label>
                     <div className="relative group">
-                      <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground group-focus-within:text-primary h-5 w-5 transition-colors duration-200" />
+                      <Lock 
+                        className={cn(
+                          "absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 transition-colors duration-200",
+                          formFocused === "password" ? "text-primary" : "text-muted-foreground"
+                        )}
+                      />
                       <Input
                         id="password"
                         type="password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        className="pl-10 h-11 bg-white/5 dark:bg-white/5 border-white/10 dark:border-white/10 focus:border-primary focus:ring-1 focus:ring-primary text-foreground rounded-lg"
+                        onFocus={() => setFormFocused("password")}
+                        onBlur={() => setFormFocused(null)}
+                        className={cn(
+                          "pl-10 h-11 bg-card/50 border-input/50 focus:border-primary focus:ring-1 focus:ring-primary text-foreground rounded-lg",
+                          formFocused === "password" && "border-primary/50 shadow-sm shadow-primary/20"
+                        )}
                         placeholder="Enter new password"
                         required
                       />
                     </div>
-                  </div>
+                  </motion.div>
 
                   {/* Password Requirements */}
-                  <div className="bg-white/5 dark:bg-white/5 rounded-lg p-3 border border-white/10 dark:border-white/10">
+                  <motion.div 
+                    className="bg-card/50 rounded-lg p-4 border border-border shadow-sm"
+                    initial={{ opacity: 0, scale: 0.98 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: 0.3, duration: 0.3 }}
+                  >
                     <p className="text-sm font-medium mb-2 text-foreground">Password must contain:</p>
-                    <ul className="space-y-1 text-sm">
+                    <ul className="space-y-2 text-sm">
                       <li className="flex items-center">
-                        <span className={`mr-2 ${passwordValidation.length ? 'text-green-500' : 'text-red-500'}`}>
+                        <span className={`mr-2 ${passwordValidation.length ? 'text-green-500' : 'text-destructive'}`}>
                           {passwordValidation.length ? <Check size={16} /> : <X size={16} />}
                         </span>
                         <span className={passwordValidation.length ? 'text-green-500' : 'text-muted-foreground'}>
@@ -311,7 +368,7 @@ export default function ForgotPasswordPage() {
                         </span>
                       </li>
                       <li className="flex items-center">
-                        <span className={`mr-2 ${passwordValidation.hasUpperCase ? 'text-green-500' : 'text-red-500'}`}>
+                        <span className={`mr-2 ${passwordValidation.hasUpperCase ? 'text-green-500' : 'text-destructive'}`}>
                           {passwordValidation.hasUpperCase ? <Check size={16} /> : <X size={16} />}
                         </span>
                         <span className={passwordValidation.hasUpperCase ? 'text-green-500' : 'text-muted-foreground'}>
@@ -319,7 +376,7 @@ export default function ForgotPasswordPage() {
                         </span>
                       </li>
                       <li className="flex items-center">
-                        <span className={`mr-2 ${passwordValidation.hasLowerCase ? 'text-green-500' : 'text-red-500'}`}>
+                        <span className={`mr-2 ${passwordValidation.hasLowerCase ? 'text-green-500' : 'text-destructive'}`}>
                           {passwordValidation.hasLowerCase ? <Check size={16} /> : <X size={16} />}
                         </span>
                         <span className={passwordValidation.hasLowerCase ? 'text-green-500' : 'text-muted-foreground'}>
@@ -327,7 +384,7 @@ export default function ForgotPasswordPage() {
                         </span>
                       </li>
                       <li className="flex items-center">
-                        <span className={`mr-2 ${passwordValidation.hasNumber ? 'text-green-500' : 'text-red-500'}`}>
+                        <span className={`mr-2 ${passwordValidation.hasNumber ? 'text-green-500' : 'text-destructive'}`}>
                           {passwordValidation.hasNumber ? <Check size={16} /> : <X size={16} />}
                         </span>
                         <span className={passwordValidation.hasNumber ? 'text-green-500' : 'text-muted-foreground'}>
@@ -335,7 +392,7 @@ export default function ForgotPasswordPage() {
                         </span>
                       </li>
                       <li className="flex items-center">
-                        <span className={`mr-2 ${passwordValidation.hasSpecial ? 'text-green-500' : 'text-red-500'}`}>
+                        <span className={`mr-2 ${passwordValidation.hasSpecial ? 'text-green-500' : 'text-destructive/50'}`}>
                           {passwordValidation.hasSpecial ? <Check size={16} /> : <X size={16} />}
                         </span>
                         <span className={passwordValidation.hasSpecial ? 'text-green-500' : 'text-muted-foreground'}>
@@ -343,9 +400,14 @@ export default function ForgotPasswordPage() {
                         </span>
                       </li>
                     </ul>
-                  </div>
+                  </motion.div>
 
-                  <div className="space-y-1">
+                  <motion.div 
+                    className="space-y-1"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.4, duration: 0.3 }}
+                  >
                     <label
                       htmlFor="confirmPassword"
                       className="block text-sm font-medium text-foreground mb-1 ml-1"
@@ -353,16 +415,24 @@ export default function ForgotPasswordPage() {
                       Confirm Password
                     </label>
                     <div className="relative group">
-                      <KeyRound className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground group-focus-within:text-primary h-5 w-5 transition-colors duration-200" />
+                      <KeyRound 
+                        className={cn(
+                          "absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 transition-colors duration-200",
+                          formFocused === "confirmPassword" ? "text-primary" : "text-muted-foreground"
+                        )}
+                      />
                       <Input
                         id="confirmPassword"
                         type="password"
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
+                        onFocus={() => setFormFocused("confirmPassword")}
+                        onBlur={() => setFormFocused(null)}
                         className={cn(
-                          "pl-10 h-11 bg-white/5 dark:bg-white/5 border-white/10 dark:border-white/10 focus:ring-1 text-foreground rounded-lg",
-                          confirmPassword && (passwordsMatch ? "focus:border-green-500 focus:ring-green-500" : "focus:border-red-500 focus:ring-red-500"),
-                          confirmPassword && (passwordsMatch ? "border-green-500/50" : "border-red-500/50")
+                          "pl-10 h-11 bg-card/50 border-input/50 focus:ring-1 text-foreground rounded-lg",
+                          confirmPassword && (passwordsMatch ? "focus:border-green-500 focus:ring-green-500" : "focus:border-destructive focus:ring-destructive"),
+                          confirmPassword && (passwordsMatch ? "border-green-500/50" : "border-destructive/50"),
+                          formFocused === "confirmPassword" && !confirmPassword && "border-primary/50 shadow-sm shadow-primary/20"
                         )}
                         placeholder="Confirm your password"
                         required
@@ -372,42 +442,56 @@ export default function ForgotPasswordPage() {
                           {passwordsMatch ? (
                             <Check className="h-5 w-5 text-green-500" />
                           ) : (
-                            <X className="h-5 w-5 text-red-500" />
+                            <X className="h-5 w-5 text-destructive" />
                           )}
                         </div>
                       )}
                     </div>
-                  </div>
+                  </motion.div>
 
-                  <Button
-                    type="submit"
-                    className={cn(
-                      "w-full h-11 bg-gradient-to-r from-primary via-primary to-primary/90 hover:from-primary/90 hover:to-primary",
-                      "text-white font-medium rounded-lg shadow-md hover:shadow-lg transition-all duration-200",
-                      "flex items-center justify-center gap-2 mt-2"
-                    )}
-                    disabled={isSubmitting}
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.5, duration: 0.3 }}
+                    className="pt-2"
                   >
-                    {isSubmitting ? (
-                      <>
-                        <div className="h-5 w-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        <span>Processing...</span>
-                      </>
-                    ) : (
-                      <>
-                        <KeyRound className="h-5 w-5" />
-                        <span>Reset Password</span>
-                      </>
-                    )}
-                  </Button>
+                    <Button
+                      type="submit"
+                      className={cn(
+                        "w-full h-12 bg-gradient-to-r from-primary via-primary to-primary/90 hover:from-primary/90 hover:to-primary",
+                        "text-primary-foreground font-medium rounded-lg shadow-md hover:shadow-lg transition-all duration-200",
+                        "flex items-center justify-center gap-2 relative overflow-hidden group"
+                      )}
+                      disabled={isSubmitting}
+                    >
+                      <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-primary/10 via-primary/5 to-primary/10 animate-shimmer"></span>
+                      {isSubmitting ? (
+                        <>
+                          <div className="h-5 w-5 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
+                          <span>Processing...</span>
+                        </>
+                      ) : (
+                        <>
+                          <ShieldCheck className="h-5 w-5 group-hover:scale-110 transition-transform" />
+                          <span>Reset Password</span>
+                        </>
+                      )}
+                    </Button>
+                  </motion.div>
                 </form>
               </>
             )}
           </motion.div>
           
-          <p className="text-center text-muted-foreground text-sm mt-6">
-            RSW Smart Data Intelligence Platform
-          </p>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.6, duration: 0.5 }}
+          >
+            <p className="text-center text-muted-foreground text-sm mt-6">
+              RSW Smart Data Intelligence Platform
+            </p>
+          </motion.div>
         </div>
       </div>
     </main>

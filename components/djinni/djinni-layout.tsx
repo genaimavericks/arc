@@ -4,13 +4,13 @@ import type { ReactNode } from "react"
 import { MainLayout } from "@/components/main-layout"
 import ProtectedRoute from "@/components/protected-route"
 
-interface DataPuurLayoutProps {
+interface DjinniLayoutProps {
   children: ReactNode
 }
 
-export function DataPuurLayout({ children }: DataPuurLayoutProps) {
+export function DjinniLayout({ children }: DjinniLayoutProps) {
   return (
-    <ProtectedRoute requiredPermission="datapuur:read">
+    <ProtectedRoute requiredPermission="djinni:read">
       <MainLayout>
         {children}
       </MainLayout>

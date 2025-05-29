@@ -211,11 +211,23 @@ export default function FloatingKGJobCard() {
     }
   }
 
-  // Get the time ago from a timestamp
+  // Get the time ago from a timestamp with timezone adjustment
   const getTimeAgo = (timestamp: string) => {
     try {
-      return formatDistanceToNow(new Date(timestamp), { addSuffix: true })
+      // Parse the UTC date from the ISO string
+      const utcDate = new Date(timestamp);
+      
+      // Get the client's timezone offset in minutes
+      const timezoneOffset = new Date().getTimezoneOffset();
+      
+      // Convert from UTC to client's local time by adjusting for timezone offset
+      // Note: getTimezoneOffset() returns minutes WEST of UTC, so we negate it
+      const localDate = new Date(utcDate.getTime() - (timezoneOffset * 60 * 1000));
+      
+      // Format using formatDistanceToNow
+      return formatDistanceToNow(localDate, { addSuffix: true })
     } catch (err) {
+      console.error("Error formatting date:", err, timestamp);
       return "unknown time"
     }
   }

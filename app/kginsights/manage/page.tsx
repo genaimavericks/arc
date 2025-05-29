@@ -29,10 +29,7 @@ function ManageKGraphContent() {
   return (
     <div className="flex flex-col h-full w-full overflow-hidden">
       <header className="p-4 border-b">
-        <h1 className="text-2xl font-bold">Manage Knowledge Graphs</h1>
-        <p className="text-muted-foreground">
-          View and manage your knowledge graph schemas, visualize data, and run data operations
-        </p>
+        <h1 className="text-2xl font-bold tracking-tight">Manage Knowledge Graphs</h1>
       </header>
       
       <main className="flex flex-1 overflow-hidden">

@@ -4,13 +4,13 @@ import type { ReactNode } from "react"
 import { MainLayout } from "@/components/main-layout"
 import ProtectedRoute from "@/components/protected-route"
 
-interface DataPuurLayoutProps {
+interface AdminLayoutProps {
   children: ReactNode
 }
 
-export function DataPuurLayout({ children }: DataPuurLayoutProps) {
+export function AdminLayout({ children }: AdminLayoutProps) {
   return (
-    <ProtectedRoute requiredPermission="datapuur:read">
+    <ProtectedRoute requiredPermission="datapuur:manage">
       <MainLayout>
         {children}
       </MainLayout>

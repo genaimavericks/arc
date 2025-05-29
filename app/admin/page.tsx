@@ -1,33 +1,26 @@
 "use client"
 
-import { SparklesCore } from "@/components/sparkles"
-import Navbar from "@/components/navbar"
-import AdminDashboard from "@/components/admin/dashboard"
-import ProtectedRoute from "@/components/protected-route"
+import { AdminLayout } from "@/components/admin/admin-layout"
+import { AdminTabsContent } from "@/components/admin/admin-tabs-content"
+import { NotificationDisplay } from "@/components/admin/notification"
+import { useAdminStore } from "@/lib/admin/store"
 
 export default function AdminPage() {
+  const { notification } = useAdminStore()
+
   return (
-    <ProtectedRoute requiredRole="admin">
-      <main className="min-h-screen bg-background antialiased relative overflow-hidden">
-        {/* Ambient background with moving particles */}
-        <div className="h-full w-full absolute inset-0 z-0">
-          <SparklesCore
-            id="tsparticlesfullpage"
-            background="transparent"
-            minSize={0.6}
-            maxSize={1.4}
-            particleDensity={100}
-            className="w-full h-full"
-            particleColor="var(--foreground)"
-          />
+    <AdminLayout>
+      <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-bold tracking-tight">Admin Dashboard</h2>
+
         </div>
 
-        <div className="relative z-10">
-          <Navbar />
-          <AdminDashboard />
-        </div>
-      </main>
-    </ProtectedRoute>
+        {notification && <NotificationDisplay notification={notification} />}
+        
+        <AdminTabsContent />
+      </div>
+    </AdminLayout>
   )
 }
 

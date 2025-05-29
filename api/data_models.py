@@ -10,6 +10,7 @@ class DataSource(BaseModel):
     last_updated: str
     status: str
     uploaded_by: str = "Unknown"
+    dataset: Optional[str] = None
 
 class DataMetrics(BaseModel):
     total_records: int

@@ -1,22 +1,22 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
-import { Menu, User, LogOut, Settings, Sun, Moon } from "lucide-react"
+import { ChevronLeft, User, LogOut, Settings, Sun, Moon, Search, Bell } from "lucide-react"
 import { motion } from "framer-motion"
 import Link from "next/link"
 import type React from "react"
 import { useAuth } from "@/lib/auth-context"
 import { useTheme } from "@/lib/theme-context"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import Image from "next/image"
+import { Input } from "@/components/ui/input"
+import { usePathname } from "next/navigation"
 
 export default function Navbar() {
   const { user, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [isLogoHovered, setIsLogoHovered] = useState(false)
   const [scrolled, setScrolled] = useState(false)
-  const [activeButton, setActiveButton] = useState<string | null>(null)
 
   // Add scroll detection
   useEffect(() => {
@@ -34,430 +34,234 @@ export default function Navbar() {
     }
   }, [])
 
+  const pathname = usePathname()
+  const pageName = useMemo(() => {
+    // DataPuur section
+    if (pathname === '/datapuur') {
+      return 'DataPuur Dashboard'
+    } else if (pathname === '/datapuur/ingestion') {
+      return 'DataPuur Ingestion'
+    } else if (pathname === '/datapuur/profile') {
+      return 'DataPuur Profiles'
+    } else if (pathname === '/datapuur/transformation') {
+      return 'DataPuur Transformation'
+    } else if (pathname === '/datapuur/export') {
+      return 'DataPuur Export'
+    } else if (pathname.startsWith('/datapuur/')) {
+      return 'DataPuur'
+    }
+    
+    // KGInsights section
+    else if (pathname === '/kginsights/dashboard') {
+      return 'KGraph Dashboard'
+    } else if (pathname === '/kginsights/insights') {
+      return 'KGraph Insights'
+    } else if (pathname === '/kginsights/generate') {
+      return 'Generate Graph'
+    } else if (pathname === '/kginsights/manage') {
+      return 'Manage KGraph'
+    } else if (pathname.startsWith('/kginsights/')) {
+      return 'K-Graff'
+    }
+    
+    // Other pages
+    else if (pathname === '/dashboards') {
+      return 'My Dashboards'
+    } else if (pathname === '/dashboard-creator') {
+      return 'Dashboard Creator'
+    } else if (pathname === '/activity') {
+      return 'Recent Activity'
+    } else if (pathname === '/admin') {
+      return 'Settings'
+    } else if (pathname === '/help') {
+      return 'Help'
+    } else if (pathname === '/inventory') {
+      return 'Inventory Overview'
+    } else if (pathname === '/financial') {
+      return 'Financial Overview'
+    } else if (pathname === '/') {
+      return 'Sales Overview Dashboard'
+    } else {
+      // Default fallback - extract the last part of the path and capitalize it
+      const lastSegment = pathname.split('/').filter(Boolean).pop() || 'Dashboard'
+      return lastSegment.charAt(0).toUpperCase() + lastSegment.slice(1).replace(/-/g, ' ')
+    }
+  }, [pathname])
+
   return (
-    <motion.nav
-      initial={{ y: -100 }}
-      animate={{ y: 0 }}
-      className={`flex items-center justify-between px-6 py-4 backdrop-blur-md sticky top-0 z-50 
-      bg-gradient-to-r from-background/80 via-background/95 to-background/80 
-      border-b border-white/10 dark:border-white/10 border-black/10
-      shadow-sm dark:shadow-md
-      transition-all duration-300 ease-in-out ${scrolled ? 'py-3 shadow-md' : 'py-4'}`}
+    <div
+      className="flex items-center justify-between px-6 py-3 sticky top-0 z-50 
+      bg-background 
+      border-b border-border
+      transition-all duration-300 ease-in-out"
     >
-      <Link href="/" className="flex items-center space-x-3 group">
-        <motion.div
-          className="relative w-12 h-12"
-          whileHover={{ scale: 1.1, rotate: 5 }}
-          whileTap={{ scale: 0.95 }}
-          onHoverStart={() => setIsLogoHovered(true)}
-          onHoverEnd={() => setIsLogoHovered(false)}
+      <div className="flex items-center gap-4">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="md:hidden"
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
         >
-          <motion.div
-            className="absolute inset-0 rounded-full bg-gradient-to-tr from-primary/30 to-secondary/30 z-0 blur-md"
-            initial={{ scale: 0, opacity: 0 }}
-            animate={{
-              scale: isLogoHovered ? 1.5 : 0,
-              opacity: isLogoHovered ? 1 : 0,
-            }}
-            transition={{ duration: 0.3 }}
-          />
-          <motion.div
-            animate={{
-              rotate: isLogoHovered ? [0, 10, -10, 0] : 0,
-              scale: isLogoHovered ? [1, 1.1, 1.05, 1] : 1,
-            }}
-            transition={{
-              duration: 0.5,
-              ease: "easeInOut",
-              times: [0, 0.2, 0.8, 1],
-            }}
-          >
-            <Image
-              src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/no_bg_logo-M7cBq60PCuZ1sN7MH6T2WMZRrdyQMZ.png"
-              alt="RSW Logo"
-              width={48}
-              height={48}
-              className="object-contain relative z-10 drop-shadow-md transition-all duration-300"
-            />
-          </motion.div>
-        </motion.div>
-        <div className="flex flex-col">
-          <motion.span 
-            className="text-transparent bg-clip-text bg-gradient-to-r from-primary via-secondary to-accent font-bold text-xl md:text-2xl"
-            whileHover={{ scale: 1.03 }}
-            transition={{ type: "spring", stiffness: 400, damping: 10 }}
-          >
-            Cognitive Data Expert
-          </motion.span>
-          <motion.div 
-            initial={{ width: 0, opacity: 0 }}
-            animate={{ 
-              width: isLogoHovered ? "100%" : "0%", 
-              opacity: isLogoHovered ? 1 : 0 
-            }}
-            transition={{ duration: 0.3 }}
-            className="h-0.5 bg-gradient-to-r from-primary to-secondary rounded-full" 
+          <ChevronLeft className="h-5 w-5 text-muted-foreground" />
+        </Button>
+        
+        <h1 className="text-lg font-semibold">{pageName}</h1>
+      </div>
+      
+      <div className="hidden md:flex items-center gap-4 max-w-md w-full">
+        <div className="relative w-full max-w-sm">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input 
+            type="search" 
+            placeholder="Search data, people..." 
+            className="pl-10 bg-muted/50 border-none h-9" 
           />
         </div>
-      </Link>
-
-      <div className="hidden md:flex items-center space-x-8">
-        {/* Main nav links were removed as requested */}
       </div>
 
-      <div className="flex items-center space-x-4">
-        {/* Theme Toggle Button */}
+      <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-muted-foreground hover:text-foreground h-9 w-9"
+        >
+          <Bell className="h-5 w-5" />
+        </Button>
+
         <Button
           variant="ghost"
           size="icon"
           onClick={toggleTheme}
-          className="text-foreground hover:text-primary transition-all duration-300 hover:bg-muted/50 rounded-full relative overflow-hidden w-10 h-10"
+          className="text-muted-foreground hover:text-foreground h-9 w-9"
           aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-          onMouseEnter={() => setActiveButton("theme")}
-          onMouseLeave={() => setActiveButton(null)}
         >
-          <div className="relative w-full h-full flex items-center justify-center">
-            {/* Sun Icon (Light Mode) */}
-            <motion.div
-              initial={{ y: theme === "dark" ? 0 : 40, opacity: theme === "dark" ? 1 : 0, rotate: -45 }}
-              animate={{ 
-                y: theme === "dark" ? 0 : 40, 
-                opacity: theme === "dark" ? 1 : 0,
-                rotate: theme === "dark" ? (activeButton === "theme" ? 0 : -30) : -90,
-                scale: theme === "dark" && activeButton === "theme" ? 1.2 : 1
-              }}
-              transition={{ 
-                duration: 0.5, 
-                type: "spring", 
-                stiffness: 200, 
-                damping: 10 
-              }}
-              className="absolute"
-            >
-              <Sun className="h-5 w-5" />
-            </motion.div>
-            
-            {/* Moon Icon (Dark Mode) */}
-            <motion.div
-              initial={{ y: theme === "dark" ? 40 : 0, opacity: theme === "dark" ? 0 : 1, rotate: 45 }}
-              animate={{ 
-                y: theme === "dark" ? 40 : 0, 
-                opacity: theme === "dark" ? 0 : 1,
-                rotate: theme === "dark" ? 90 : (activeButton === "theme" ? 0 : 30),
-                scale: theme !== "dark" && activeButton === "theme" ? 1.2 : 1
-              }}
-              transition={{ 
-                duration: 0.5, 
-                type: "spring", 
-                stiffness: 200, 
-                damping: 10 
-              }}
-              className="absolute"
-            >
-              <Moon className="h-5 w-5" />
-            </motion.div>
-          </div>
-          
-          {/* Background effects */}
-          <motion.div 
-            className="absolute inset-0 rounded-full"
-            style={{
-              background: theme === "dark" 
-                ? "radial-gradient(circle at center, rgba(255, 193, 7, 0.2) 0%, transparent 70%)" 
-                : "radial-gradient(circle at center, rgba(76, 136, 252, 0.2) 0%, transparent 70%)"
-            }}
-            initial={{ scale: 0 }}
-            animate={{ 
-              scale: activeButton === "theme" ? 1 : 0 
-            }}
-            transition={{ duration: 0.3 }}
-          />
-          
-          {/* Ripple effect on click */}
-          <motion.div
-            className="absolute inset-0 z-0"
-            initial={{ scale: 0, opacity: 0 }}
-            animate={{ 
-              scale: [0, 1.5, 1.5], 
-              opacity: [0, 0.5, 0] 
-            }}
-            transition={{ 
-              duration: 0.8, 
-              times: [0, 0.4, 0.8], 
-              ease: "easeInOut",
-              repeatDelay: 10,
-              repeatType: "loop",
-              repeat: 0, 
-              delay: 0
-            }}
-            key={theme} // Force animation to restart when theme changes
-            style={{
-              background: theme === "dark" 
-                ? "radial-gradient(circle at center, rgba(255, 193, 7, 0.3), transparent)" 
-                : "radial-gradient(circle at center, rgba(76, 136, 252, 0.3), transparent)" 
-            }}
-          />
+          {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
         </Button>
 
-        {user ? (
-          <>
-            <div className="text-foreground flex items-center space-x-2">
-              {user.username === "admin" && user.role === "admin" ? (
-                <motion.span 
-                  className="text-xs font-medium bg-gradient-to-r from-primary to-secondary px-3 py-1 rounded-full text-white shadow-sm"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  animate={{ 
-                    boxShadow: ['0 2px 4px rgba(0,0,0,0.1)', '0 4px 8px rgba(var(--color-primary-rgb), 0.3)', '0 2px 4px rgba(0,0,0,0.1)'],
-                  }}
-                  transition={{ 
-                    boxShadow: { repeat: Infinity, duration: 2, ease: "easeInOut" } 
-                  }}
-                >
-                  admin
-                </motion.span>
-              ) : (
-                <>
-                  <motion.span 
-                    className="font-medium"
-                    whileHover={{ scale: 1.05 }}
-                    transition={{ type: "spring", stiffness: 400, damping: 20 }}
-                  >
-                    {user.username}
-                  </motion.span>
-                  <motion.span 
-                    className="text-xs font-medium bg-gradient-to-r from-primary/80 to-secondary/80 px-3 py-1 rounded-full text-white shadow-sm"
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    initial={{ y: 0 }}
-                    animate={{ y: [0, -2, 0] }}
-                    transition={{ y: { repeat: Infinity, duration: 2, ease: "easeInOut" } }}
-                  >
-                    {user.role}
-                  </motion.span>
-                </>
-              )}
-            </div>
-            <Button 
-              variant="ghost" 
-              className="relative text-foreground hover:text-destructive transition-colors duration-300 hover:bg-destructive/10 rounded-lg overflow-hidden flex items-center justify-center min-w-10 group" 
-              onClick={logout}
-              onMouseEnter={() => setActiveButton("logout")}
-              onMouseLeave={() => setActiveButton(null)}
-            >
-              <div className="flex items-center justify-center">
-                <LogOut className="w-5 h-5" />
-                <motion.span
-                  className="ml-2 overflow-hidden whitespace-nowrap"
-                  initial={{ width: 0, opacity: 0 }}
-                  animate={{ 
-                    width: activeButton === "logout" ? "auto" : 0,
-                    opacity: activeButton === "logout" ? 1 : 0,
-                    marginLeft: activeButton === "logout" ? "0.5rem" : "0rem"
-                  }}
-                  transition={{ duration: 0.2 }}
-                >
-                  Logout
-                </motion.span>
-              </div>
-              <motion.div 
-                className="absolute inset-0 bg-destructive/5 rounded-lg"
-                initial={{ scale: 0 }}
-                animate={{ 
-                  scale: activeButton === "logout" ? 1 : 0 
-                }}
-                transition={{ duration: 0.2 }}
-              />
-            </Button>
-            {user.role === "admin" && (
-              <motion.div 
-                whileHover={{ scale: 1.05 }} 
-                whileTap={{ scale: 0.95 }}
-                animate={{ 
-                  boxShadow: ['0 4px 12px rgba(var(--color-primary-rgb), 0.1)', '0 8px 20px rgba(var(--color-primary-rgb), 0.3)', '0 4px 12px rgba(var(--color-primary-rgb), 0.1)'],
-                }}
-                transition={{ 
-                  boxShadow: { repeat: Infinity, duration: 2, ease: "easeInOut" } 
-                }}
-              >
-                <Link
-                  href="/admin"
-                  className="flex items-center justify-center w-10 h-10 rounded-md bg-gradient-to-r from-primary to-secondary text-white transition-all duration-300 hover:shadow-lg hover:shadow-primary/20"
-                >
-                  <Settings className="w-5 h-5" />
-                </Link>
-              </motion.div>
-            )}
-          </>
-        ) : (
-          <>
-            <motion.div 
-              whileHover={{ scale: 1.05 }} 
-              whileTap={{ scale: 0.95 }}
-              animate={{ 
-                boxShadow: ['0 4px 12px rgba(var(--color-primary-rgb), 0.1)', '0 8px 20px rgba(var(--color-primary-rgb), 0.3)', '0 4px 12px rgba(var(--color-primary-rgb), 0.1)'],
-              }}
-              transition={{ 
-                boxShadow: { repeat: Infinity, duration: 2, ease: "easeInOut" } 
-              }}
-            >
-              <Link
-                href="/login"
-                className="inline-flex items-center px-4 py-2 rounded-md bg-gradient-to-r from-primary to-secondary text-white font-medium border border-primary/30 shadow-[0_0_15px_rgba(26,35,126,0.3)] transition-all duration-300 group"
-              >
-                <motion.div
-                  className="flex items-center"
-                  initial={{ x: 0 }}
-                  whileHover={{ x: 3 }}
-                  transition={{ type: "spring", stiffness: 400, damping: 10 }}
-                >
-                  <User className="w-4 h-4 mr-2 transition-transform duration-300 group-hover:scale-110" />
-                  Sign In
-                </motion.div>
-              </Link>
-            </motion.div>
-          </>
-        )}
+        {/* User profile icon removed as requested */}
       </div>
 
-      <div className="md:hidden">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="text-foreground hover:bg-muted/50 transition-colors duration-300 rounded-full relative overflow-hidden"
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          onMouseEnter={() => setActiveButton("menu")}
-          onMouseLeave={() => setActiveButton(null)}
-        >
-          <motion.div
-            animate={{ 
-              rotate: activeButton === "menu" ? 90 : 0,
-              scale: activeButton === "menu" ? 1.1 : 1 
-            }}
-            transition={{ duration: 0.3 }}
-          >
-            <Menu className="w-6 h-6" />
-          </motion.div>
-          <motion.div 
-            className="absolute inset-0 bg-primary/10 rounded-full"
-            initial={{ scale: 0 }}
-            animate={{ 
-              scale: activeButton === "menu" ? 1 : 0 
-            }}
-            transition={{ duration: 0.2 }}
-          />
-        </Button>
-      </div>
+      {/* Mobile menu button already handled above */}
 
-      {/* Mobile menu */}
+      {/* Mobile menu - outside the main nav for proper z-index layering */}
       {mobileMenuOpen && (
         <motion.div 
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -10 }}
-          transition={{ duration: 0.3, ease: "easeOut" }}
-          className="md:hidden absolute top-full left-0 right-0 bg-background/95 backdrop-blur-md border-b border-black/10 dark:border-white/10 z-50 shadow-lg"
+          className="fixed inset-0 z-50 md:hidden"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
         >
-          <div className="flex flex-col p-4 space-y-4">
-            <motion.div 
-              className="space-y-2"
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-            >
-              {/* Mobile nav links were removed as requested */}
-            </motion.div>
+          {/* Backdrop */}
+          <motion.div 
+            className="fixed inset-0 bg-background/80 backdrop-blur-sm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setMobileMenuOpen(false)}
+          />
+          
+          {/* Side drawer */}
+          <motion.div 
+            className="fixed inset-y-0 left-0 w-64 bg-card/95 p-4 shadow-lg flex flex-col justify-between"
+            initial={{ x: "-100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "-100%" }}
+            transition={{ ease: "easeOut", duration: 0.3 }}
+          >
+            <div className="flex items-center justify-between mb-4 border-b border-border pb-4">
+              <div className="flex items-center gap-2">
+                <div className="rounded-full bg-primary h-8 w-8 flex items-center justify-center text-primary-foreground font-semibold">
+                  {user?.username?.[0] || 'U'}
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-sm font-medium">{user?.username || 'User'}</span>
+                  <span className="text-xs text-muted-foreground">{user?.role || 'user'}</span>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setMobileMenuOpen(false)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </Button>
+            </div>
             
-            <motion.div 
-              className="pt-2 border-t border-black/10 dark:border-white/10"
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-            >
+            <div className="flex-1 overflow-y-auto">
+              <div className="space-y-1 pb-4">
+                <NavLink href="/">Sales Overview</NavLink>
+                <NavLink href="/inventory">Inventory Overview</NavLink>
+                <NavLink href="/financial">Financial Overview</NavLink>
+              </div>
+              
+              {/* DataPuur Section */}
+              <div className="border-t border-border pt-4 pb-4">
+                <h3 className="text-sm font-medium mb-2 px-3">DataPuur Dashboard</h3>
+                <div className="space-y-1">
+                  <NavLink href="/datapuur">DataPuur Dashboard</NavLink>
+                  <NavLink href="/datapuur/ingestion">DataPuur Ingestion</NavLink>
+                  <NavLink href="/datapuur/profile">DataPuur Profiles</NavLink>
+                  <NavLink href="/datapuur/transformation">DataPuur Transformation</NavLink>
+                  <NavLink href="/datapuur/export">DataPuur Export</NavLink>
+                </div>
+              </div>
+              
+              {/* KGInsights Section */}
+              <div className="border-t border-border pt-4 pb-4">
+                <h3 className="text-sm font-medium mb-2 px-3">K-Graff</h3>
+                <div className="space-y-1">
+                  <NavLink href="/kginsights/dashboard">KGraph Dashboard</NavLink>
+                  <NavLink href="/kginsights/insights">KGraph Insights</NavLink>
+                  <NavLink href="/kginsights/generate">Generate Graph</NavLink>
+                  <NavLink href="/kginsights/manage">Manage KGraph</NavLink>
+                </div>
+              </div>
+              
+              <div className="border-t border-border pt-4 pb-4">
+                <div className="space-y-1">
+                  <NavLink href="/dashboards">My Dashboards</NavLink>
+                  <NavLink href="/dashboard-creator">Dashboard Creator</NavLink>
+                  <NavLink href="/activity">Recent Activity</NavLink>
+                </div>
+              </div>
+              
+              <div className="border-t border-border pt-4 pb-4">
+                <div className="space-y-1">
+                  <NavLink href="/admin">Settings</NavLink>
+                  <NavLink href="/help">Help</NavLink>
+                </div>
+              </div>
+            </div>
+            
+            <div className="border-t border-border pt-4">
               {user ? (
-                <>
-                  <div className="text-foreground mb-2 flex items-center">
-                    {user.username === "admin" && user.role === "admin" ? (
-                      <motion.span 
-                        className="text-xs font-medium bg-gradient-to-r from-primary to-secondary px-3 py-1 rounded-full text-white shadow-sm"
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                      >
-                        admin
-                      </motion.span>
-                    ) : (
-                      <>
-                        <motion.span
-                          whileHover={{ scale: 1.05 }}
-                          className="font-medium"
-                        >
-                          {user.username}
-                        </motion.span>
-                        <motion.span 
-                          className="ml-2 text-xs font-medium bg-gradient-to-r from-primary/80 to-secondary/80 px-3 py-1 rounded-full text-white shadow-sm"
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                        >
-                          {user.role}
-                        </motion.span>
-                      </>
-                    )}
-                  </div>
-                  <div className="flex space-x-2">
-                    <Button
-                      variant="ghost"
-                      className="text-foreground hover:text-destructive flex items-center justify-start hover:bg-destructive/10 rounded-lg transition-colors duration-300 overflow-hidden"
-                      onClick={() => {
-                        logout()
-                        setMobileMenuOpen(false)
-                      }}
-                    >
-                      <div className="flex items-center">
-                        <LogOut className="w-5 h-5" />
-                        <motion.span
-                          className="ml-2 overflow-hidden whitespace-nowrap"
-                          initial={{ width: 0, opacity: 0 }}
-                          animate={{ 
-                            width: "auto",
-                            opacity: 1,
-                            marginLeft: "0.5rem"
-                          }}
-                          transition={{ duration: 0.3 }}
-                        >
-                          Logout
-                        </motion.span>
-                      </div>
-                    </Button>
-                    {user.role === "admin" && (
-                      <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                        <Link
-                          href="/admin"
-                          className="flex items-center justify-center w-10 h-10 rounded-md bg-gradient-to-r from-primary to-secondary text-white shadow-md"
-                          onClick={() => setMobileMenuOpen(false)}
-                        >
-                          <Settings className="w-5 h-5" />
-                        </Link>
-                      </motion.div>
-                    )}
-                  </div>
-                </>
+                <Button 
+                  variant="outline" 
+                  onClick={logout}
+                  className="w-full justify-center"
+                  size="sm"
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Logout
+                </Button>
               ) : (
-                <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                  <Link
-                    href="/login"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="inline-flex items-center px-4 py-2 rounded-md bg-gradient-to-r from-primary to-secondary text-white font-medium border border-primary/30 shadow-md w-full justify-center"
-                  >
-                    <User className="w-4 h-4 mr-2" />
-                    Sign In
+                <div className="flex gap-2">
+                  <Link href="/login" onClick={() => setMobileMenuOpen(false)} className="flex-1">
+                    <Button variant="outline" className="w-full">Log in</Button>
                   </Link>
-                </motion.div>
+                  <Link href="/register" onClick={() => setMobileMenuOpen(false)} className="flex-1">
+                    <Button className="w-full">Sign up</Button>
+                  </Link>
+                </div>
               )}
-            </motion.div>
-          </div>
+            </div>
+          </motion.div>
         </motion.div>
       )}
-    </motion.nav>
+    </div>
   )
 }
 

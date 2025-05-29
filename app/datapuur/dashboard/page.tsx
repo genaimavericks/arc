@@ -2,7 +2,7 @@
 
 import Navbar from "@/components/navbar"
 import { SparklesCore } from "@/components/sparkles"
-import DataPuurSidebar from "@/components/datapuur-sidebar"
+
 import { motion } from "framer-motion"
 import { BarChart, LineChart, PieChart, Activity, Table } from "lucide-react"
 import { useEffect, useState } from "react"
@@ -69,7 +69,7 @@ export default function DataDashboardPage() {
           <Navbar />
 
           <div className="flex">
-            <DataPuurSidebar />
+
 
             <div className="flex-1 p-8 flex items-center justify-center">
               <LoadingSpinner />
@@ -104,7 +104,7 @@ export default function DataDashboardPage() {
           <Navbar />
 
           <div className="flex">
-            <DataPuurSidebar />
+
 
             <div className="flex-1 p-8">
               <div className="max-w-4xl mx-auto text-center">
@@ -147,23 +147,24 @@ export default function DataDashboardPage() {
         <Navbar />
 
         <div className="flex">
-          <DataPuurSidebar />
 
-          <div className="flex-1 p-8">
-            {showErrorBanner && (
-              <div className="bg-yellow-500/20 border border-yellow-500 text-yellow-700 dark:text-yellow-200 px-4 py-2 rounded-md mb-4">
-                <p>{error} - Using demo data instead.</p>
-              </div>
-            )}
 
-            <div className="max-w-5xl mx-auto">
+          <div className="flex-1 p-6 bg-gradient-to-b from-background to-background/95 w-full">
+            <div className="container mx-auto max-w-6xl px-4">
+              {showErrorBanner && (
+                <div className="bg-yellow-500/20 border border-yellow-500 text-yellow-700 dark:text-yellow-200 px-4 py-2 rounded-md mb-4 relative z-10">
+                  <p>{error} - Using demo data instead.</p>
+                </div>
+              )}
+
+              <div className="w-full relative z-10">
               <motion.h1
                 initial={{ opacity: 0, y: -20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5 }}
                 className="text-4xl font-bold text-foreground mb-6"
               >
-                Data Dashboard
+                Dashboard
               </motion.h1>
 
               <motion.p
@@ -404,6 +405,7 @@ export default function DataDashboardPage() {
                   </motion.div>
                 </div>
               </motion.div>
+              </div>
             </div>
           </div>
         </div>

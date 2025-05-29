@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional, Union
 from fastapi.responses import FileResponse
 import random
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 import json
 import csv
 import os
@@ -32,6 +32,17 @@ from .models import get_db, SessionLocal
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Helper function for consistent timestamp creation
+def create_timezone_aware_timestamp():
+    """
+    Creates a timezone-aware timestamp in ISO format with UTC timezone.
+    Used for consistent timestamp handling across all ingestion types.
+    
+    Returns:
+        str: ISO formatted timestamp with timezone information
+    """
+    return datetime.now(timezone.utc).isoformat()
 
 # Create a structured error response
 def create_error_response(error_code, message, details=None, suggestion=None):
@@ -155,7 +166,8 @@ def save_uploaded_file(db, file_id, file_data):
             uploaded_by=file_data['uploaded_by'],
             uploaded_at=datetime.now(timezone.utc),
             chunk_size=file_data.get('chunk_size', 1000),
-            schema=schema_json
+            schema=schema_json,
+            dataset=file_data.get('dataset')  # Include the dataset field
         )
         db.add(new_file)
     
@@ -181,9 +193,17 @@ def save_ingestion_job(db, job_id, job_data):
             if key == 'config' and value:
                 setattr(existing_job, key, json.dumps(value))
             elif key == 'start_time' and value:
-                setattr(existing_job, key, datetime.fromisoformat(value))
+                # Ensure timestamp has timezone information
+                dt = datetime.fromisoformat(value)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                setattr(existing_job, key, dt)
             elif key == 'end_time' and value:
-                setattr(existing_job, key, datetime.fromisoformat(value))
+                # Ensure timestamp has timezone information
+                dt = datetime.fromisoformat(value)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                setattr(existing_job, key, dt)
             else:
                 setattr(existing_job, key, value)
     else:
@@ -195,8 +215,8 @@ def save_ingestion_job(db, job_id, job_data):
             type=job_data['type'],
             status=job_data['status'],
             progress=job_data.get('progress', 0),
-            start_time=datetime.fromisoformat(job_data['start_time']),
-            end_time=datetime.fromisoformat(job_data['end_time']) if job_data.get('end_time') else None,
+            start_time=datetime.fromisoformat(job_data['start_time']).replace(tzinfo=timezone.utc) if datetime.fromisoformat(job_data['start_time']).tzinfo is None else datetime.fromisoformat(job_data['start_time']),
+            end_time=datetime.fromisoformat(job_data['end_time']).replace(tzinfo=timezone.utc) if job_data.get('end_time') and datetime.fromisoformat(job_data['end_time']).tzinfo is None else (datetime.fromisoformat(job_data['end_time']) if job_data.get('end_time') else None),
             details=job_data.get('details'),
             error=job_data.get('error'),
             config=config_json
@@ -1446,6 +1466,53 @@ def process_db_ingestion_with_db(job_id, db_type, db_config, chunk_size, db):
         temp_dir = DATA_DIR / f"temp_{job_id}"
         temp_dir.mkdir(exist_ok=True)
         
+        # Create an entry in the uploaded_files table for consistency with file-based ingestion
+        try:
+            # Extract username from job config if available
+            username = "Unknown"
+            if job.config:
+                try:
+                    config_data = json.loads(job.config)
+                    if "username" in config_data:
+                        username = config_data["username"]
+                except json.JSONDecodeError:
+                    pass
+                    
+            # Create a record in the uploaded_files table
+            file_id = str(uuid.uuid4())
+            
+            # Format the connection details for the filename field (host:port:database)
+            host = db_config.get('host', 'localhost')
+            port = db_config.get('port', '')
+            database_name = db_config.get('database', 'unknown')
+            connection_string_display = f"{host}:{port}:{database_name}"
+            
+            db_file_record = UploadedFile(
+                id=file_id,
+                filename=connection_string_display,  # Store connection details in filename field
+                path=str(output_file),  # Path to the output parquet file
+                type="database",
+                uploaded_by=username,
+                uploaded_at=datetime.now(timezone.utc),
+                chunk_size=chunk_size,
+                dataset=db_config['table']  # Store table name in dataset field
+            )
+            db_session.add(db_file_record)
+            db_session.commit()
+            
+            # Update job config to include the file_id reference
+            if job.config:
+                try:
+                    config_data = json.loads(job.config)
+                    config_data["file_id"] = file_id
+                    job.config = json.dumps(config_data)
+                    db_session.commit()
+                except json.JSONDecodeError:
+                    logger.warning(f"Could not update job config with file_id for job {job_id}")
+        except Exception as e:
+            logger.warning(f"Error creating uploaded_files entry for database ingestion: {str(e)}")
+            # Continue with processing even if this fails - it's not critical
+        
         start_time = time.time()
         
         # Connect to database
@@ -1733,13 +1800,17 @@ async def upload_file(
         file.file.close()
     
     # Store file info in database
+    # Extract filename without extension for dataset field
+    filename_without_ext = os.path.splitext(file.filename)[0]
+    
     file_data = {
         "filename": file.filename,
         "path": str(file_path),
         "type": file_ext,
         "uploaded_by": current_user.username,
-        "uploaded_at": datetime.now(),
-        "chunk_size": chunkSize
+        "uploaded_at": datetime.now(timezone.utc),
+        "chunk_size": chunkSize,
+        "dataset": filename_without_ext  # Store filename without extension as dataset name
     }
     save_uploaded_file(db, file_id, file_data)
     
@@ -2029,7 +2100,8 @@ async def ingest_database(
             "config": {
                 "type": db_type,
                 "database": db_config["database"],
-                "table": db_config["table"]
+                "table": db_config["table"],
+                "username": current_user.username  # Store the user who initiated the ingestion
             }
         }
         save_ingestion_job(db, job_id, job_data)
@@ -2240,14 +2312,32 @@ async def get_ingestion_history(
                     "table": config.get("table", "unknown")
                 }
             
+            # Determine file size based on job type
+            file_size = 0
+            if job.type == "file" and file_info and os.path.exists(file_info.path):
+                # For file ingestion, use the original file size
+                file_size = os.path.getsize(file_info.path)
+            elif job.type == "database" and job.status == "completed":
+                # For database ingestion, look for the generated parquet file
+                try:
+                    # Construct the path to the expected parquet file
+                    data_folder = os.path.join(os.getcwd(), "data")
+                    parquet_file = os.path.join(data_folder, f"{job.id}.parquet")
+                    
+                    # Check if the file exists and get its size
+                    if os.path.exists(parquet_file):
+                        file_size = os.path.getsize(parquet_file)
+                except Exception as e:
+                    logger.error(f"Error getting parquet file size for job {job.id}: {str(e)}")
+            
             # Create history item
             history_item = {
                 "id": job.id,
                 "filename": job.name,
                 "type": "database" if job.type == "database" else file_info.type if file_info else "unknown",
-                "size": os.path.getsize(file_info.path) if file_info and os.path.exists(file_info.path) else 0,
+                "size": file_size,
                 "uploaded_at": job.start_time.astimezone(timezone.utc).isoformat() if isinstance(job.start_time, datetime) else job.start_time,
-                "uploaded_by": current_user.username,
+                "uploaded_by": config.get("username", current_user.username) if job.type == "database" and config else (file_info.uploaded_by if file_info else current_user.username),
                 "preview_url": f"/api/datapuur/ingestion-preview/{job.id}",
                 "download_url": f"/api/datapuur/ingestion-download/{job.id}",
                 "status": job.status if job.status != "queued" else "processing",
@@ -2845,10 +2935,11 @@ async def get_data_sources(
         if job.type == "profile":
             continue
             
-        # Get uploaded_by information from the UploadedFile table if it's a file type
+        # Get uploaded_by information based on job type
         uploaded_by = "Unknown"
+        
         if job.type == "file":
-            # Try to find the file record that matches this job
+            # For file-based ingestion: Try to find the file record that matches this job
             file_info = None
             if job.config:
                 try:
@@ -2860,15 +2951,87 @@ async def get_data_sources(
                     
             if file_info and file_info.uploaded_by:
                 uploaded_by = file_info.uploaded_by
+        else:
+            # For database-based ingestion: Check activity log for who initiated this job
+            activity = db.query(ActivityLog).filter(
+                ActivityLog.action.like("Database ingestion started%"),
+                ActivityLog.details.like(f"%{job.id}%")
+            ).first()
+            
+            if activity and activity.username:
+                uploaded_by = activity.username
+            elif job.config:
+                # Alternative: Check if username is stored in job config
+                try:
+                    config_data = json.loads(job.config)
+                    if "username" in config_data:
+                        uploaded_by = config_data["username"]
+                except json.JSONDecodeError:
+                    pass
                 
+        # Determine the last_updated timestamp based on job type
+        # Ensure all timestamps are in the same format with timezone information
+        file_info = None
+        
+        # Try to get file_info regardless of job type
+        if job.config:
+            try:
+                config_data = json.loads(job.config)
+                if "file_id" in config_data:
+                    file_info = db.query(UploadedFile).filter(UploadedFile.id == config_data["file_id"]).first()
+            except json.JSONDecodeError:
+                pass
+            
+        # Determine the last_updated timestamp
+        if file_info and file_info.uploaded_at:
+            last_updated = file_info.uploaded_at.isoformat()
+            dataset_value = file_info.dataset if hasattr(file_info, 'dataset') else None
+        else:
+            # Fall back to job timestamps if no file record is available
+            if isinstance(job.end_time, datetime):
+                dt = job.end_time
+            elif job.end_time:
+                # Try to parse the string as datetime if it's a string
+                try:
+                    dt = datetime.fromisoformat(job.end_time)
+                except (ValueError, TypeError):
+                    dt = job.start_time if isinstance(job.start_time, datetime) else datetime.now()
+            else:
+                dt = job.start_time if isinstance(job.start_time, datetime) else datetime.now()
+                
+            # Add timezone if missing
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+                
+            last_updated = dt.isoformat()
+            dataset_value = None
+            
+        # Create a name_for_display field that gets the dataset name from job name if dataset is None
+        name_for_display = job.name
+        
+        # Extract dataset name from job configuration if available
+        if job.type == "database" and job.config:
+            try:
+                config_data = json.loads(job.config)
+                if "table" in config_data:
+                    dataset_value = config_data["table"]
+                    # Use table name as display name
+                    name_for_display = dataset_value
+            except json.JSONDecodeError:
+                pass
+        elif job.type == "file" and not dataset_value and job.name:
+            # For file types without dataset, extract filename without extension
+            dataset_value = os.path.splitext(job.name)[0]
+            
         sources.append(
             DataSource(
                 id=job.id,
-                name=job.name,
+                name=name_for_display,
                 type="File" if job.type == "file" else "Database",
-                last_updated=job.end_time.strftime("%Y-%m-%d %H:%M:%S") if isinstance(job.end_time, datetime) else job.end_time,
+                last_updated=last_updated,
                 status="Active",
-                uploaded_by=uploaded_by
+                uploaded_by=uploaded_by,
+                dataset=dataset_value
             )
         )
     
@@ -2918,6 +3081,7 @@ async def get_source_details(
             source_details["file"] = {
                 "id": file_info.id,
                 "filename": file_info.filename,
+                "dataset": file_info.dataset,
                 "path": file_info.path,
                 "type": file_info.type,
                 "uploaded_by": file_info.uploaded_by,
@@ -2926,13 +3090,32 @@ async def get_source_details(
                 "schema": file_info.schema
             }
     
-    # For database sources, add database details
+    # For database sources, add database details and file info if available
     elif job.type == "database" and config:
         source_details["database"] = {
             "type": config.get("type", "unknown"),
             "name": config.get("database", "unknown"),
             "table": config.get("table", "unknown")
         }
+        
+        # Add file details for database sources if available (from our new fix)
+        if "file_id" in config:
+            file_id = config["file_id"]
+            file_info = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
+            
+            if file_info:
+                # Add file details for database sources too for consistency
+                source_details["file"] = {
+                    "id": file_info.id,
+                    "filename": file_info.filename,
+                    "dataset": file_info.dataset,
+                    "path": file_info.path,
+                    "type": file_info.type,
+                    "uploaded_by": file_info.uploaded_by,
+                    "uploaded_at": file_info.uploaded_at.astimezone(timezone.utc).isoformat() if isinstance(file_info.uploaded_at, datetime) else file_info.uploaded_at,
+                    "chunk_size": file_info.chunk_size,
+                    "schema": file_info.schema
+                }
     
     # Log this access for security monitoring
     log_activity(db, current_user.username, "Data access", f"Accessed detailed source information for {job.name} (ID: {source_id})")

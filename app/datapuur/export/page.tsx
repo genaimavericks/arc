@@ -1,9 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import Navbar from "@/components/navbar"
-import { SparklesCore } from "@/components/sparkles"
-import DataPuurSidebar from "@/components/datapuur-sidebar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -30,11 +27,13 @@ import { formatDistanceToNow, format } from "date-fns"
 import { getApiBaseUrl } from "@/lib/config"
 import { useAdminLogout } from "@/components/admin-logout-fix"
 import { toast } from "@/hooks/use-toast"
+import { DataPuurLayout } from "@/components/datapuur/datapuur-layout"
 
 // Define dataset interface
 interface Dataset {
   id: string
-  name: string
+  name: string    // Original filename with extension or connection string for DB
+  dataset?: string // Filename without extension for files, or table name for DB
   type: string
   size: number
   uploaded_at: string
@@ -1002,76 +1001,35 @@ export default function ExportPage() {
   }
 
   return (
-    <main className="min-h-screen bg-background antialiased relative overflow-hidden">
-      {/* Ambient background with moving particles */}
-      <div className="h-full w-full absolute inset-0 z-0">
-        <SparklesCore
-          id="tsparticlesfullpage"
-          background="transparent"
-          minSize={0.6}
-          maxSize={1.4}
-          particleDensity={100}
-          className="w-full h-full"
-          particleColor="var(--foreground)"
-        />
-      </div>
-
-      <div className="relative z-10">
-        <Navbar />
-
-        <div className="flex">
-          <DataPuurSidebar />
-
-          <div className="flex-1 p-8">
-            <div className="max-w-5xl mx-auto">
-              <motion.h1
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5 }}
-                className="text-4xl font-bold text-foreground mb-6"
-              >
-                Data Export
-              </motion.h1>
-
-              <motion.p
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.1 }}
-                className="text-muted-foreground text-xl mb-8"
-              >
-                Export your processed data in CSV format.
-              </motion.p>
-
-              {/* Search and filters */}
-              <div className="flex justify-between items-center mb-6">
-                <div className="relative w-1/3">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                  <Input
-                    placeholder="Search datasets..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-
-                <Button
-                  variant="outline"
-                  onClick={fetchDatasets}
-                  className="h-10 rounded-md border border-input bg-background"
-                  style={{ minWidth: '80px' }}
-                  title="Refresh"
-                  disabled={isLoading}
-                >
-                  {isLoading ? (
-                    <div className="flex items-center gap-1">
-                      <RefreshCw className="h-3 w-3 animate-spin" />
-                      <span>Refresh</span>
-                    </div>
-                  ) : (
-                    "Refresh"
-                  )}
-                </Button>
-              </div>
+    <DataPuurLayout>
+      <div className="flex-1 space-y-2 p-4 md:p-8 pt-6">
+        <div className="flex w-full items-center justify-between pb-2">
+          <h2 className="text-2xl font-bold tracking-tight">Export</h2>
+          <div className="flex items-center space-x-2">
+            <div className="flex items-center">
+              <Search className="h-4 w-4 text-muted-foreground absolute ml-2" />
+              <Input 
+                type="search" 
+                placeholder="Search datasets..." 
+                className="max-w-sm pl-8" 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+            <Button 
+              variant="outline" 
+              size="icon"
+              onClick={() => {
+                setPage(1)
+                fetchDatasets()
+              }}
+              title="Refresh datasets"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+            <div className="space-y-2">
 
               {error && (
                 <div className="bg-destructive/10 border border-destructive text-destructive p-3 rounded-md mb-6">
@@ -1152,7 +1110,7 @@ export default function ExportPage() {
                         <div className="col-span-6 flex items-center gap-2">
                           <FileText className="h-5 w-5 text-primary flex-shrink-0" />
                           <div>
-                            <div className="font-medium text-foreground truncate">{dataset.name}</div>
+                            <div className="font-medium text-foreground truncate">{dataset.dataset || dataset.name}</div>
                             <div className="text-xs text-muted-foreground flex items-center gap-1">
                               <Badge className="text-xs">{dataset.type.toUpperCase()}</Badge>
                               <span>•</span>
@@ -1169,8 +1127,49 @@ export default function ExportPage() {
                         <div className="col-span-2 flex items-center text-muted-foreground">
                           <Calendar className="h-3 w-3 mr-1 flex-shrink-0" />
                           <div>
-                            <div>{formatDistanceToNow(new Date(dataset.uploaded_at), { addSuffix: true })}</div>
-                            <div className="text-xs">{format(new Date(dataset.uploaded_at), "MMM d, yyyy")}</div>
+                            <div>
+                              {(() => {
+                                try {
+                                  // Parse the UTC date from the ISO string
+                                  const utcDate = new Date(dataset.uploaded_at);
+                                  
+                                  // Get the client's timezone offset in minutes
+                                  const timezoneOffset = new Date().getTimezoneOffset();
+                                  
+                                  // Convert from UTC to client's local time by adjusting for timezone offset
+                                  // Note: getTimezoneOffset() returns minutes WEST of UTC, so we negate it
+                                  const localDate = new Date(utcDate.getTime() - (timezoneOffset * 60 * 1000));
+                                  
+                                  // For relative time display
+                                  return formatDistanceToNow(localDate, { addSuffix: true });
+                                } catch (error) {
+                                  console.error("Error formatting relative time:", error, dataset.uploaded_at);
+                                  return "Unknown";
+                                }
+                              })()}
+                            </div>
+                            <div className="text-xs">
+                              {(() => {
+                                try {
+                                  // Parse the UTC date from the ISO string
+                                  const utcDate = new Date(dataset.uploaded_at);
+                                  
+                                  // Get the client's timezone offset in minutes
+                                  const timezoneOffset = new Date().getTimezoneOffset();
+                                  
+                                  // Convert from UTC to client's local time by adjusting for timezone offset
+                                  // Note: getTimezoneOffset() returns minutes WEST of UTC, so we negate it
+                                  const localDate = new Date(utcDate.getTime() - (timezoneOffset * 60 * 1000));
+                                  
+                                  // Format the local date
+                                  // This uses ISO string and then removes the 'T' and timezone part
+                                  return localDate.toISOString().replace('T', ' ').substring(0, 19);
+                                } catch (error) {
+                                  console.error("Error formatting date:", error, dataset.uploaded_at);
+                                  return dataset.uploaded_at || "Unknown";
+                                }
+                              })()}
+                            </div>
                           </div>
                         </div>
 
@@ -1182,7 +1181,7 @@ export default function ExportPage() {
                             title="Download CSV"
                             onClick={(e) => {
                               e.stopPropagation()
-                              downloadDataset(dataset.id, dataset.name)
+                              downloadDataset(dataset.id, dataset.dataset || dataset.name)
                             }}
                           >
                             <FileDown className="h-3 w-3" />
@@ -1281,10 +1280,8 @@ export default function ExportPage() {
                 </div>
               )}
             </div>
-          </div>
-        </div>
       </div>
-    </main>
+    </DataPuurLayout>
   )
 }
 

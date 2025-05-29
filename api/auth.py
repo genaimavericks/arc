@@ -76,6 +76,15 @@ class DirectPasswordResetRequest(BaseModel):
 
 # Predefined permissions
 AVAILABLE_PERMISSIONS = [
+    # Command Center permissions
+    "command:read", "command:write", "command:manage",
+    
+    # Personal Dashboard permissions
+    "dashboard:read", "dashboard:write", "dashboard:manage",
+    
+    # Djinni Assistant permissions
+    "djinni:read", "djinni:write", "djinni:manage",
+    
     # DataPuur permissions - simplified hierarchy
     "datapuur:read", "datapuur:write", "datapuur:manage", 
     
@@ -410,39 +419,79 @@ def initialize_default_roles(db: Session):
     If the roles already exist, it ensures they have the correct permissions and system role flag.
     """
     print("Initializing default roles")
-    
-    # Create admin role if it doesn't exist
-    admin_role = db.query(Role).filter(Role.name == "admin").first()
-    if not admin_role:
-        description_data = {
-            "text": "Administrator with full access",
-            "permissions": AVAILABLE_PERMISSIONS
-        }
-        admin_role = Role(
-            name="admin",
-            description=json.dumps(description_data),
-            is_system_role=True
-        )
-        db.add(admin_role)
-        print("Created admin role with all permissions")
-    else:
-        # Update existing admin role to ensure it has all permissions
-        try:
-            if admin_role.description and admin_role.description.startswith('{'):
-                description_data = json.loads(admin_role.description)
-                description_data["permissions"] = AVAILABLE_PERMISSIONS
-            else:
-                description_data = {
-                    "text": admin_role.description or "Administrator with full access",
-                    "permissions": AVAILABLE_PERMISSIONS
-                }
+    try:
+        # Check if admin role exists
+        admin_role = db.query(Role).filter(Role.name == "admin").first()
+        
+        # Always ensure AVAILABLE_PERMISSIONS is up to date with all our permission categories
+        all_permissions = [
+            # Command Center permissions
+            "command:read", "command:write", "command:manage",
+            # Personal Dashboard permissions
+            "dashboard:read", "dashboard:write", "dashboard:manage",
+            # Djinni Assistant permissions
+            "djinni:read", "djinni:write", "djinni:manage",
+            # DataPuur permissions
+            "datapuur:read", "datapuur:write", "datapuur:manage",
+            # Database permissions
+            "database:connect", "database:read", "database:write",
+            # User management permissions
+            "user:read", "user:create", "user:update", "user:delete",
+            # Role management permissions
+            "role:read", "role:create", "role:update", "role:delete",
+            # KGInsights permissions
+            "kginsights:read", "kginsights:write", "kginsights:manage"
+        ]
+        
+        if not admin_role:
+            # Create admin role
+            admin_description = json.dumps({
+                "permissions": all_permissions
+            })
             
-            admin_role.description = json.dumps(description_data)
-            admin_role.is_system_role = True
-            admin_role.updated_at = datetime.utcnow()
-            print("Updated admin role with all permissions")
-        except Exception as e:
-            print(f"Error updating admin role: {str(e)}")
+            admin_role = Role(
+                name="admin",
+                description=admin_description,
+                is_system_role=True,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            db.add(admin_role)
+            print("Created admin role with all permissions")
+        else:
+            # Update admin role with all permissions
+            try:
+                description_data = json.loads(admin_role.description)
+                
+                # Update permissions to include all available permissions
+                description_data["permissions"] = all_permissions
+                
+                admin_role.description = json.dumps(description_data)
+                admin_role.is_system_role = True  # Ensure it's marked as a system role
+                admin_role.updated_at = datetime.utcnow()
+                
+                print("Updated admin role with all permissions")
+            except json.JSONDecodeError:
+                # If description is not valid JSON, set it to a new value
+                admin_description = json.dumps({
+                    "permissions": all_permissions
+                })
+                admin_role.description = admin_description
+                admin_role.is_system_role = True
+                admin_role.updated_at = datetime.utcnow()
+                
+                print("Reset admin role with all permissions due to invalid description")
+        
+        # Commit changes
+        db.commit()
+        admin_id = admin_role.id if admin_role else None
+        print(f"Updated role permissions. Admin ID: {admin_id}")
+    except Exception as e:
+        db.rollback()
+        print(f"Error initializing default roles: {str(e)}")
+    finally:
+        # Make sure we don't close the db session here as it might be used by the caller
+        pass
 
     # Ensure that any role with kginsights:read also has datapuur:read
     roles_with_kginsights = db.query(Role).all()

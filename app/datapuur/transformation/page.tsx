@@ -1,8 +1,6 @@
 "use client"
 
-import Navbar from "@/components/navbar"
-import { SparklesCore } from "@/components/sparkles"
-import DataPuurSidebar from "@/components/datapuur-sidebar"
+import { DataPuurLayout } from "@/components/datapuur/datapuur-layout"
 import { Button } from "@/components/ui/button"
 import { motion } from "framer-motion"
 import { Wand2, Plus } from "lucide-react"
@@ -25,45 +23,14 @@ export default function TransformationPage() {
   }
 
   return (
-    <main className="min-h-screen bg-background antialiased relative overflow-hidden">
-      {/* Ambient background with moving particles */}
-      <div className="h-full w-full absolute inset-0 z-0">
-        <SparklesCore
-          id="tsparticlesfullpage"
-          background="transparent"
-          minSize={0.6}
-          maxSize={1.4}
-          particleDensity={100}
-          className="w-full h-full"
-          particleColor="var(--foreground)"
-        />
-      </div>
-
-      <div className="relative z-10">
-        <Navbar />
-
-        <div className="flex">
-          <DataPuurSidebar />
-
-          <div className="flex-1 p-8">
-            <div className="max-w-4xl mx-auto">
-              <motion.h1
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5 }}
-                className="text-4xl font-bold text-foreground mb-6"
-              >
-                Data Transformation
-              </motion.h1>
-
-              <motion.p
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.1 }}
-                className="text-muted-foreground text-xl mb-8"
-              >
-                Transform and clean your data for analysis.
-              </motion.p>
+    <DataPuurLayout>
+      <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-bold tracking-tight">Data Transformation</h2>
+          <p className="text-sm text-muted-foreground">Transform and clean your data for analysis</p>
+        </div>
+        
+        <div className="space-y-4">
 
               <motion.div variants={container} initial="hidden" animate="show" className="space-y-8">
                 <motion.div
@@ -117,10 +84,8 @@ export default function TransformationPage() {
                 </motion.div>
               </motion.div>
             </div>
-          </div>
-        </div>
       </div>
-    </main>
+    </DataPuurLayout>
   )
 }
 

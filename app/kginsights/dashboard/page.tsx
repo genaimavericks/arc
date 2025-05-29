@@ -1,15 +1,14 @@
 "use client"
 
-import Navbar from "@/components/navbar"
-import { SparklesCore } from "@/components/sparkles"
-import KGInsightsSidebar from "@/components/kginsights-sidebar"
 import { motion } from "framer-motion"
-import { Plus, Search, Eye, FileText, PlusCircle, RefreshCw, Trash2, Database, Upload, Settings, LineChart, ChevronLeft, ChevronRight } from "lucide-react"
+import { Plus, Search, Eye, FileText, PlusCircle, RefreshCw, Trash2, Database, Upload, Settings, LineChart, ChevronLeft, ChevronRight, Calendar } from "lucide-react"
+import { formatDistanceToNow } from "date-fns"
 import { useEffect, useState } from "react"
 import { getKGraphDashboard } from "@/lib/api"
 import LoadingSpinner from "@/components/loading-spinner"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import { useToast } from "@/components/ui/use-toast"
 import { useRouter } from "next/navigation"
@@ -17,7 +16,7 @@ import { DatasetPreviewModal } from "@/components/kginsights/dataset-preview-mod
 import { SchemaViewerModal } from "@/components/kginsights/schema-viewer-modal"
 import { GenerateKGModal } from "@/components/kginsights/generate-kg-modal"
 import { KGInsightsLayout } from "@/components/kginsights/kginsights-layout"
-import { FloatingChart } from "@/components/floating-chart"
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -43,6 +42,9 @@ interface Dataset {
   name: string
   type: string
   status: string
+  last_updated: string
+  dataset?: string  // Optional to maintain backward compatibility
+  uploaded_by?: string
 }
 
 interface Neo4jGraph {
@@ -63,14 +65,14 @@ function KGraphDashboardContent() {
       id: "1",
       name: "Customer Relations",
       description: "Customer-product relationships",
-      created: "2025-03-05",
+      created: "2025-03-05T10:30:00.000Z",
       type: "graph"
     },
     {
       id: "2",
       name: "Supply Chain",
       description: "Supply chain network",
-      created: "2025-02-20",
+      created: "2025-02-20T14:45:00.000Z",
       type: "graph"
     },
   ])
@@ -117,8 +119,10 @@ function KGraphDashboardContent() {
       const availableDatasets = data.map((item: any) => ({
         id: item.id,
         name: item.name,
+        dataset: item.dataset,
         type: item.type.toLowerCase(),
         status: "completed",
+        last_updated: item.last_updated || new Date().toISOString(), // Use created_at from the API or current date as fallback
       }))
 
       // Reverse the order so newest datasets appear first
@@ -132,8 +136,8 @@ function KGraphDashboardContent() {
 
       // Fallback data
       setDatasets([
-        { id: "1", name: "Sales Q1", type: "file", status: "completed" },
-        { id: "2", name: "HR Data", type: "file", status: "completed" },
+        { id: "1", name: "Sales Q1", type: "file", status: "completed", last_updated: new Date().toISOString() },
+        { id: "2", name: "HR Data", type: "file", status: "completed", last_updated: new Date().toISOString() },
       ])
 
       toast({
@@ -165,7 +169,7 @@ function KGraphDashboardContent() {
             id: schema.id.toString(),
             name: schema.name,
             description: schema.description || "Generated schema",
-            created: schema.created_at ? new Date(schema.created_at).toLocaleDateString() : "N/A",
+            created: schema.created_at ? schema.created_at : new Date().toISOString(),
             type: "schema"
           }));
           
@@ -193,7 +197,7 @@ function KGraphDashboardContent() {
             id: graph.id,
             name: graph.name,
             description: graph.description || "",
-            created: graph.created_at || "N/A",
+            created: graph.created_at ? graph.created_at : new Date().toISOString(),
             type: "graph"
           }))
         );
@@ -369,17 +373,15 @@ function KGraphDashboardContent() {
 
   if (loading) {
     return (
-      <div className="flex-1 p-8 flex items-center justify-center">
+        <div className="flex-1 p-6 flex items-center justify-center">
         <LoadingSpinner />
       </div>
     )
   }
 
   return (
-    <div className="flex-1 p-8 bg-gradient-to-b from-background to-background/95">
-      <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0 pointer-events-none">
-        <FloatingChart count={3} />
-      </div>
+      <div className="flex-1 p-6 bg-gradient-to-b from-background to-background/95 w-full">
+
 
       {showErrorBanner && (
         <div className="bg-yellow-500/20 border border-yellow-500 text-yellow-700 dark:text-yellow-200 px-4 py-2 rounded-md mb-4 relative z-10">
@@ -387,60 +389,61 @@ function KGraphDashboardContent() {
         </div>
       )}
 
-      <div className="max-w-6xl mx-auto relative z-10">
-        <motion.h1
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="text-4xl font-bold text-foreground mb-6"
-        >
-          KGraph Dashboard
-        </motion.h1>
-
-        {/* Action Buttons */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.1 }}
-          className="flex flex-wrap gap-4 mb-8"
-        >
-          <Button
-            className="bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-2"
-            size="lg"
-            onClick={handleNewKnowledgeGraph}
+      <div className="w-full max-w-full relative z-10">
+        <div className="flex justify-between items-center mb-4 w-full">
+          <motion.h1
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="text-2xl font-bold tracking-tight text-foreground"
           >
-            <Plus className="w-5 h-5" />
-            New Knowledge Graph
-          </Button>
+            KGraph Dashboard
+          </motion.h1>
 
-          <Button
-            variant="outline"
-            className="border-primary/30 text-foreground flex items-center gap-2"
-            size="lg"
-            onClick={handleSearchGraphs}
+          {/* Search Button */}
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.1 }}
           >
-            <Search className="w-5 h-5" />
-            Search Graphs...
-          </Button>
-        </motion.div>
+            <Button
+              variant="outline"
+              className="border-primary/30 text-foreground flex items-center gap-2"
+              size="sm"
+              onClick={handleSearchGraphs}
+            >
+              <Search className="w-4 h-4" />
+              Search Graphs...
+            </Button>
+          </motion.div>
+        </div>
 
         {/* Knowledge Graphs Section */}
-        <motion.div variants={container} initial="hidden" animate="show" className="space-y-8">
-          <motion.div variants={item}>
-            <Card className="bg-card/80 backdrop-blur-sm border border-border">
-              <CardContent className="p-0">
-                <div className="p-6">
-                  <h2 className="text-2xl font-semibold text-foreground mb-4">Knowledge Graphs</h2>
+        <motion.div variants={container} initial="hidden" animate="show" className="space-y-8 w-full">
+          <motion.div variants={item} className="w-full">
+            <Card className="bg-card/80 backdrop-blur-sm border border-border w-full min-w-full">
+              <CardContent className="p-0 w-full">
+                <div className="p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <h2 className="text-xl font-semibold text-foreground">Knowledge Graphs</h2>
+                    <Button
+                      className="bg-primary hover:bg-primary/90 text-primary-foreground flex items-center justify-center p-0"
+                      size="icon"
+                      onClick={handleNewKnowledgeGraph}
+                    >
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full">
+                <div className="overflow-x-auto w-full">
+                  <table className="w-full min-w-full table-fixed border-collapse">
                     <thead>
                       <tr className="border-t border-b border-border">
-                        <th className="px-6 py-3 text-left text-foreground font-medium">Name</th>
-                        <th className="px-6 py-3 text-left text-foreground font-medium">Description</th>
-                        <th className="px-6 py-3 text-left text-foreground font-medium">Created</th>
-                        <th className="px-6 py-3 text-right text-foreground font-medium">Actions</th>
+                        <th className="px-4 py-3 text-left text-foreground font-medium w-1/4">Name</th>
+                        <th className="px-4 py-3 text-left text-foreground font-medium w-1/3">Description</th>
+                        <th className="px-4 py-3 text-left text-foreground font-medium w-1/4">Created</th>
+                        <th className="px-4 py-3 text-left text-foreground font-medium w-1/6">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -455,11 +458,40 @@ function KGraphDashboardContent() {
                             index === knowledgeGraphs.length - 1 && "border-b-0",
                           )}
                         >
-                          <td className="px-6 py-4 text-foreground font-medium">{graph.name}</td>
-                          <td className="px-6 py-4 text-muted-foreground">{graph.description}</td>
-                          <td className="px-6 py-4 text-muted-foreground">{graph.created}</td>
-                          <td className="px-6 py-4">
-                            <div className="flex justify-end gap-2">
+                          <td className="px-4 py-3 text-foreground font-medium">{graph.name}</td>
+                          <td className="px-4 py-3 text-muted-foreground">{graph.description}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex flex-col">
+                              {(() => {
+                                try {
+                                  // Parse the UTC date from the string
+                                  const utcDate = new Date(graph.created);
+                                  
+                                  // Get the client's timezone offset in minutes
+                                  const timezoneOffset = new Date().getTimezoneOffset();
+                                  
+                                  // Convert from UTC to client's local time by adjusting for timezone offset
+                                  // Note: getTimezoneOffset() returns minutes WEST of UTC, so we negate it
+                                  const localDate = new Date(utcDate.getTime() - (timezoneOffset * 60 * 1000));
+                                  
+                                  // Format the date and time
+                                  return (
+                                    <>
+                                      <span>{formatDistanceToNow(localDate, { addSuffix: true })}</span>
+                                      <span className="text-xs text-muted-foreground">
+                                        {`${localDate.getFullYear()}-${String(localDate.getMonth() + 1).padStart(2, '0')}-${String(localDate.getDate()).padStart(2, '0')} ${String(localDate.getHours()).padStart(2, '0')}:${String(localDate.getMinutes()).padStart(2, '0')}:${String(localDate.getSeconds()).padStart(2, '0')}`}
+                                      </span>
+                                    </>
+                                  );
+                                } catch (error) {
+                                  console.error("Error formatting date:", error, graph.created);
+                                  return graph.created || "N/A";
+                                }
+                              })()}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
                               {graph.type === "schema" ? (
                                 <>
                                   <Button
@@ -504,11 +536,11 @@ function KGraphDashboardContent() {
           </motion.div>
 
           {/* Available Datasets Section */}
-          <motion.div variants={item}>
-            <Card className="bg-card/80 backdrop-blur-sm border border-border mt-8">
-              <CardContent className="p-0">
-                <div className="p-6 flex justify-between items-center">
-                  <h2 className="text-2xl font-semibold text-foreground">Available Datasets for KG Generation</h2>
+          <motion.div variants={item} className="w-full">
+            <Card className="bg-card/80 backdrop-blur-sm border border-border mt-6 w-full min-w-full">
+              <CardContent className="p-0 w-full">
+                <div className="p-4 flex items-center gap-2">
+                  <h2 className="text-xl font-semibold text-foreground">Available Datasets for KG Generation</h2>
                   <Button
                     variant="outline"
                     size="icon"
@@ -520,18 +552,19 @@ function KGraphDashboardContent() {
                   </Button>
                 </div>
 
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto w-full">
                   {loadingDatasets ? (
-                    <div className="flex justify-center items-center py-12">
+                    <div className="mt-6 flex justify-center items-center py-8">
                       <LoadingSpinner />
                     </div>
                   ) : datasets.length > 0 ? (
                     <>
-                      <table className="w-full">
+                      <table className="w-full min-w-full table-fixed border-collapse">
                         <thead>
                           <tr className="border-t border-b border-border">
-                            <th className="px-6 py-3 text-left text-foreground font-medium">Dataset</th>
-                            <th className="px-6 py-3 text-right text-foreground font-medium">Actions</th>
+                            <th className="px-4 py-3 text-left text-foreground font-medium w-2/5">Dataset</th>
+                            <th className="px-4 py-3 text-left text-foreground font-medium w-2/5">Created</th>
+                            <th className="px-4 py-3 text-left text-foreground font-medium w-1/5">Actions</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -546,19 +579,52 @@ function KGraphDashboardContent() {
                                 index === currentItems.length - 1 && currentItems.length < itemsPerPage && "border-b-0",
                               )}
                             >
-                              <td className="px-6 py-4 text-foreground font-medium">
+                              <td className="px-4 py-3 text-foreground font-medium">
                                 <div className="flex flex-col">
-                                  <span>{dataset.name}</span>
+                                  <span>{dataset.dataset || dataset.name}</span>
                                   <span className="text-xs text-muted-foreground capitalize">{dataset.type}</span>
                                 </div>
                               </td>
-                              <td className="px-6 py-4">
-                                <div className="flex justify-end gap-2">
+                              <td className="px-4 py-3">
+                                <div className="flex items-center">
+                                  <Calendar className="h-3 w-3 mr-1" />
+                                  <div>
+                                    {(() => {
+                                      try {
+                                        // Parse the UTC date from the ISO string
+                                        const utcDate = new Date(dataset.last_updated);
+                                        
+                                        // Get the client's timezone offset in minutes
+                                        const timezoneOffset = new Date().getTimezoneOffset();
+                                        
+                                        // Convert from UTC to client's local time by adjusting for timezone offset
+                                        // Note: getTimezoneOffset() returns minutes WEST of UTC, so we negate it
+                                        const localDate = new Date(utcDate.getTime() - (timezoneOffset * 60 * 1000));
+                                        
+                                        // Format the date and time
+                                        return (
+                                          <>
+                                            <div>{formatDistanceToNow(localDate, { addSuffix: true })}</div>
+                                            <div className="text-xs text-muted-foreground">
+                                              {`${localDate.getFullYear()}-${String(localDate.getMonth() + 1).padStart(2, '0')}-${String(localDate.getDate()).padStart(2, '0')} ${String(localDate.getHours()).padStart(2, '0')}:${String(localDate.getMinutes()).padStart(2, '0')}:${String(localDate.getSeconds()).padStart(2, '0')}`}
+                                            </div>
+                                          </>
+                                        );
+                                      } catch (error) {
+                                        console.error("Error formatting date:", error, dataset.last_updated);
+                                        return dataset.last_updated || "Unknown";
+                                      }
+                                    })()}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-2">
                                   <Button
                                     variant="ghost"
                                     size="icon"
                                     className="text-amber-500 hover:text-amber-600 hover:bg-amber-500/10"
-                                    onClick={() => handlePreview(dataset.id, dataset.name)}
+                                    onClick={() => handlePreview(dataset.id, dataset.dataset || dataset.name)}
                                     title="Preview"
                                   >
                                     <Eye className="w-5 h-5" />
@@ -567,7 +633,7 @@ function KGraphDashboardContent() {
                                     variant="ghost"
                                     size="icon"
                                     className="text-orange-500 hover:text-orange-600 hover:bg-orange-500/10"
-                                    onClick={() => handleViewSchema(dataset.id, dataset.name)}
+                                    onClick={() => handleViewSchema(dataset.id, dataset.dataset || dataset.name)}
                                     title="Schema"
                                   >
                                     <FileText className="w-5 h-5" />
@@ -576,7 +642,7 @@ function KGraphDashboardContent() {
                                     variant="ghost"
                                     size="icon"
                                     className="text-primary hover:text-primary/80 hover:bg-primary/10"
-                                    onClick={() => handleGenerateKG(dataset.id, dataset.name)}
+                                    onClick={() => handleGenerateKG(dataset.id, dataset.dataset || dataset.name)}
                                     title="Generate KG"
                                   >
                                     <PlusCircle className="w-5 h-5" />
@@ -647,7 +713,7 @@ function KGraphDashboardContent() {
                       )}
                     </>
                   ) : (
-                    <div className="text-center py-12 text-muted-foreground">
+                    <div className="flex justify-center py-8 text-muted-foreground">
                       <p>No available datasets found. Please ingest data first.</p>
                       <Button
                         variant="link"

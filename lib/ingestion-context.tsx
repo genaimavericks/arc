@@ -43,9 +43,11 @@ function saveJobsToStorage(jobs: Job[]) {
     // Filter out any jobs with status 'removed', 'deleted', or 'cancelled'
     // before saving to localStorage to prevent orphaned jobs
     const validJobsToSave = jobs.filter(job => 
-      !['removed', 'deleted', 'cancelled'].includes(job.status)
+      !['removed', 'deleted', 'cancelled'].includes(job.status) &&
+      !job.markedForRemoval
     );
     
+    console.log('Saving valid jobs to localStorage:', validJobsToSave.length);
     localStorage.setItem('ingestionJobs', JSON.stringify(validJobsToSave))
   } catch (error) {
     console.error('Error saving jobs to localStorage:', error)
@@ -61,9 +63,13 @@ function getJobsFromStorage(): Job[] {
     const parsedJobs = JSON.parse(jobsData)
     
     // Filter out any stale jobs that may have been left in localStorage
-    return parsedJobs.filter((job: Job) => 
-      !['removed', 'deleted', 'cancelled'].includes(job.status)
+    const validJobs = parsedJobs.filter((job: Job) => 
+      !['removed', 'deleted', 'cancelled'].includes(job.status) &&
+      !job.markedForRemoval
     )
+    
+    console.log('Retrieved valid jobs from localStorage:', validJobs.length);
+    return validJobs
   } catch (error) {
     console.error('Error retrieving jobs from localStorage:', error)
     return []
@@ -75,9 +81,42 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
   // Initialize state with empty array, load from storage client-side
   const [jobs, setJobs] = useState<Job[]>([])
   const [errors, setErrors] = useState<{ id: string; message: string; timestamp: string }[]>([])
-  const [processingStatus, setProcessingStatus] = useState<string>("")
+  // Initialize processing status from localStorage if available, but filter out database-related messages
+  const [processingStatus, setProcessingStatus] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const storedStatus = localStorage.getItem('processingStatus');
+      if (storedStatus && (
+          storedStatus.toLowerCase().includes('database') ||
+          storedStatus.includes('will be extracted from') ||
+          storedStatus.includes('stored in parquet format'))) {
+        // Don't restore database-related messages
+        console.log("Filtering out database-related processing status:", storedStatus);
+        localStorage.removeItem('processingStatus');
+        return "";
+      }
+      return storedStatus || "";
+    }
+    return "";
+  })
   const [isPolling, setIsPolling] = useState(true)
 
+  // Create a custom setter for processing status that also updates localStorage
+  const updateProcessingStatus = (status: string) => {
+    // Update the state
+    setProcessingStatus(status);
+    
+    // Also update localStorage if needed
+    if (typeof window !== 'undefined') {
+      if (status === "") {
+        // Clear the status from localStorage
+        localStorage.removeItem('processingStatus');
+      } else if (!status.toLowerCase().includes('database')) {
+        // Only store non-database related messages
+        localStorage.setItem('processingStatus', status);
+      }
+    }
+  };
+  
   // Load initial jobs from localStorage on client-side mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -125,15 +164,38 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
         
         // Clear processing status if this was a cancelled/removed job
         if (updatedJob.status === "cancelled" || updatedJob.status === "removed") {
-          setProcessingStatus("");
+          updateProcessingStatus("");
           
-          // Also remove this job from localStorage immediately
+          // For removed jobs, immediately remove from the jobs array and localStorage
+          if (updatedJob.status === "removed") {
+            console.log(`Immediately removing job ${updatedJob.id} from tracking (status: removed)`);
+            
+            // Remove from localStorage
+            if (typeof window !== 'undefined') {
+              try {
+                const jobsData = localStorage.getItem('ingestionJobs');
+                if (jobsData) {
+                  const parsedJobs = JSON.parse(jobsData);
+                  const cleanedJobs = parsedJobs.filter((job: Job) => job.id !== updatedJob.id);
+                  localStorage.setItem('ingestionJobs', JSON.stringify(cleanedJobs));
+                  console.log(`Removed job ${updatedJob.id} from localStorage`);
+                }
+              } catch (error) {
+                console.error('Error removing job from localStorage:', error);
+              }
+            }
+            
+            // Return a new array without this job
+            return prevJobs.filter(job => job.id !== updatedJob.id);
+          }
+          
+          // For cancelled jobs, just remove from localStorage but keep in memory briefly
           const filteredJobs = prevJobs.filter(job => job.id !== updatedJob.id);
           saveJobsToStorage(filteredJobs);
         }
         
         // Remove the job after a delay
-        const removalDelay = (updatedJob.status === "cancelled" || updatedJob.status === "removed") ? 3000 : 5000;
+        const removalDelay = (updatedJob.status === "cancelled" ) ? 3000 : 5000;
         setTimeout(() => {
           setJobs((currentJobs) => {
             const filteredJobs = currentJobs.filter((job) => job.id !== updatedJob.id);
@@ -156,12 +218,41 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
   // Remove a job
   const removeJob = (jobId: string) => {
     setJobs((prevJobs) => {
-      const filteredJobs = prevJobs.filter((job) => job.id !== jobId)
+      // First, find the job and mark it as removed
+      const updatedJobs = prevJobs.map(job => {
+        if (job.id === jobId) {
+          return {
+            ...job,
+            status: "removed",
+            markedForRemoval: true,
+            details: "Job removed from tracking"
+          };
+        }
+        return job;
+      });
+      
+      // Then filter it out completely
+      const filteredJobs = updatedJobs.filter((job) => job.id !== jobId);
+      
       if (typeof window !== 'undefined') {
-        saveJobsToStorage(filteredJobs)
+        // Save the updated jobs to localStorage
+        saveJobsToStorage(filteredJobs);
+        
+        // Also explicitly remove this job ID from any tracking in localStorage
+        try {
+          const jobsData = localStorage.getItem('ingestionJobs');
+          if (jobsData) {
+            const parsedJobs = JSON.parse(jobsData);
+            const cleanedJobs = parsedJobs.filter((job: Job) => job.id !== jobId);
+            localStorage.setItem('ingestionJobs', JSON.stringify(cleanedJobs));
+          }
+        } catch (error) {
+          console.error('Error cleaning job from localStorage:', error);
+        }
       }
-      return filteredJobs
-    })
+      
+      return filteredJobs;
+    });
   }
 
   // Add an error
@@ -196,7 +287,7 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
     // First, clear the processing status immediately to stop file processing
     // This ensures the notification is removed and signals to the FileUpload component
     // that processing should stop
-    setProcessingStatus("");
+    updateProcessingStatus("");
     
     // If there's an active upload in progress, mark it as cancelled in localStorage
     // Do this early in the function to ensure file processing is cancelled immediately
@@ -246,6 +337,21 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
         });
         
         console.log(`API response status: ${response.status}`);
+        
+        // Handle 404 Not Found responses - job no longer exists
+        if (response.status === 404) {
+          console.log(`Job ${job.id} no longer exists (404), marking as removed`);
+          
+          // Mark the job as removed since it no longer exists on the server
+          updateJob({
+            ...job,
+            status: "removed",
+            markedForRemoval: true,
+            endTime: new Date().toISOString(),
+            details: "Job no longer exists on server"
+          });
+          continue;
+        }
         
         if (response.ok) {
           console.log(`Successfully cancelled job ${job.id}`);
@@ -299,11 +405,15 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
       // If there are no stored jobs, no need to continue
       if (storedJobs.length === 0) return;
       
-      // Find active jobs (running or queued)
-      const activeJobs = storedJobs.filter(job => 
-        (job.status === "running" || job.status === "queued") && 
-        !job.id.startsWith("temp-")
-      );
+      // Find active jobs (running or queued), but skip any that are marked for removal
+      const activeJobs = storedJobs.filter(job => {
+        // First check if the job is running or queued (this implicitly means it's not removed)
+        const isActiveStatus = job.status === "running" || job.status === "queued";
+        // Then check other conditions
+        return isActiveStatus && 
+               !job.id.startsWith("temp-") &&
+               !job.markedForRemoval;
+      });
       
       if (activeJobs.length === 0) return;
       
@@ -318,10 +428,32 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
             },
           });
           
+          // Handle 404 Not Found responses - job no longer exists
+          if (response.status === 404) {
+            console.log(`Job ${job.id} no longer exists (404), removing from tracking`);
+            
+            // Mark the job as removed
+            updateJob({
+              ...job,
+              status: "removed" as Job["status"],  // Type assertion to fix lint error
+              markedForRemoval: true,
+              details: "Job no longer exists on server"
+            });
+            
+            continue;
+          }
+          
           if (response.ok) {
             const updatedJob = await response.json();
             // Update the job with the latest status
             updateJob(updatedJob);
+            
+            // Clear the processing status for any job that has completed, failed, or been cancelled
+            if (updatedJob.status === "completed" || updatedJob.status === "failed" || updatedJob.status === "cancelled") {
+              // Clear the processing status to remove the "File Processing" message
+              updateProcessingStatus("");
+              console.log(`Job ${updatedJob.id} (${updatedJob.type}) ${updatedJob.status} - clearing processing status on initial check`);
+            }
           }
         }
       } catch (error) {
@@ -363,10 +495,13 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
         
         if (!token) return // Skip if no token
         
-        // Check each running or queued job
-        const jobsToCheck = jobs.filter(
-          job => job.status === "running" || job.status === "queued"
-        )
+        // Check each running or queued job, but skip any that are marked for removal
+        const jobsToCheck = jobs.filter(job => {
+          // First check if the job is running or queued (this implicitly means it's not removed)
+          const isActiveStatus = job.status === "running" || job.status === "queued";
+          // Then check if it's not marked for removal
+          return isActiveStatus && !job.markedForRemoval;
+        })
         
         if (jobsToCheck.length === 0) return // Skip if no jobs to check
         
@@ -385,7 +520,7 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
               // Remove the job from localStorage
               updateJob({
                 ...job,
-                status: "removed",
+                status: "removed" as Job["status"],  // Type assertion to fix lint error
                 markedForRemoval: true,
                 details: "Job no longer exists on server"
               })
@@ -407,8 +542,16 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
               status: data.status,
               progress: data.progress,
               details: data.details || job.details,
-              error: data.error
+              error: data.error,
+              endTime: data.end_time || job.endTime
             })
+            
+            // Clear the processing status for any job that has completed, failed, or been cancelled
+            if (data.status === "completed" || data.status === "failed" || data.status === "cancelled") {
+              // Clear the processing status to remove the "File Processing" message
+              updateProcessingStatus("");
+              console.log(`Job ${job.id} (${job.type}) ${data.status} - clearing processing status`);
+            }
           } catch (error) {
             console.error(`Error polling job status for job ${job.id}:`, error)
           }
@@ -421,8 +564,8 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
     // Run immediately when jobs change or component mounts
     checkJobs()
     
-    // Then set up the polling interval
-    const pollInterval = setInterval(checkJobs, 10000) // Poll every 10 seconds instead of 3
+    // Then set up the polling interval - poll more frequently to show progress updates better
+    const pollInterval = setInterval(checkJobs, 5000) // Poll every 3 seconds for more responsive progress updates
 
     return () => clearInterval(pollInterval)
   }, [jobs, isPolling, updateJob])
@@ -437,7 +580,7 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
     removeJob,
     addError,
     clearErrors,
-    setProcessingStatus,
+    setProcessingStatus: updateProcessingStatus, // Use our custom function that handles localStorage
     cancelAllActiveJobs,
     isPolling,
     setIsPolling,

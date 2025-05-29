@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import dynamic from "next/dynamic"
 import { KGInsightsLayout } from "@/components/kginsights/kginsights-layout"
-import KGInsightsSidebar from "@/components/kginsights-sidebar"
+
 
 // Use dynamic import for the chat component
 const InsightsChat = dynamic(() => import("@/components/kginsights/insights-chat"), {
@@ -32,12 +32,7 @@ function KGInsightsContent() {
   return (
     <div className="flex-1 p-6 overflow-auto">
       <div className="flex flex-col gap-4 mb-6">
-        <h1 className="text-3xl font-bold">Knowledge Graph Insights</h1>
-        <p className="text-muted-foreground max-w-3xl">
-          Explore your knowledge graph using natural language queries. Ask questions about relationships, 
-          patterns, and insights in your data. The AI assistant will use the knowledge graph to provide 
-          accurate and contextual answers.  
-        </p>
+        <h1 className="text-2xl font-bold tracking-tight">Knowledge Graph Insights</h1>
       </div>
       
       <div 
@@ -51,6 +46,25 @@ function KGInsightsContent() {
           marginBottom: '20px'
         }}
       >
+        {/* Custom styling to override the InsightsChat component layout */}
+        <style jsx global>{`
+          /* Flip the chat layout - make the sidebar appear on the right instead of left */
+          .insights-chat-container {
+            flex-direction: row-reverse !important;
+          }
+          
+          /* Adjust border styles for the flipped layout */
+          .insights-chat-container .sidebar {
+            border-left: 1px solid var(--border) !important;
+            border-right: none !important;
+          }
+          
+          /* Ensure the main chat area takes appropriate space */
+          .insights-chat-container .main-chat-area {
+            flex: 1;
+          }
+        `}</style>
+        
         <InsightsChat />
       </div>
     </div>

@@ -15,6 +15,71 @@ from api.auth import get_current_user, has_permission, has_any_permission
 router = APIRouter(prefix="/api/export", tags=["Export"])
 logger = logging.getLogger(__name__)
 
+# Helper function to get the most appropriate data file path
+def get_data_file_path(dataset: UploadedFile) -> str:
+    """
+    Get the most appropriate data file path for a dataset.
+    For database sources, this will be the parquet file in the data directory.
+    For file sources, this will check if a corresponding parquet file exists and use it;
+    otherwise, it will fall back to the original file.
+    
+    Args:
+        dataset: The UploadedFile database record
+        
+    Returns:
+        str: Path to the data file (parquet preferred, original file as fallback)
+    """
+    # For database-based sources, the path already points to the parquet file
+    if dataset.type.lower() == 'database':
+        return dataset.path
+        
+    # For file-based sources, look for corresponding parquet file
+    original_path = dataset.path
+    data_dir = os.path.join(os.path.dirname(os.path.dirname(original_path)), "data")
+    
+    # The parquet file is typically named after the job ID
+    # Try to find a parquet file with the dataset ID as the name
+    parquet_path = os.path.join(data_dir, f"{dataset.id}.parquet")
+    
+    if os.path.exists(parquet_path):
+        logger.info(f"Using parquet file instead of original {dataset.type} file")
+        return parquet_path
+    
+    # Fall back to original file if parquet doesn't exist
+    logger.info(f"Parquet file not found, using original {dataset.type} file")
+    return original_path
+
+# Helper function to load dataset into a pandas DataFrame
+def load_dataset_as_dataframe(file_path: str, file_type: str) -> pd.DataFrame:
+    """
+    Load a dataset file into a pandas DataFrame using the appropriate reader
+    
+    Args:
+        file_path: Path to the data file
+        file_type: Type of the file (csv, json, database)
+        
+    Returns:
+        pd.DataFrame: The loaded DataFrame
+        
+    Raises:
+        HTTPException: If the file type is unsupported or there's an error loading the file
+    """
+    try:
+        # Check if the file is a parquet file based on extension
+        if file_path.lower().endswith('.parquet'):
+            return pd.read_parquet(file_path)
+            
+        # Otherwise use the appropriate reader based on file type
+        if file_type.lower() == 'csv':
+            return pd.read_csv(file_path)
+        elif file_type.lower() == 'json':
+            return pd.read_json(file_path)
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported file type: {file_type}")
+    except Exception as e:
+        logger.error(f"Error loading dataset file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to load dataset: {str(e)}")
+
 @router.get("/download")
 async def download_dataset(
     dataset_id: str,
@@ -36,17 +101,15 @@ async def download_dataset(
         if not dataset:
             raise HTTPException(status_code=404, detail="Dataset not found")
         
+        # Get the appropriate data file path and load the dataset
+        data_path = get_data_file_path(dataset)
+        
         # Check if file exists
-        if not os.path.exists(dataset.path):
+        if not os.path.exists(data_path):
             raise HTTPException(status_code=404, detail="Dataset file not found")
         
-        # Load the data using pandas
-        if dataset.type.lower() == 'csv':
-            df = pd.read_csv(dataset.path)
-        elif dataset.type.lower() == 'json':
-            df = pd.read_json(dataset.path)
-        else:
-            raise HTTPException(status_code=400, detail=f"Unsupported file type: {dataset.type}")
+        # Load the data using our helper function
+        df = load_dataset_as_dataframe(data_path, dataset.type)
         
         # Handle NaN values to avoid comparison issues for all cases
         df = df.fillna('')
@@ -89,92 +152,90 @@ async def download_dataset(
                     # Check if we got any results
                     if len(filtered_df) == 0:
                         logger.warning(f"Numeric filtering returned no results, trying string comparison")
-                        # Try string comparison as fallback
+                        # If no results, try string comparison as fallback
                         str_col_data = col_data.astype(str)
+                        str_value = str(value)
+                        
                         if operator == "eq":
-                            filtered_df = df[str_col_data == str(value)]
+                            filtered_df = df[str_col_data == str_value]
                         elif operator == "neq":
-                            filtered_df = df[str_col_data != str(value)]
+                            filtered_df = df[str_col_data != str_value]
                         elif operator == "contains":
-                            filtered_df = df[str_col_data.str.contains(str(value), case=False, na=False)]
-                    
-                    df = filtered_df
+                            filtered_df = df[str_col_data.str.contains(str_value, na=False)]
                 except (ValueError, TypeError) as e:
-                    logger.warning(f"Numeric conversion failed: {str(e)}, using string comparison")
-                    # If conversion fails, use string comparison
+                    logger.warning(f"Failed numeric comparison: {str(e)}, falling back to string")
+                    # Fall back to string comparison
                     str_col_data = col_data.astype(str)
+                    str_value = str(value)
+                    
                     if operator == "eq":
-                        df = df[str_col_data == str(value)]
+                        filtered_df = df[str_col_data == str_value]
                     elif operator == "neq":
-                        df = df[str_col_data != str(value)]
+                        filtered_df = df[str_col_data != str_value]
                     elif operator == "contains":
-                        df = df[str_col_data.str.contains(str(value), case=False, na=False)]
+                        filtered_df = df[str_col_data.str.contains(str_value, na=False)]
                     else:
-                        # Other operators don't make sense for non-numeric comparison
-                        raise HTTPException(status_code=400, detail=f"Operator '{operator}' not supported for non-numeric values")
+                        # For other operators, we can't do meaningful string comparison
+                        # so we'll return an empty DataFrame
+                        filtered_df = df.head(0)
             else:
-                # String comparison for non-numeric columns
+                # For non-numeric columns, do string comparison
                 str_col_data = col_data.astype(str)
                 str_value = str(value)
                 
-                logger.info(f"String comparison: column={column}, value={str_value}")
-                
                 if operator == "eq":
-                    df = df[str_col_data.str.lower() == str_value.lower()]
+                    filtered_df = df[str_col_data == str_value]
                 elif operator == "neq":
-                    df = df[str_col_data.str.lower() != str_value.lower()]
+                    filtered_df = df[str_col_data != str_value]
                 elif operator == "contains":
-                    df = df[str_col_data.str.contains(str_value, case=False, na=False)]
+                    filtered_df = df[str_col_data.str.contains(str_value, na=False)]
                 else:
-                    # Other operators don't make sense for non-numeric comparison
-                    raise HTTPException(status_code=400, detail=f"Operator '{operator}' not supported for string values")
+                    # For other operators with non-numeric data, return error
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=f"Operator '{operator}' not supported for non-numeric column '{column}'"
+                    )
             
+            # Use the filtered DataFrame
+            df = filtered_df
             logger.info(f"DataFrame after filtering: {len(df)} rows")
-            
-            # If no rows match the filter, return an empty DataFrame with the same columns
-            if len(df) == 0:
-                logger.warning("Filter returned no results")
-                # Return empty DataFrame with same columns instead of raising an error
-                df = pd.DataFrame(columns=df.columns)
         
-        # Apply max_rows limit if specified
-        if max_rows is not None and len(df) > 0:
-            logger.info(f"Limiting output to {max_rows} rows (from {len(df)} total rows)")
+        # Apply row limit if specified
+        if max_rows is not None and max_rows > 0:
             df = df.head(max_rows)
-        
-        # Prepare the file for download
-        buffer = io.BytesIO()
+            logger.info(f"Applied row limit: {max_rows}, resulting in {len(df)} rows")
         
         # Convert to the requested format
-        filename = os.path.splitext(dataset.filename)[0]
-        if column and operator and value:
-            filename = f"{filename}_filtered"
-        
         if file_format.lower() == 'csv':
-            df.to_csv(buffer, index=False)
+            output = io.StringIO()
+            df.to_csv(output, index=False)
+            content = output.getvalue()
             media_type = "text/csv"
-            filename = f"{filename}.csv"
-        else:  # json
-            df.to_json(buffer, orient='records')
+            filename = f"{dataset.dataset or dataset.filename.split('.')[0]}_export.csv"
+        elif file_format.lower() == 'json':
+            # Convert to JSON
+            json_str = df.to_json(orient='records', date_format='iso')
+            content = json_str
             media_type = "application/json"
-            filename = f"{filename}.json"
+            filename = f"{dataset.dataset or dataset.filename.split('.')[0]}_export.json"
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported export format: {file_format}")
         
-        # Reset buffer position
-        buffer.seek(0)
-        
-        # Return the file as a streaming response
-        return StreamingResponse(
-            buffer, 
-            media_type=media_type,
-            headers={
-                "Content-Disposition": f"attachment; filename={filename}"
-            }
+        # Create a streaming response
+        response = StreamingResponse(
+            iter([content]), 
+            media_type=media_type
         )
-    
+        
+        # Set the content disposition header for download
+        response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+        
+        return response
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error downloading dataset: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error downloading dataset: {str(e)}")
-
+        raise HTTPException(status_code=500, detail=f"Failed to download dataset: {str(e)}")
 
 @router.get("/datasets")
 async def get_datasets(
@@ -188,55 +249,60 @@ async def get_datasets(
     Get a list of available datasets for export.
     """
     try:
-        # Query uploaded files that are available for export
+        # Query for uploaded files
         query = db.query(UploadedFile)
         
         # Apply search filter if provided
         if search:
-            query = query.filter(UploadedFile.filename.ilike(f"%{search}%"))
+            # Search by filename, type, or uploaded_by
+            query = query.filter(
+                (UploadedFile.filename.ilike(f"%{search}%")) |
+                (UploadedFile.type.ilike(f"%{search}%")) |
+                (UploadedFile.uploaded_by.ilike(f"%{search}%")) |
+                (UploadedFile.dataset.ilike(f"%{search}%"))
+            )
         
-        # Apply sorting (oldest first)
-        query = query.order_by(UploadedFile.uploaded_at.asc())
-        
-        # Get total count before pagination
-        total = query.count()
+        # Get total count for pagination
+        total_count = query.count()
         
         # Apply pagination
-        query = query.offset((page - 1) * limit).limit(limit)
+        offset = (page - 1) * limit
+        datasets = query.order_by(UploadedFile.uploaded_at.desc()).offset(offset).limit(limit).all()
         
-        # Execute query
-        datasets = query.all()
-        
-        # Convert to response format
+        # Format the results
         result = []
         for dataset in datasets:
-            # Only include files that actually exist on disk
-            if dataset.path and os.path.exists(dataset.path):
-                try:
-                    file_size = os.path.getsize(dataset.path)
-                    result.append({
-                        "id": dataset.id,
-                        "name": dataset.filename,
-                        "type": dataset.type,
-                        "size": file_size,
-                        "uploaded_at": dataset.uploaded_at.isoformat(),
-                        "uploaded_by": dataset.uploaded_by,
-                        "source_type": "file",
-                        "row_count": dataset.chunk_size if hasattr(dataset, "chunk_size") else None,
-                        "status": "available",
-                        "preview_url": f"/api/export/datasets/{dataset.id}/preview",
-                        "download_url": f"/api/export/datasets/{dataset.id}/download"
-                    })
-                except (OSError, IOError) as e:
-                    # Skip files that cause errors when checking size
-                    logger.warning(f"Error checking file {dataset.path}: {str(e)}")
-                    continue
+            # Get file size
+            file_size = 0
+            if os.path.exists(dataset.path):
+                file_size = os.path.getsize(dataset.path)
+            
+            # Check if a parquet file exists for this dataset
+            data_dir = os.path.join(os.path.dirname(os.path.dirname(dataset.path)), "data")
+            parquet_path = os.path.join(data_dir, f"{dataset.id}.parquet")
+            
+            # If parquet exists, use its size instead
+            if os.path.exists(parquet_path):
+                file_size = os.path.getsize(parquet_path)
+                
+            result.append({
+                "id": dataset.id,
+                "name": dataset.filename,
+                "dataset": dataset.dataset,
+                "type": dataset.type,
+                "size": file_size,
+                "uploaded_at": dataset.uploaded_at,
+                "uploaded_by": dataset.uploaded_by,
+                "source_type": "file" if dataset.type in ["csv", "json"] else "database",
+                "preview_url": f"/api/export/datasets/{dataset.id}/preview",
+                "download_url": f"/api/export/datasets/{dataset.id}/download"
+            })
         
         return {
-            "total": total,
+            "datasets": result,
+            "total": total_count,
             "page": page,
-            "limit": limit,
-            "datasets": result
+            "limit": limit
         }
     except Exception as e:
         logger.error(f"Error fetching datasets: {str(e)}")
@@ -258,16 +324,15 @@ async def get_dataset_preview(
         if not dataset:
             raise HTTPException(status_code=404, detail="Dataset not found")
         
-        # Get the data path from the dataset
-        data_path = dataset.path
+        # Get the appropriate data file path using our helper function
+        data_path = get_data_file_path(dataset)
         
-        # Load the data using pandas
-        if dataset.type.lower() == 'csv':
-            df = pd.read_csv(data_path)
-        elif dataset.type.lower() == 'json':
-            df = pd.read_json(data_path)
-        else:
-            raise HTTPException(status_code=400, detail=f"Unsupported file type: {dataset.type}")
+        # Check if file exists
+        if not os.path.exists(data_path):
+            raise HTTPException(status_code=404, detail="Dataset file not found")
+            
+        # Load the data using our helper function
+        df = load_dataset_as_dataframe(data_path, dataset.type)
         
         # Calculate pagination
         start_idx = (page - 1) * page_size
@@ -326,75 +391,92 @@ async def filter_dataset(
         if not dataset:
             raise HTTPException(status_code=404, detail="Dataset not found")
         
-        # Get the data path from the dataset
-        data_path = dataset.path
+        # Get the appropriate data file path using our helper function
+        data_path = get_data_file_path(dataset)
         
-        # Load the data using pandas
-        if dataset.type.lower() == 'csv':
-            df = pd.read_csv(data_path)
-        elif dataset.type.lower() == 'json':
-            df = pd.read_json(data_path)
-        else:
-            raise HTTPException(status_code=400, detail=f"Unsupported file type: {dataset.type}")
+        # Check if file exists
+        if not os.path.exists(data_path):
+            raise HTTPException(status_code=404, detail="Dataset file not found")
+            
+        # Load the data using our helper function
+        df = load_dataset_as_dataframe(data_path, dataset.type)
+        
+        # Handle NaN values to avoid comparison issues
+        df = df.fillna('')
         
         # Check if column exists
         if column not in df.columns:
             raise HTTPException(status_code=400, detail=f"Column '{column}' not found in dataset")
         
-        # Handle data types properly for comparison
-        try:
-            # Convert column to appropriate type for comparison
-            col_data = df[column]
-            
-            # Determine the data type for comparison
-            if pd.api.types.is_numeric_dtype(col_data):
-                try:
-                    # Try to convert value to numeric for comparison
-                    numeric_value = pd.to_numeric(value)
-                    # Apply filter based on operator with numeric comparison
-                    if operator == "eq":
-                        filtered_df = df[col_data == numeric_value]
-                    elif operator == "neq":
-                        filtered_df = df[col_data != numeric_value]
-                    elif operator == "gt":
-                        filtered_df = df[col_data > numeric_value]
-                    elif operator == "lt":
-                        filtered_df = df[col_data < numeric_value]
-                    elif operator == "gte":
-                        filtered_df = df[col_data >= numeric_value]
-                    elif operator == "lte":
-                        filtered_df = df[col_data <= numeric_value]
-                    elif operator == "contains":
-                        # For numeric columns, convert to string for contains operation
-                        filtered_df = df[col_data.astype(str).str.contains(value, na=False)]
-                except (ValueError, TypeError):
-                    # If conversion fails, use string comparison
-                    logger.warning(f"Could not convert value '{value}' to numeric for column '{column}'. Using string comparison.")
-                    if operator == "contains":
-                        filtered_df = df[col_data.astype(str).str.contains(value, na=False)]
-                    else:
-                        # Default to empty result for incompatible types
-                        filtered_df = df[df.index.isin([])]
-            else:
-                # For non-numeric columns, use string operations
+        # Apply filter based on operator
+        col_data = df[column]
+        
+        # Determine the data type for comparison
+        if pd.api.types.is_numeric_dtype(col_data) and not pd.api.types.is_bool_dtype(col_data):
+            try:
+                # Try to convert value to numeric for comparison
+                numeric_value = pd.to_numeric(value)
+                # Apply filter based on operator with numeric comparison
                 if operator == "eq":
-                    filtered_df = df[col_data.astype(str) == value]
+                    filtered_df = df[col_data == numeric_value]
                 elif operator == "neq":
-                    filtered_df = df[col_data.astype(str) != value]
+                    filtered_df = df[col_data != numeric_value]
                 elif operator == "gt":
-                    filtered_df = df[col_data.astype(str) > value]
+                    filtered_df = df[col_data > numeric_value]
                 elif operator == "lt":
-                    filtered_df = df[col_data.astype(str) < value]
+                    filtered_df = df[col_data < numeric_value]
                 elif operator == "gte":
-                    filtered_df = df[col_data.astype(str) >= value]
+                    filtered_df = df[col_data >= numeric_value]
                 elif operator == "lte":
-                    filtered_df = df[col_data.astype(str) <= value]
+                    filtered_df = df[col_data <= numeric_value]
                 elif operator == "contains":
-                    filtered_df = df[col_data.astype(str).str.contains(value, na=False)]
-        except Exception as e:
-            logger.error(f"Error applying filter: {str(e)}")
-            # Return empty dataframe if filtering fails
-            filtered_df = df.iloc[0:0]
+                    # For numeric columns, contains is treated as equality
+                    filtered_df = df[col_data == numeric_value]
+                
+                # Check if we got any results
+                if len(filtered_df) == 0:
+                    # If no results, try string comparison as fallback
+                    str_col_data = col_data.astype(str)
+                    str_value = str(value)
+                    
+                    if operator == "eq":
+                        filtered_df = df[str_col_data == str_value]
+                    elif operator == "neq":
+                        filtered_df = df[str_col_data != str_value]
+                    elif operator == "contains":
+                        filtered_df = df[str_col_data.str.contains(str_value, na=False)]
+            except (ValueError, TypeError):
+                # Fall back to string comparison
+                str_col_data = col_data.astype(str)
+                str_value = str(value)
+                
+                if operator == "eq":
+                    filtered_df = df[str_col_data == str_value]
+                elif operator == "neq":
+                    filtered_df = df[str_col_data != str_value]
+                elif operator == "contains":
+                    filtered_df = df[str_col_data.str.contains(str_value, na=False)]
+                else:
+                    # For other operators, we can't do meaningful string comparison
+                    # so we'll return an empty DataFrame
+                    filtered_df = df.head(0)
+        else:
+            # For non-numeric columns, do string comparison
+            str_col_data = col_data.astype(str)
+            str_value = str(value)
+            
+            if operator == "eq":
+                filtered_df = df[str_col_data == str_value]
+            elif operator == "neq":
+                filtered_df = df[str_col_data != str_value]
+            elif operator == "contains":
+                filtered_df = df[str_col_data.str.contains(str_value, na=False)]
+            else:
+                # For other operators with non-numeric data, return error
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Operator '{operator}' not supported for non-numeric column '{column}'"
+                )
         
         # Calculate pagination
         total_rows = len(filtered_df)
@@ -436,31 +518,31 @@ async def filter_dataset(
 @router.get("/datasets/{dataset_id}/download")
 async def download_dataset(
     dataset_id: str,
-    format: str = Query("csv", regex="^(csv)$"),
+    format: str = Query("csv", regex="^(csv|json)$"),
     column: Optional[str] = None,
-    value: Optional[str] = None,
     operator: str = Query("eq", regex="^(eq|neq|gt|lt|gte|lte|contains)$"),
+    value: Optional[str] = None,
+    max_rows: Optional[int] = Query(None, ge=1, description="Maximum number of rows to include in the download"),
     db: Session = Depends(get_db),
     current_user: User = Depends(has_permission("datapuur:read"))
 ):
     """
-    Download a dataset as CSV. Optionally apply filters.
+    Download a dataset as CSV or JSON. Optionally apply filters and row limits.
     """
     try:
         dataset = db.query(UploadedFile).filter(UploadedFile.id == dataset_id).first()
         if not dataset:
             raise HTTPException(status_code=404, detail="Dataset not found")
         
-        # Get the data path from the dataset
-        data_path = dataset.path
+        # Get the appropriate data file path using our helper function
+        data_path = get_data_file_path(dataset)
         
-        # Load the data using pandas
-        if dataset.type.lower() == 'csv':
-            df = pd.read_csv(data_path)
-        elif dataset.type.lower() == 'json':
-            df = pd.read_json(data_path)
-        else:
-            raise HTTPException(status_code=400, detail=f"Unsupported file type: {dataset.type}")
+        # Check if file exists
+        if not os.path.exists(data_path):
+            raise HTTPException(status_code=404, detail="Dataset file not found")
+            
+        # Load the data using our helper function
+        df = load_dataset_as_dataframe(data_path, dataset.type)
         
         # Apply filter if provided
         if column and value:
@@ -483,19 +565,40 @@ async def download_dataset(
             elif operator == "contains":
                 df = df[df[column].astype(str).str.contains(value, na=False)]
         
-        # Convert to CSV
-        output = io.StringIO()
-        df.to_csv(output, index=False)
+        # Apply row limit if specified
+        if max_rows is not None and max_rows > 0:
+            df = df.head(max_rows)
         
-        # Create a streaming response
-        response = StreamingResponse(
-            iter([output.getvalue()]), 
-            media_type="text/csv"
-        )
+        # Use the dataset name (with fallback to filename without extension) for the export file
+        filename_base = dataset.dataset if dataset.dataset else os.path.splitext(dataset.filename)[0]
         
-        # Set the content disposition header for download
-        filename = f"{dataset.filename.split('.')[0]}_export.csv"
-        response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+        # Convert to the requested format
+        if format.lower() == 'csv':
+            output = io.StringIO()
+            df.to_csv(output, index=False)
+            
+            # Create a streaming response
+            response = StreamingResponse(
+                iter([output.getvalue()]), 
+                media_type="text/csv"
+            )
+            
+            # Set the content disposition header for download
+            response.headers["Content-Disposition"] = f"attachment; filename={filename_base}_export.csv"
+        elif format.lower() == 'json':
+            # Convert to JSON
+            json_str = df.to_json(orient='records', date_format='iso')
+            
+            # Create a streaming response
+            response = StreamingResponse(
+                iter([json_str]), 
+                media_type="application/json"
+            )
+            
+            # Set the content disposition header for download
+            response.headers["Content-Disposition"] = f"attachment; filename={filename_base}_export.json"
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported export format: {format}")
         
         return response
     except HTTPException:

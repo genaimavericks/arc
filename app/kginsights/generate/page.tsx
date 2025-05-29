@@ -11,15 +11,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/use-toast"
 import LoadingSpinner from "@/components/loading-spinner"
-import { motion } from "framer-motion"
-import { Save, Loader2, MessageSquare, CheckCircle, AlertTriangle, XCircle } from "lucide-react"
+import { motion, AnimatePresence } from "framer-motion"
+import { Save, Loader2, MessageSquare, CheckCircle, AlertTriangle, XCircle, ChevronLeft, ChevronRight } from "lucide-react"
 import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
 import Image from "next/image"
 import dynamic from 'next/dynamic'
 import { KGInsightsLayout } from "@/components/kginsights/kginsights-layout"
-import KGInsightsSidebar from "@/components/kginsights-sidebar"
-import { FloatingChart } from "@/components/floating-chart"
+
+
 import {
   Dialog,
   DialogContent,
@@ -95,6 +95,7 @@ function GenerateGraphContent() {
   const [showErrorDialog, setShowErrorDialog] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [showDomainError, setShowDomainError] = useState(false)
+  const [aiAssistantCollapsed, setAiAssistantCollapsed] = useState(false)
   const successMessageTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const chatRef = useRef<SchemaChatRef>(null)
   const { toast } = useToast()
@@ -382,7 +383,7 @@ function GenerateGraphContent() {
   }
 
   return (
-    <div className="flex-1 p-4 md:p-6 overflow-y-auto bg-gradient-to-b from-background to-background/95">
+    <div className="flex-1 p-4 md:p-6 overflow-y-auto bg-gradient-to-b from-background to-background/95 w-full">
       {/* Enhanced animated background with particles and floating elements */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0 opacity-20 pointer-events-none">
         <SparklesCore
@@ -396,23 +397,19 @@ function GenerateGraphContent() {
         />
       </div>
       
-      <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0 pointer-events-none">
-        <FloatingChart count={5} />
-      </div>
 
-      <div className="max-w-7xl mx-auto relative z-10 min-h-[calc(100vh-120px)] flex flex-col">
+
+      <div className="w-full relative z-10 min-h-[calc(100vh-120px)] flex flex-col">
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, ease: "easeOut" }}
           className="flex flex-col gap-4 mb-6"
         >
-          <h1 className="text-4xl font-bold text-foreground">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
             Generate Knowledge Graph
           </h1>
-          <p className="text-foreground max-w-3xl text-lg">
-            Transform your structured data into an interactive knowledge graph. Select a dataset, generate a schema using AI, and visualize your data relationships.
-          </p>
+
           <Separator className="bg-primary/20 h-0.5 rounded-full" />
         </motion.div>
 
@@ -421,9 +418,9 @@ function GenerateGraphContent() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.1, ease: "easeOut" }}
-          className="bg-card/80 backdrop-blur-md border border-primary/20 rounded-xl p-6 mb-10 shadow-lg"
+          className="bg-card/80 backdrop-blur-md border border-primary/20 rounded-xl p-6 mb-10 shadow-lg flex-1"
         >
-          <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-6">
+          <div className="flex flex-col md:flex-row gap-6 flex-1 w-full">
             <div className="flex flex-col md:flex-row items-start md:items-end gap-6 flex-wrap">
               <div className="w-full md:w-64">
                 <Label htmlFor="dataset-select" className="mb-2 block text-foreground font-medium text-base">Select Dataset</Label>
@@ -538,19 +535,49 @@ function GenerateGraphContent() {
           </div>
         </motion.div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 flex-1">
+        <div className="flex flex-1 relative">
+          {/* AI Assistant Toggle Button */}
+          {/* Fixed position toggle button stuck to the scrollbar with rounded right side */}
+          <div className="absolute left-[-15px] top-0 z-20 pointer-events-auto mt-2">
+            <button
+              onClick={() => setAiAssistantCollapsed(!aiAssistantCollapsed)}
+              className="relative bg-primary text-primary-foreground rounded-r-lg p-3 shadow-xl hover:bg-primary/90 transition-all h-20 w-12 flex items-center justify-center border-r border-t border-b border-primary/40 group"
+              aria-label={aiAssistantCollapsed ? "Expand AI Assistant" : "Collapse AI Assistant"}
+            >
+              {aiAssistantCollapsed ? (
+                <>
+                  <div className="absolute inset-0 bg-primary/20 rounded-r-lg animate-pulse group-hover:animate-none"></div>
+                  <div className="flex flex-col items-center justify-center gap-2 relative z-10">
+                    <ChevronRight size={24} />
+                    <span className="text-xs font-medium rotate-90">KG Assist</span>
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center gap-2">
+                  <ChevronLeft size={24} />
+                  <span className="text-xs font-medium rotate-90">KG Assist</span>
+                </div>
+              )}
+            </button>
+          </div>
+
           {/* Left column - Chat Interface */}
           <motion.div
             initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.6, delay: 0.2, ease: "easeOut" }}
+            animate={{ 
+              opacity: 1, 
+              x: 0,
+              width: aiAssistantCollapsed ? "0%" : "50%"
+            }}
+            transition={{ duration: 0.4, ease: "easeOut" }}
+            className={`overflow-hidden ${aiAssistantCollapsed ? "ml-6" : "mr-4"}`}
           >
-            <Card className="bg-card/90 backdrop-blur-sm border border-primary/20 shadow-xl overflow-hidden rounded-xl h-full">
-              <CardContent className="p-6">
-                <div className="flex flex-col gap-3 mb-5">
+            <Card className={`bg-card/90 backdrop-blur-sm border border-primary/20 shadow-xl overflow-hidden rounded-xl h-full ${aiAssistantCollapsed ? "invisible" : "visible"}`}>
+              <CardContent className="p-6 pl-14">
+                <div className="flex flex-col gap-3 mb-5 w-full">
                   <h2 className="text-xl font-semibold flex items-center gap-2 text-foreground">
                     <MessageSquare className="h-5 w-5 text-foreground" />
-                    <span>AI Assistant</span>
+                    <span>KG Assistant</span>
                   </h2>
                   <p className="text-sm text-muted-foreground">
                     Describe the knowledge graph you want to create from your dataset. The AI will help you generate an optimal schema.
@@ -575,8 +602,12 @@ function GenerateGraphContent() {
           {/* Right column - Schema Visualization and Details */}
           <motion.div
             initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.6, delay: 0.3, ease: "easeOut" }}
+            animate={{ 
+              opacity: 1, 
+              x: 0,
+              width: aiAssistantCollapsed ? "100%" : "50%"
+            }}
+            transition={{ duration: 0.4, ease: "easeOut" }}
           >
             <Card className="bg-card/90 backdrop-blur-sm border border-primary/20 shadow-xl overflow-hidden rounded-xl h-full">
               <CardContent className="p-6">

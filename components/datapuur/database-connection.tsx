@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { getApiBaseUrl } from "@/lib/config"
 import { useIngestion, Job } from "@/lib/ingestion-context"
+import { useToast } from "@/hooks/use-toast"
 
 export function DatabaseConnection({
   onSchemaDetected,
@@ -27,6 +28,18 @@ export function DatabaseConnection({
   onJobCreated: (job: Job) => void;
   onError?: (error: { message: string }) => void;
 }) {
+  // Use toast notifications for database-specific messages
+  const { toast } = useToast();
+  
+  // Function to show toast notifications for database operations
+  const showDatabaseToast = (title: string, message: string, type: "default" | "destructive" = "default") => {
+    toast({
+      title: title,
+      description: message,
+      variant: type,
+      duration: 5000 // Auto-dismiss after 5 seconds
+    });
+  };
   // Use the global ingestion context
   const { addJob, updateJob, addError, setProcessingStatus } = useIngestion()
   
@@ -104,14 +117,18 @@ export function DatabaseConnection({
     const validationError = validateConnection()
     if (validationError) {
       setError(validationError)
+      // Show error toast
+      showDatabaseToast("Connection Validation Error", validationError, "destructive")
       if (onError) onError({ message: validationError })
       return
     }
 
     setIsProcessing(true)
     setError("")
-    onStatusChange("Testing database connection...")
-    setProcessingStatus("Testing database connection...")
+    // Show testing toast
+    showDatabaseToast("Database Connection", "Testing database connection...")
+    // Clear any existing processing status
+    setProcessingStatus("")
 
     try {
       const apiBaseUrl = getApiBaseUrl()
@@ -132,12 +149,15 @@ export function DatabaseConnection({
         throw new Error(errorData.detail || "Failed to connect to database")
       }
 
-      onStatusChange("Connection successful! Database is accessible.")
-      setProcessingStatus("Connection successful! Database is accessible.")
+      // Show success toast
+      showDatabaseToast("Connection Successful", "Database is accessible.")
+      // Clear any existing processing status
+      setProcessingStatus("")
     } catch (error: any) {
       console.error("Error testing connection:", error)
       setError(error.message || "Failed to connect to database")
-      onStatusChange("")
+      // Show error toast
+      showDatabaseToast("Connection Failed", error.message || "Failed to connect to database", "destructive")
       if (onError) onError({ message: error.message || "Failed to connect to database" })
       
       // Also add to global error context
@@ -151,14 +171,18 @@ export function DatabaseConnection({
     const validationError = validateConnection()
     if (validationError) {
       setError(validationError)
+      // Show error toast
+      showDatabaseToast("Schema Validation Error", validationError, "destructive")
       if (onError) onError({ message: validationError })
       return
     }
 
     setIsProcessing(true)
     setError("")
-    onStatusChange("Connecting to database and fetching schema...")
-    setProcessingStatus("Connecting to database and fetching schema...")
+    // Show fetching toast
+    showDatabaseToast("Database Schema", "Fetching database schema...")
+    // Clear any existing processing status
+    setProcessingStatus("")
 
     try {
       const apiBaseUrl = getApiBaseUrl()
@@ -182,12 +206,15 @@ export function DatabaseConnection({
 
       const data = await response.json()
       onSchemaDetected(data.schema)
-      onStatusChange("Schema fetched successfully!")
-      setProcessingStatus("Schema fetched successfully!")
+      // Show success toast
+      showDatabaseToast("Schema Loaded", "Database schema fetched successfully!")
+      // Clear any existing processing status
+      setProcessingStatus("")
     } catch (error: any) {
       console.error("Error fetching schema:", error)
       setError(error.message || "Failed to fetch schema")
-      onStatusChange("")
+      // Show error toast
+      showDatabaseToast("Schema Fetch Failed", error.message || "Failed to fetch schema", "destructive")
       if (onError) onError({ message: error.message || "Failed to fetch schema" })
       
       // Also add to global error context
@@ -207,8 +234,12 @@ export function DatabaseConnection({
 
     setIsProcessing(true)
     setError("")
-    onStatusChange("Starting database ingestion...")
-    setProcessingStatus("Starting database ingestion...")
+    
+    // Show toast notification for starting ingestion
+    showDatabaseToast("Database Ingestion", `Starting ingestion from ${connectionType} database ${connectionConfig.database}.${connectionConfig.table}`)
+    
+    // Clear any existing processing status
+    setProcessingStatus("")
 
     try {
       // Log attempt with details for debugging
@@ -246,15 +277,14 @@ export function DatabaseConnection({
       }
 
       const data = await response.json()
-      onStatusChange("Database ingestion started!")
 
-      // Create a job object for the UI
+      // Create a job object for the UI - use running status to match file ingestion behavior
       const job: Job = {
         id: data.job_id,
         name: `${connectionType.toUpperCase()}: ${connectionConfig.database}.${connectionConfig.table}`,
         type: "database",
-        status: "queued",
-        progress: 0,
+        status: "running",
+        progress: 1, // Start with 1% progress to make the progress bar visible immediately
         startTime: new Date().toISOString(),
         endTime: null,
         details: `Ingesting from ${connectionType} database: ${connectionConfig.host}:${connectionConfig.port}/${connectionConfig.database}.${connectionConfig.table}`,
@@ -266,13 +296,16 @@ export function DatabaseConnection({
       // Also add to global context
       addJob(job)
       
-      onStatusChange(`Database ingestion started. Data will be extracted from ${connectionConfig.table} and stored in parquet format.`)
-      setProcessingStatus(`Job ID: ${data.job_id} - Processing started, you can view progress in the History tab.`)
+      
+      // Show toast notification for job creation
+      showDatabaseToast("Ingestion Started", `Job ID: ${data.job_id} - Processing ${connectionType} database ${connectionConfig.database}.${connectionConfig.table}`)
+      
+      // Clear any existing processing status
+      setProcessingStatus("")
     } catch (error: any) {
       console.error("Error starting ingestion:", error)
       setError(error.message || "Failed to start database ingestion")
-      onStatusChange("Database ingestion failed")
-      
+      showDatabaseToast("Ingestion Failed", error.message || "Failed to start database ingestion", "destructive")
       if (onError) onError({ message: error.message || "Failed to start database ingestion" })
       
       // Add to global error context with more detailed information
@@ -309,16 +342,22 @@ export function DatabaseConnection({
   const saveConnection = async () => {
     if (!connectionName) {
       setError("Please provide a name for this connection")
+      // Show error toast
+      showDatabaseToast("Save Error", "Please provide a name for this connection", "destructive")
       return
     }
 
     const validationError = validateConnection()
     if (validationError) {
       setError(validationError)
+      // Show error toast
+      showDatabaseToast("Validation Error", validationError, "destructive")
       return
     }
 
     setIsProcessing(true)
+    // Show saving toast
+    showDatabaseToast("Saving Connection", `Saving connection "${connectionName}"...`)
   
     try {
       const apiBaseUrl = getApiBaseUrl()
@@ -344,13 +383,13 @@ export function DatabaseConnection({
       fetchSavedConnections()
     
       setConnectionName("")
-      onStatusChange(`Connection "${connectionName}" saved successfully!`)
-    
-      // Clear status after 3 seconds
-      setTimeout(() => onStatusChange(""), 3000)
+      // Show success toast
+      showDatabaseToast("Connection Saved", `Connection "${connectionName}" saved successfully!`)
     } catch (error: any) {
       console.error("Error saving connection:", error)
       setError(error.message || "Failed to save connection")
+      // Show error toast
+      showDatabaseToast("Save Failed", error.message || "Failed to save connection", "destructive")
       addError(`Error saving database connection: ${error.message || "Unknown error"}`)
     } finally {
       setIsProcessing(false)
@@ -376,11 +415,24 @@ export function DatabaseConnection({
       password: "", // Clear password for security
     })
     setConnectionName(connection.name) // Set the connection name for reference
-    onStatusChange(`Loaded connection "${connection.name}"`)
+    
+    // Show toast notification for loaded connection
+    showDatabaseToast("Connection Loaded", `Loaded connection "${connection.name}"`)
+    
+    // IMPORTANT: Force clear any processing status to prevent "File Processing" display
+    setProcessingStatus("")
+    
+    // Also directly clear from localStorage to ensure no persistence
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('processingStatus')
+      console.log("Forcibly cleared processing status when loading connection")
+    }
   }
 
   const deleteConnection = async (id: string) => {
     setIsProcessing(true)
+    // Show deleting toast
+    showDatabaseToast("Deleting Connection", "Deleting connection...")
     
     try {
       const apiBaseUrl = getApiBaseUrl()
@@ -398,13 +450,13 @@ export function DatabaseConnection({
 
       // Refresh the connections list
       fetchSavedConnections()
-      onStatusChange("Connection deleted successfully")
-      
-      // Clear status after 3 seconds
-      setTimeout(() => onStatusChange(""), 3000)
+      // Show success toast
+      showDatabaseToast("Connection Deleted", "Connection deleted successfully")
     } catch (error: any) {
       console.error("Error deleting connection:", error)
       setError(error.message || "Failed to delete connection")
+      // Show error toast
+      showDatabaseToast("Delete Failed", error.message || "Failed to delete connection", "destructive")
       addError(`Error deleting database connection: ${error.message || "Unknown error"}`)
     } finally {
       setIsProcessing(false)

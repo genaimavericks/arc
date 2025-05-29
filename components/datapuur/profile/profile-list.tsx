@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Search, BarChart2, Calendar, Database, Trash2, Eye } from "lucide-react"
+import { Search, BarChart2, Calendar, Database, Trash2, Eye, RefreshCw } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import {
   Table,
@@ -23,7 +23,7 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination"
 import { Badge } from "@/components/ui/badge"
-import { format } from "date-fns"
+import { format, formatDistanceToNow } from "date-fns"
 import LoadingSpinner from "@/components/loading-spinner"
 import {
   Tooltip,
@@ -51,6 +51,18 @@ interface ProfileListProps {
 }
 
 export function ProfileList({ onProfileSelect, selectedProfileId, fileIdFilter }: ProfileListProps) {
+  // Create refs for methods that need to be exposed to the parent component
+  const componentRef = useRef<HTMLDivElement>(null);
+  
+  // Expose methods to the parent component
+  useEffect(() => {
+    if (componentRef.current) {
+      // Add methods to the DOM element for the parent to access
+      (componentRef.current as any).setSearchQuery = setSearchQuery;
+      (componentRef.current as any).handleSearch = handleSearch;
+      (componentRef.current as any).fetchProfiles = fetchProfiles;
+    }
+  }, []);
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
@@ -326,21 +338,11 @@ export function ProfileList({ onProfileSelect, selectedProfileId, fileIdFilter }
   };
 
   return (
-    <Card>
-      <CardContent className="p-6">
-        <div className="flex flex-col space-y-4">
-          <form onSubmit={handleSearch} className="flex w-full max-w-sm items-center space-x-2">
-            <Input
-              type="text"
-              placeholder="Search profiles..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="flex-1"
-            />
-            <Button type="submit" size="icon">
-              <Search className="h-4 w-4" />
-            </Button>
-          </form>
+    <div id="profile-list-component" ref={componentRef}>
+      
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex flex-col space-y-4">
 
           {loading ? (
             <div className="flex justify-center items-center h-64">
@@ -408,11 +410,35 @@ export function ProfileList({ onProfileSelect, selectedProfileId, fileIdFilter }
                         <TableCell>
                           <div className="flex items-center">
                             <Calendar className="h-3 w-3 mr-1" />
-                            <span>{format(new Date(profile.created_at), "MMM d, yyyy")}</span>
+                            <div>
+                              {(() => {
+                                try {
+                                  // Parse the UTC date from the ISO string
+                                  const utcDate = new Date(profile.created_at);
+                                  
+                                  // Get the client's timezone offset in minutes
+                                  const timezoneOffset = new Date().getTimezoneOffset();
+                                  
+                                  // Convert from UTC to client's local time by adjusting for timezone offset
+                                  // Note: getTimezoneOffset() returns minutes WEST of UTC, so we negate it
+                                  const localDate = new Date(utcDate.getTime() - (timezoneOffset * 60 * 1000));
+                                  
+                                  // Format the date and time
+                                  return (
+                                    <>
+                                      <div>{formatDistanceToNow(localDate, { addSuffix: true })}</div>
+                                      <div className="text-xs text-muted-foreground">
+                                        {localDate.toISOString().replace('T', ' ').substring(0, 19)}
+                                      </div>
+                                    </>
+                                  );
+                                } catch (error) {
+                                  console.error("Error formatting date:", error, profile.created_at);
+                                  return profile.created_at || "Unknown";
+                                }
+                              })()}
+                            </div>
                           </div>
-                          <span className="text-xs text-muted-foreground">
-                            {format(new Date(profile.created_at), "h:mm a")}
-                          </span>
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end space-x-2">
@@ -504,6 +530,7 @@ export function ProfileList({ onProfileSelect, selectedProfileId, fileIdFilter }
         </div>
       </CardContent>
     </Card>
+    </div>
   );
 }
 

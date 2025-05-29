@@ -114,9 +114,9 @@ export function IngestionMonitor({ jobs: propJobs, onJobUpdated, errors: propErr
     // Run immediately when jobs change
     checkJobs()
     
-    // Then set up the polling interval
-    const pollInterval = setInterval(checkJobs, 10000) // Poll every 10 seconds instead of 3
-
+    // Then set up the polling interval - poll more frequently for better progress updates
+    const pollInterval = setInterval(checkJobs, 3000) // Poll every 3 seconds for more responsive progress updates
+    
     return () => clearInterval(pollInterval)
   }, [jobs, localIsPolling, onJobUpdated, updateJob])
 
@@ -395,7 +395,10 @@ export function IngestionMonitor({ jobs: propJobs, onJobUpdated, errors: propErr
                             <span>Progress: {job.progress}%</span>
                             <span>Started {formatTime(job.startTime)}</span>
                           </div>
-                          <Progress value={job.progress} className="h-2" />
+                          <Progress 
+                            value={job.progress} 
+                            className="h-2 transition-all duration-300" 
+                          />
                         </div>
                       </div>
                     ))}

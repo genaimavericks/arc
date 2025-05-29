@@ -101,13 +101,14 @@ class UploadedFile(Base):
     __tablename__ = "uploaded_files"
 
     id = Column(String, primary_key=True, index=True)
-    filename = Column(String, nullable=False)
+    filename = Column(String, nullable=False)  # For DB ingestion: host:port:database
     path = Column(String, nullable=False)
     type = Column(String, nullable=False)
     uploaded_by = Column(String, nullable=False)
     uploaded_at = Column(DateTime, nullable=False)
     chunk_size = Column(Integer, default=1000)
     schema = Column(Text, nullable=True)  # Store schema as JSON string
+    dataset = Column(String, nullable=True)  # For DB ingestion: table name, for file ingestion: filename without extension
 
 class IngestionJob(Base):
     __tablename__ = "ingestion_jobs"

@@ -387,15 +387,43 @@ def create_neo4j_import_files(schema_path, data_path, output_dir):
     
     logging.info(f"Loading data from {data_path}")
     try:
-        # Use optimized CSV reading parameters
-        df = pd.read_csv(
-            data_path, 
-            low_memory=False,
-            # Only parse dates when needed later, not during initial load
-            parse_dates=False,
-            # Use a more efficient engine
-            engine='c' if 'c' in pd.read_csv.__doc__ else 'python'
-        )
+        # Determine file type based on extension
+        file_ext = os.path.splitext(data_path.lower())[1]
+        
+        if file_ext == '.csv':
+            # Use optimized CSV reading parameters
+            logging.info(f"Loading CSV file: {data_path}")
+            df = pd.read_csv(
+                data_path, 
+                low_memory=False,
+                # Only parse dates when needed later, not during initial load
+                parse_dates=False,
+                # Use a more efficient engine
+                engine='c' if 'c' in pd.read_csv.__doc__ else 'python'
+            )
+        elif file_ext == '.parquet':
+            # Load parquet file
+            logging.info(f"Loading parquet file: {data_path}")
+            df = pd.read_parquet(data_path)
+        elif file_ext == '.json':
+            # Load JSON file
+            logging.info(f"Loading JSON file: {data_path}")
+            # Try to determine if it's JSON lines or standard JSON
+            try:
+                # First try as JSON lines (more common for data files)
+                df = pd.read_json(data_path, lines=True)
+            except Exception as json_err:
+                logging.warning(f"Failed to read as JSON lines, trying standard JSON: {json_err}")
+                try:
+                    # If that fails, try standard JSON
+                    df = pd.read_json(data_path)
+                except Exception as std_json_err:
+                    # If both fail, raise the original error
+                    logging.error(f"Failed to read JSON file: {std_json_err}")
+                    raise json_err
+        else:
+            raise ValueError(f"Unsupported file format: {file_ext}. Supported formats are .csv, .json, and .parquet")
+            
         logging.info(f"Loaded {len(df)} rows of data")
     except Exception as e:
         logging.error(f"Error loading data: {e}")

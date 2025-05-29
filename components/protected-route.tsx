@@ -22,20 +22,26 @@ export default function ProtectedRoute({ children, requiredPermission }: Protect
     const isLoggingOut = sessionStorage.getItem("isLoggingOut") === "true"
 
     if (!isLoading && !user) {
-      if (isLoggingOut) {
-        // If logging out, redirect to home and clear the flag
-        sessionStorage.removeItem("isLoggingOut")
-        router.push("/")
-      } else {
-        // Normal case - redirect to login if not authenticated
-        router.push(`/login?redirect=${encodeURIComponent(pathname)}`)
-      }
+      // Always redirect to login page when not authenticated
+      router.push(`/login?redirect=${encodeURIComponent(pathname)}`)
     } else if (!isLoading && user) {
       // Check permission-based access if a specific permission is required
       if (requiredPermission && user.permissions) {
-        // If the user doesn't have the required permission, redirect
+        // If the user doesn't have the required permission, redirect to an appropriate page
         if (!user.permissions.includes(requiredPermission)) {
-          router.push("/")
+          // Instead of redirecting to home, redirect to the appropriate page based on permissions
+          if (user.permissions.includes('datapuur:read')) {
+            router.push('/datapuur')
+          } else if (user.permissions.includes('kginsights:read')) {
+            router.push('/kginsights')
+          } else if (user.permissions.includes('dashboard:read')) {
+            router.push('/dashboards')
+          } else if (user.permissions.includes('djinni:read')) {
+            router.push('/djinni')
+          } else {
+            // If no clear permissions, go to access denied
+            router.push('/access-denied')
+          }
         }
       }
     }
