@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { WebSocketService, ConnectionStatus } from './websocket-service';
-import { SuggestionService, SuggestionOptions } from './suggestion-service';
+import { SuggestionService, SuggestionOptions, LinguisticError, QueryQualityAnalysis } from './suggestion-service';
 import { AutocompleteService, AutocompleteSuggestion, AutocompleteOptions } from './autocomplete-service';
 
 export interface KGInsightsHookOptions {
@@ -22,8 +22,11 @@ export interface KGInsightsHookResult {
   error: string | null;
   suggestions: string[];
   autocompleteSuggestions: AutocompleteSuggestion[];
+  linguisticErrors: LinguisticError[];
+  queryQualityAnalysis: QueryQualityAnalysis | null;
   getSuggestions: (query: string, cursorPosition: number) => void;
   getAutocompleteSuggestions: (text: string, cursorPosition: number) => void;
+  checkLinguisticErrors: (query: string, cursorPosition: number) => void;
   sendQuery: (query: string) => void;
   validateQuery: (query: string) => void;
   disconnect: () => void;
@@ -54,6 +57,8 @@ export function useKGInsights(
   const [error, setError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [autocompleteSuggestions, setAutocompleteSuggestions] = useState<AutocompleteSuggestion[]>([]);
+  const [linguisticErrors, setLinguisticErrors] = useState<LinguisticError[]>([]);
+  const [queryQualityAnalysis, setQueryQualityAnalysis] = useState<QueryQualityAnalysis | null>(null);
   
   // Initialize services
   useEffect(() => {
@@ -151,6 +156,20 @@ export function useKGInsights(
     );
   };
   
+  // Function to check for linguistic errors
+  const checkLinguisticErrors = (query: string, cursorPosition: number) => {
+    if (!suggestionServiceRef.current) return;
+    
+    suggestionServiceRef.current.checkLinguisticErrors(
+      query,
+      cursorPosition,
+      (errors, analysis) => {
+        setLinguisticErrors(errors || []);
+        setQueryQualityAnalysis(analysis || null);
+      }
+    );
+  };
+  
   // Function to send a query
   const sendQuery = (query: string) => {
     if (!webSocketServiceRef.current) return;
@@ -198,8 +217,11 @@ export function useKGInsights(
     error,
     suggestions,
     autocompleteSuggestions,
+    linguisticErrors,
+    queryQualityAnalysis,
     getSuggestions,
     getAutocompleteSuggestions,
+    checkLinguisticErrors,
     sendQuery,
     validateQuery,
     disconnect,

@@ -414,3 +414,45 @@ def generate_dummy_visualization(query_text: str) -> Dict[str, Any]:
                 "y": [random.randint(1, 100) for _ in range(20)]
             }
         }
+
+async def refresh_cache_task(schema_id: str) -> None:
+    """
+    Background task to refresh the query suggestion cache for a given schema.
+    
+    This function loads and caches:
+    1. Schema data
+    2. Query suggestions (from history, canned queries, and schema-based patterns)
+    3. Common phrases and linguistic patterns
+    
+    Args:
+        schema_id: ID of the schema to refresh cache for
+    """
+    try:
+        logger.info(f"Refreshing query suggestion cache for schema {schema_id}")
+        
+        # Refresh schema data cache
+        await get_schema_data(schema_id)
+        
+        # Create a dummy user for cache initialization
+        dummy_user = User(id=0, username="system", email="system@example.com")
+        
+        # Pre-load entity suggestions
+        await get_entity_suggestions(schema_id)
+        
+        # Pre-load query suggestions (without filtering)
+        suggestions = await get_query_suggestions(schema_id, dummy_user)
+        logger.info(f"Cached {len(suggestions)} query suggestions for schema {schema_id}")
+        
+        # Ensure directories exist for query history and suggestions
+        output_dir = Path("runtime-data/output/kgdatainsights")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        queries_dir = output_dir / "queries"
+        queries_dir.mkdir(exist_ok=True)
+        
+        history_dir = output_dir / "history"
+        history_dir.mkdir(exist_ok=True)
+        
+        logger.info(f"Successfully refreshed cache for schema {schema_id}")
+    except Exception as e:
+        logger.error(f"Error refreshing cache for schema {schema_id}: {str(e)}")

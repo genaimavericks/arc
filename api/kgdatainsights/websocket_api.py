@@ -21,6 +21,8 @@ try:
         validate_query, 
         get_query_suggestions
     )
+    from api.kgdatainsights.linguistic_checker import linguistic_checker
+    from api.kgdatainsights.related_query_service import related_query_service
 except ImportError:
     # When run directly
     from .websocket_manager import ConnectionManager, get_connection_manager
@@ -32,6 +34,8 @@ except ImportError:
         validate_query, 
         get_query_suggestions
     )
+    from .linguistic_checker import linguistic_checker
+    from .related_query_service import related_query_service
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -155,6 +159,9 @@ async def websocket_endpoint(
                 # Log message receipt
                 logger.info(f"Received {message_type} message from user_id={user.id}, schema_id={schema_id}")
                 
+                # Log detailed message info for debugging
+                logger.info(f"Received message: {message}")
+                
                 # Process different message types
                 if message_type == "query":
                     # Process the query
@@ -179,6 +186,29 @@ async def websocket_endpoint(
                         )
                     )
                 
+                elif message_type == "related_queries":
+                    # Handle related queries request
+                    query_text = content.get("query", "")
+                    if not query_text:
+                        await manager.send_message(
+                            websocket=websocket,
+                            message_type="error",
+                            content={"error": "Empty query", "request_id": content.get("request_id")}
+                        )
+                        continue
+                    
+                    # Process related queries request asynchronously
+                    asyncio.create_task(
+                        handle_related_queries(
+                            manager=manager,
+                            websocket=websocket,
+                            user=user,
+                            schema_id=schema_id,
+                            query_text=query_text,
+                            request_id=content.get("request_id")
+                        )
+                    )
+                
                 elif message_type == "autocomplete":
                     # Handle autocomplete request
                     partial_text = content.get("text", "")
@@ -193,6 +223,45 @@ async def websocket_endpoint(
                             partial_text=partial_text,
                             cursor_position=cursor_position,
                             request_id=content.get("request_id"),
+                            user=user
+                        )
+                    )
+                
+                elif message_type == "suggestions":
+                    # Handle suggestions request
+                    query_text = content.get("query", "")
+                    cursor_position = content.get("cursor_position", 0)
+                    request_id = content.get("request_id")
+                    
+                    # Process suggestions asynchronously
+                    asyncio.create_task(
+                        handle_suggestions(
+                            manager=manager,
+                            websocket=websocket,
+                            schema_id=schema_id,
+                            query_text=query_text,
+                            cursor_position=cursor_position,
+                            request_id=request_id,
+                            user=user
+                        )
+                    )
+                    
+                elif message_type == "linguistic_check":
+                    # Handle linguistic check request
+                    logger.info(f"Received linguistic_check request: {content}")
+                    query_text = content.get("query", "")
+                    cursor_position = content.get("cursor_position", 0)
+                    request_id = content.get("request_id")
+                    
+                    # Process linguistic check asynchronously
+                    asyncio.create_task(
+                        handle_linguistic_check(
+                            manager=manager,
+                            websocket=websocket,
+                            schema_id=schema_id,
+                            query_text=query_text,
+                            cursor_position=cursor_position,
+                            request_id=request_id,
                             user=user
                         )
                     )
@@ -489,9 +558,21 @@ async def handle_suggestions(
     query_text: str,
     request_id: Optional[str] = None,
     user: Optional[User] = None,
-    cursor_position: Optional[int] = None
+    cursor_position: Optional[int] = None,
+    suggestion_type: str = "query"
 ):
-    """Handle a suggestions request asynchronously"""
+    """Handle a suggestions request asynchronously
+    
+    Args:
+        manager: The connection manager
+        websocket: The WebSocket connection
+        schema_id: The schema ID
+        query_text: The query text to get suggestions for
+        request_id: Optional request ID for tracking
+        user: Optional user object
+        cursor_position: Optional cursor position in the query text
+        suggestion_type: Type of suggestions ("query" or "linguistic")
+    """
     try:
         # If user not provided, get the current user from the connection
         if not user:
@@ -532,7 +613,7 @@ async def handle_suggestions(
         if len(suggestions) > 5:
             logger.info(f"  ... and {len(suggestions) - 5} more suggestions")
         
-        # Send suggestions
+        # Send suggestions with type information to prevent overriding linguistic suggestions
         await manager.send_message(
             websocket=websocket,
             message_type="suggestions",
@@ -540,7 +621,8 @@ async def handle_suggestions(
                 "request_id": request_id,
                 "query": query_text,
                 "suggestions": suggestions,
-                "schema_id": schema_id  # Include schema_id in response for verification
+                "schema_id": schema_id,  # Include schema_id in response for verification
+                "suggestion_type": suggestion_type  # Add type to differentiate query vs linguistic suggestions
             }
         )
     
@@ -552,6 +634,166 @@ async def handle_suggestions(
             message_type="suggestions_error",
             content={"request_id": request_id, "error": str(e)}
         )
+
+async def handle_related_queries(
+    manager: ConnectionManager,
+    websocket: WebSocket,
+    schema_id: str,
+    query_text: str,
+    request_id: Optional[str] = None,
+    user: Optional[User] = None
+):
+    """Handle a related queries request asynchronously
+    
+    Args:
+        manager: The connection manager
+        websocket: The WebSocket connection
+        schema_id: The schema ID
+        query_text: The query text to get related queries for
+        request_id: Optional request ID for tracking
+        user: Optional user object
+    """
+    try:
+        # If user not provided, get the current user from the connection
+        if not user:
+            user_id = None
+            for uid, connections in manager.active_connections.get(schema_id, {}).items():
+                if websocket in connections.values():
+                    user_id = uid
+                    break
+            
+            if not user_id:
+                # If user not found, use a dummy user
+                user = User(id=999, username="anonymous", email="anonymous@example.com", role="user")
+            else:
+                # Get the user from the database
+                with SessionLocal() as db:
+                    db_user = db.query(User).filter(User.id == int(user_id)).first()
+                    if db_user:
+                        user = db_user
+                    else:
+                        # Create a user object with the ID if not found in DB
+                        user = User(id=int(user_id), username="user", email="user@example.com", role="user")
+        
+        # Log the input parameters for debugging
+        logger.info(f"Generating related queries for schema_id: {schema_id}, text: '{query_text}'")
+        
+        # Get related queries from the service
+        related_queries = await related_query_service.get_related_queries(
+            schema_id=schema_id,
+            query_text=query_text,
+            user_id=str(user.id) if user else None
+        )
+        
+        # Log the results
+        logger.info(f"Generated {len(related_queries['broader'])} broader and {len(related_queries['narrower'])} narrower queries")
+        
+        # Send related queries
+        await manager.send_message(
+            websocket=websocket,
+            message_type="related_queries",
+            content={
+                "request_id": request_id,
+                "query": query_text,
+                "broader": related_queries["broader"],
+                "narrower": related_queries["narrower"],
+                "schema_id": schema_id  # Include schema_id in response for verification
+            }
+        )
+    
+    except Exception as e:
+        logger.error(f"Error processing related queries: {str(e)}")
+        logger.error(traceback.format_exc())
+        await manager.send_message(
+            websocket=websocket,
+            message_type="related_queries_error",
+            content={"request_id": request_id, "error": str(e)}
+        )
+
+async def handle_linguistic_check(
+    manager: ConnectionManager,
+    websocket: WebSocket,
+    schema_id: str,
+    query_text: str,
+    cursor_position: int,
+    request_id: Optional[str] = None,
+    user: Optional[User] = None
+):
+    """Handle a linguistic check request asynchronously
+    
+    Args:
+        manager: The connection manager
+        websocket: The WebSocket connection
+        schema_id: The schema ID
+        query_text: The query text to check
+        cursor_position: The cursor position in the query text
+        request_id: Optional request ID for tracking
+        user: Optional user object
+    """
+    logger.info(f"[LINGUISTIC] Handling linguistic check: schema={schema_id}, query='{query_text}', pos={cursor_position}, req_id={request_id}")
+    
+    try:
+        # Check linguistic issues using LanguageTool
+        logger.info(f"[LINGUISTIC] Calling linguistic_checker.check_text")
+        errors, analysis = linguistic_checker.check_text(query_text, cursor_position)
+        logger.info(f"[LINGUISTIC] Got results: errors={errors}, analysis={analysis}")
+        
+        # Generate suggestions from linguistic errors
+        linguistic_suggestions = []
+        for error in errors:
+            if "suggestion" in error and error["suggestion"]:
+                # Create a formatted suggestion string for the frontend
+                linguistic_suggestions.append(f"💡 {error['suggestion']} ({error['message']})")
+        
+        # Send linguistic suggestions through the suggestion system if we have any
+        if linguistic_suggestions:
+            # Send linguistic suggestions through the suggestion system
+            await manager.send_message(
+                websocket=websocket,
+                message_type="suggestions",
+                content={
+                    "request_id": request_id,
+                    "query": query_text,
+                    "suggestions": linguistic_suggestions,
+                    "schema_id": schema_id,
+                    "suggestion_type": "linguistic"  # Mark these as linguistic suggestions
+                }
+            )
+            logger.info(f"[LINGUISTIC] Sent {len(linguistic_suggestions)} linguistic suggestions")
+        
+        # Send the detailed check results back
+        response = {
+            "type": "linguistic_check_results",
+            "status": "success",
+            "errors": errors,
+            "quality_analysis": analysis,
+            "has_suggestions": len(linguistic_suggestions) > 0
+        }
+        
+        # Add request ID if provided
+        if request_id:
+            response["request_id"] = request_id
+        
+        logger.info(f"[LINGUISTIC] Sending response: {response}")
+        await manager.send_message(websocket, "linguistic_check_results", response)
+        logger.info(f"[LINGUISTIC] Response sent successfully")
+        
+    except Exception as e:
+        logger.error(f"[LINGUISTIC] Error in linguistic check: {str(e)}\n{traceback.format_exc()}")
+        
+        # Send error response
+        error_response = {
+            "type": "linguistic_check_error",
+            "error": str(e)
+        }
+        
+        # Add request ID if provided
+        if request_id:
+            error_response["request_id"] = request_id
+        
+        logger.info(f"[LINGUISTIC] Sending error response: {error_response}")
+        await manager.send_message(websocket, "linguistic_check_error", {"error": str(e), "request_id": request_id})
+        logger.info(f"[LINGUISTIC] Error response sent successfully")
 
 # Function to register the WebSocket router with the main app
 def register_websocket_api(app):
