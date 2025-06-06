@@ -307,7 +307,7 @@ function import_database {
     IMPORT_CMD="$IMPORT_CMD --relationships=$REL_FILE"
     
     # Add delimiter options
-    IMPORT_CMD="$IMPORT_CMD --delimiter=\",\" --array-delimiter=\";\""
+    IMPORT_CMD="$IMPORT_CMD --multiline-fields=true --delimiter=\",\" --array-delimiter=\";\""
     
     # Add verbose flag for detailed error output
     IMPORT_CMD="$IMPORT_CMD --verbose"
