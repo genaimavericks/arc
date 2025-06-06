@@ -21,6 +21,7 @@ import {
   DialogFooter as NestedDialogFooter,
   DialogDescription as NestedDialogDescription,
 } from "@/components/ui/dialog"
+import { fetchWithAuth } from "@/lib/auth-utils"
 
 interface SchemaViewerModalProps {
   isOpen: boolean
@@ -104,11 +105,8 @@ export function SchemaViewerModal({ isOpen, onClose, datasetId, datasetName }: S
 
       // First try to fetch from the schema database if it's a schema ID
       try {
-        const schemaResponse = await fetch(`/api/graphschema/schemas/${datasetId}`, {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-        })
+        // Use fetchWithAuth for proper token expiration handling
+        const schemaResponse = await fetchWithAuth(`/api/graphschema/schemas/${datasetId}`)
 
         if (schemaResponse.ok) {
           const schemaData = await schemaResponse.json()
@@ -147,11 +145,7 @@ export function SchemaViewerModal({ isOpen, onClose, datasetId, datasetName }: S
       }
 
       // If not a graph schema, try the dataset schema endpoint
-      const response = await fetch(`/api/datapuur/ingestion-schema/${datasetId}`, {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-      })
+      const response = await fetchWithAuth(`/api/datapuur/dataset/${datasetId}`)
 
       if (!response.ok) {
         throw new Error(`Failed to fetch schema data: ${response.status}`)
@@ -205,11 +199,11 @@ export function SchemaViewerModal({ isOpen, onClose, datasetId, datasetName }: S
     try {
       setIsCleaningUp(true)
       
-      const response = await fetch('/api/graphschema/cleanup-schemas', {
+      // Use fetchWithAuth for proper token expiration handling
+      const response = await fetchWithAuth('/api/graphschema/cleanup-schemas', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Content-Type': 'application/json'
         }
       })
       
@@ -263,12 +257,9 @@ export function SchemaViewerModal({ isOpen, onClose, datasetId, datasetName }: S
       const formData = new FormData()
       formData.append('file', file)
       
-      // Upload the file
-      const response = await fetch('/api/upload', {
+      // Upload the file using fetchWithAuth for proper token expiration handling
+      const response = await fetchWithAuth('/api/upload', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
         body: formData
       })
       
@@ -335,11 +326,11 @@ export function SchemaViewerModal({ isOpen, onClose, datasetId, datasetName }: S
       // Construct the URL with the schema ID and query parameters
       const url = `/api/graphschema/schemas/${datasetId}/load-data?${queryParams.toString()}`
       
-      const response = await fetch(url, {
+      // Use fetchWithAuth for proper token expiration handling
+      const response = await fetchWithAuth(url, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           use_source_data: true,

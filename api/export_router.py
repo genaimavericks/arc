@@ -272,31 +272,27 @@ async def get_datasets(
         # Format the results
         result = []
         for dataset in datasets:
-            # Get file size
-            file_size = 0
-            if os.path.exists(dataset.path):
-                file_size = os.path.getsize(dataset.path)
-            
-            # Check if a parquet file exists for this dataset
-            data_dir = os.path.join(os.path.dirname(os.path.dirname(dataset.path)), "data")
-            parquet_path = os.path.join(data_dir, f"{dataset.id}.parquet")
-            
-            # If parquet exists, use its size instead
-            if os.path.exists(parquet_path):
-                file_size = os.path.getsize(parquet_path)
-                
-            result.append({
-                "id": dataset.id,
-                "name": dataset.filename,
-                "dataset": dataset.dataset,
-                "type": dataset.type,
-                "size": file_size,
-                "uploaded_at": dataset.uploaded_at,
-                "uploaded_by": dataset.uploaded_by,
-                "source_type": "file" if dataset.type in ["csv", "json"] else "database",
-                "preview_url": f"/api/export/datasets/{dataset.id}/preview",
-                "download_url": f"/api/export/datasets/{dataset.id}/download"
-            })
+            # Only include files that actually exist on disk
+            if dataset.path and os.path.exists(dataset.path):
+                try:
+                    file_size = os.path.getsize(dataset.path)
+                    result.append({
+                        "id": dataset.id,
+                        "name": dataset.filename,
+                        "type": dataset.type,
+                        "size": file_size,
+                        "uploaded_at": dataset.uploaded_at,
+                        "uploaded_by": dataset.uploaded_by,
+                        "source_type": "file",
+                        "row_count": dataset.chunk_size if hasattr(dataset, "chunk_size") else None,
+                        "status": "available",
+                        "preview_url": f"/api/export/datasets/{dataset.id}/preview",
+                        "download_url": f"/api/export/datasets/{dataset.id}/download"
+                    })
+                except (OSError, IOError) as e:
+                    # Skip files that cause errors when checking size
+                    logger.warning(f"Error checking file {dataset.path}: {str(e)}")
+                    continue
         
         return {
             "datasets": result,

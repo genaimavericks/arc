@@ -426,8 +426,7 @@ async def build_schema_from_source(
             print(f"DEBUG: No file path provided, retrieving from source_id: {source_id}")
             
             # Query the database to get the file path from the source_id
-            from models import UploadedFile, IngestionJob
-            
+            from api.models import User, Schema, UploadedFile, IngestionJob, GraphIngestionJob, get_db, SessionLocal           
             # Try to find the file in UploadedFile table
             uploaded_file = db.query(UploadedFile).filter(UploadedFile.id == source_id).first()
             
@@ -1472,41 +1471,86 @@ async def delete_schema(
     
     First removes the database record, then cleans up any associated files.
     """
+    print(f"DEBUG: Starting delete_schema for schema_id: {schema_id}")
     try:
         # Validate schema ID
         try:
             schema_id_int = int(schema_id)
-        except ValueError:
+            print(f"DEBUG: Converted schema_id to int: {schema_id_int}")
+        except ValueError as ve:
+            print(f"ERROR: Invalid schema_id format: {schema_id}, error: {str(ve)}")
             raise HTTPException(status_code=400, detail="Schema ID must be an integer")
             
         # Get schema from database
         schema = db.query(Schema).filter(Schema.id == schema_id_int).first()
+        print(f"DEBUG: Schema found: {schema is not None}")
         if not schema:
+            print(f"ERROR: Schema {schema_id} not found in database")
             raise HTTPException(status_code=404, detail=f"Schema {schema_id} not found")
+        
+        print(f"DEBUG: Schema details - ID: {schema.id}, Name: {schema.name}, File path: {schema.csv_file_path}")
             
         # Store file paths before deletion
         files_to_clean = []
         if schema.csv_file_path and os.path.exists(schema.csv_file_path):
             files_to_clean.append(schema.csv_file_path)
+            print(f"DEBUG: Added file to clean up: {schema.csv_file_path}")
+        
+        # First check for any related records that might prevent deletion
+        print(f"DEBUG: Checking for related GraphIngestionJob records")
+        
+        # Use the backref relationship to access related jobs
+        if hasattr(schema, 'graph_jobs'):
+            related_jobs = schema.graph_jobs
+            print(f"DEBUG: Found {len(related_jobs)} related GraphIngestionJob records via backref")
             
-        # Delete database record
+            # Delete related jobs
+            for job in related_jobs:
+                print(f"DEBUG: Deleting related job with ID: {job.id}")
+                db.delete(job)
+        else:
+            # Fallback to direct query if backref is not working
+            related_jobs = db.query(GraphIngestionJob).filter(GraphIngestionJob.schema_id == schema_id_int).all()
+            print(f"DEBUG: Found {len(related_jobs)} related GraphIngestionJob records via direct query")
+            
+            # Delete related jobs
+            for job in related_jobs:
+                print(f"DEBUG: Deleting related job with ID: {job.id}")
+                db.delete(job)
+        
+        # Flush to ensure related records are deleted before deleting the schema
+        print(f"DEBUG: Flushing session to apply related job deletions")
+        db.flush()
+        
+        # Then delete the schema record
+        print(f"DEBUG: Deleting schema record with ID: {schema.id}")
         db.delete(schema)
+        
+        print(f"DEBUG: Committing transaction")
         db.commit()
+        print(f"DEBUG: Transaction committed successfully")
         
         # Clean up files
 #        for file_path in files_to_clean:
 #            try:
 #                if os.path.exists(file_path):
 #                    os.remove(file_path)
+#                    print(f"DEBUG: Deleted file: {file_path}")
 #            except Exception as e:
 #                print(f"Warning: Could not delete file {file_path}: {str(e)}")
                 
+        print(f"DEBUG: Schema deletion completed successfully")
         return {"message": f"Schema {schema_id} deleted successfully"}
         
-    except HTTPException:
+    except HTTPException as he:
+        print(f"ERROR: HTTP exception during schema deletion: {str(he)}")
         raise
     except Exception as e:
+        print(f"ERROR: Exception during schema deletion: {str(e)}")
+        print(f"ERROR: Exception type: {type(e).__name__}")
+        print(f"ERROR: Exception traceback: {traceback.format_exc()}")
         db.rollback()
+        print(f"DEBUG: Transaction rolled back due to error")
         raise HTTPException(
             status_code=500, 
             detail=f"Error deleting schema: {str(e)}"

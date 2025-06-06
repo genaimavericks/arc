@@ -43,8 +43,6 @@ interface Dataset {
   type: string
   status: string
   last_updated: string
-  dataset?: string  // Optional to maintain backward compatibility
-  uploaded_by?: string
 }
 
 interface Neo4jGraph {

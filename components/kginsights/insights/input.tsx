@@ -3,23 +3,36 @@
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Send, Loader2 } from "lucide-react"
+import { ChevronLeft, ChevronRight, Loader2, Send, Trash2 } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { useKGInsights } from "../use-kg-insights"
 import { AutocompleteSuggestion } from "../autocomplete-service"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 interface InsightsChatInputProps {
-  onSendMessage: (message: string) => Promise<void>
+  onSendMessage: (message: string) => void
   loading: boolean
   sourceId: string
   token: string
+  onClearChat?: () => void
+  sidebarToggle?: {
+    isOpen: boolean
+    onToggle: () => void
+  }
 }
 
 export function InsightsChatInput({ 
   onSendMessage, 
   loading,
   sourceId,
-  token
+  token,
+  onClearChat,
+  sidebarToggle
 }: InsightsChatInputProps) {
   const [message, setMessage] = useState("")
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -131,15 +144,15 @@ export function InsightsChatInput({
     <div className="flex flex-col gap-2">
       {/* Suggestions */}
       {showSuggestions && suggestions.length > 0 && (
-        <div className="border border-border rounded-md mb-2 overflow-hidden">
-          <div className="p-2 bg-secondary text-secondary-foreground text-sm font-medium">
+        <div className="border border-border rounded-xl shadow-sm mb-2 overflow-hidden bg-card/95 backdrop-blur-sm">
+          <div className="p-3 bg-secondary/50 text-secondary-foreground text-xs font-medium">
             Suggested Queries
           </div>
-          <div className="divide-y divide-border">
+          <div className="divide-y divide-border/50">
             {suggestions.map((suggestion, index) => (
               <div 
                 key={index}
-                className="p-2 hover:bg-accent cursor-pointer text-sm"
+                className="p-3 hover:bg-primary/10 cursor-pointer text-sm transition-colors duration-200"
                 onClick={() => handleSelectSuggestion(suggestion)}
               >
                 {suggestion}
@@ -151,15 +164,15 @@ export function InsightsChatInput({
       
       {/* Autocomplete suggestions */}
       {showAutocomplete && autocompleteSuggestions.length > 0 && (
-        <div className="border border-border rounded-md mb-2 overflow-hidden">
-          <div className="p-2 bg-secondary text-secondary-foreground text-sm font-medium">
+        <div className="border border-border rounded-xl shadow-sm mb-2 overflow-hidden bg-card/95 backdrop-blur-sm">
+          <div className="p-3 bg-secondary/50 text-secondary-foreground text-xs font-medium">
             Autocomplete
           </div>
-          <div className="divide-y divide-border">
+          <div className="divide-y divide-border/50">
             {autocompleteSuggestions.map((suggestion, index) => (
               <div 
                 key={index}
-                className="p-2 hover:bg-accent cursor-pointer"
+                className="p-3 hover:bg-primary/10 cursor-pointer transition-colors duration-200"
                 onClick={() => handleSelectAutocompleteSuggestion(suggestion)}
               >
                 <div className="font-medium">{suggestion.text}</div>
@@ -172,9 +185,9 @@ export function InsightsChatInput({
         </div>
       )}
       
-      <div className="flex items-end gap-2">
-        <div className="relative flex-grow">
-          <div className="absolute right-3 bottom-3 text-xs text-muted-foreground pointer-events-none bg-background/80 px-1 rounded">
+      <div className="relative">
+        <div className="relative">
+          <div className="absolute left-3 bottom-3 text-xs text-muted-foreground pointer-events-none bg-card/80 px-2 py-1 rounded-md z-10">
             Shift+Enter for new line
           </div>
           <Textarea
@@ -182,23 +195,67 @@ export function InsightsChatInput({
             value={message}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder="Ask a question about your knowledge graph..."
-            className="flex-grow resize-none min-h-[60px] max-h-[200px] overflow-y-auto"
+            placeholder="Ask a question about your factory performance..."
+            className="w-full resize-none min-h-[60px] max-h-[200px] overflow-y-auto rounded-2xl border-primary/20 shadow-sm focus-visible:ring-primary bg-card/50 backdrop-blur-sm px-4 py-3 pr-[120px] transition-all duration-300"
             disabled={loading}
           />
         </div>
-        <Button
-          className="flex-shrink-0"
-          onClick={handleSendMessage}
-          disabled={!message.trim() || loading}
-        >
-          {loading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Send className="h-4 w-4" />
+        <div className="absolute right-2 bottom-2 flex items-center gap-2">
+          {onClearChat && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    onClick={onClearChat}
+                    size="icon" 
+                    variant="ghost"
+                    className="flex-shrink-0 rounded-full h-10 w-10 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all duration-300"
+                  >
+                    <Trash2 className="h-5 w-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Clear chat</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
-          <span className="ml-2 hidden md:inline">Send</span>
-        </Button>
+          <Button
+            className="flex-shrink-0 rounded-full h-10 w-10 p-0"
+            onClick={handleSendMessage}
+            disabled={!message.trim() || loading}
+            variant="default"
+          >
+            {loading ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <Send className="h-5 w-5" />
+            )}
+          </Button>
+          {sidebarToggle && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="flex-shrink-0 rounded-full h-10 w-10 p-0 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors duration-300"
+                    onClick={sidebarToggle.onToggle}
+                  >
+                    {sidebarToggle.isOpen ? (
+                      <ChevronRight className="h-5 w-5" />
+                    ) : (
+                      <ChevronLeft className="h-5 w-5" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{sidebarToggle.isOpen ? "Hide sidebar" : "Show sidebar"}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+        </div>
       </div>
     </div>
   )

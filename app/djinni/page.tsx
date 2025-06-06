@@ -1,18 +1,59 @@
 "use client"
 
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { motion } from "framer-motion"
-import { MessageSquare, Database, BarChart2, Zap, ArrowRight, Brain, Bot, Search } from "lucide-react"
+import { MessageSquare, Database, BarChart2, Zap, ArrowRight, Brain, Bot, Search, History } from "lucide-react"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DjinniLayout } from "@/components/djinni/djinni-layout"
+import { FactoryAstro } from "@/components/djinni/factory-astro"
+import { ChurnAstro } from "@/components/djinni/churn-astro"
+import { useDjinniStore, DjinniModelType } from "@/lib/djinni/store"
+import { fetchActiveDjinniModel } from "@/lib/djinni/api"
 
 export default function DjinniPage() {
-  const [question, setQuestion] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
+  const { activeModel, setActiveModel } = useDjinniStore()
+  const [loading, setLoading] = useState(true)
+  
+  // Fetch the active model from the server on component mount only
+  useEffect(() => {
+    const getActiveModel = async () => {
+      try {
+        setLoading(true)
+        const serverModel = await fetchActiveDjinniModel()
+        
+        // Check if we have a stored model in localStorage
+        const storedModel = localStorage.getItem('djinni_active_model')
+        
+        if (storedModel && (storedModel === 'factory_astro' || storedModel === 'churn_astro')) {
+          // If we have a valid stored model, use it
+          if (storedModel !== activeModel) {
+            console.log(`Using stored Djinni model: ${storedModel} (server has: ${serverModel})`)
+            setActiveModel(storedModel as DjinniModelType)
+          }
+        } else {
+          // If no stored model, use the server model
+          if (serverModel !== activeModel) {
+            console.log(`Using server Djinni model: ${serverModel}`)
+            setActiveModel(serverModel)
+            // Store the model in localStorage
+            localStorage.setItem('djinni_active_model', serverModel)
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching active model:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    // Initial fetch only, no polling
+    getActiveModel()
+  }, [setActiveModel, activeModel])
   
   // Sample recent conversations
   const recentConversations = [
@@ -62,9 +103,17 @@ export default function DjinniPage() {
       <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
         {/* Header */}
         <div className="flex flex-col">
-          <div className="flex items-center gap-2">
-            <Bot className="h-6 w-6 text-primary" />
-            <h2 className="text-2xl font-bold tracking-tight">Djinni Assistant</h2>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Bot className="h-6 w-6 text-primary" />
+              <h2 className="text-2xl font-bold tracking-tight">Djinni Assistant</h2>
+            </div>
+            <Link href="/conversations">
+              <Button variant="outline" size="sm" className="flex items-center gap-1">
+                <History className="h-4 w-4" />
+                <span>Conversation History</span>
+              </Button>
+            </Link>
           </div>
           <p className="text-sm text-muted-foreground mt-1">Your AI-powered virtual assistant for sales insights and automation</p>
         </div>
@@ -159,39 +208,46 @@ export default function DjinniPage() {
           </CardContent>
         </Card>
         
-        {/* Ask me about section */}
+        {/* Ask me about section - Dynamic based on selected model */}
         <Card>
           <CardHeader>
-            <CardTitle>Ask Me About Your Sales Data</CardTitle>
-            <CardDescription>Type your question or select from examples below</CardDescription>
+            <CardTitle>
+              {loading ? (
+                <div className="h-6 w-48 bg-muted animate-pulse rounded"></div>
+              ) : (
+                activeModel === "factory_astro" 
+                  ? "Ask Me About Your Factory Data" 
+                  : "Ask Me About Your Churn Data"
+              )}
+            </CardTitle>
+            <CardDescription>
+              {loading ? (
+                <div className="h-4 w-64 bg-muted animate-pulse rounded mt-2"></div>
+              ) : (
+                activeModel === "factory_astro"
+                  ? "Get insights and predictions about your factory performance"
+                  : "Analyze customer churn risk and retention strategies"
+              )}
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex gap-2 mb-6">
-              <Input 
-                placeholder="Ask anything about your data..." 
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                className="flex-1"
-              />
-              <Button>
-                Ask
-              </Button>
-            </div>
-            
-            <div className="space-y-2">
-              {sampleQuestions.map((q, i) => (
-                <div 
-                  key={i} 
-                  className="flex items-center gap-2 p-2 hover:bg-accent rounded-md cursor-pointer"
-                  onClick={() => setQuestion(q)}
-                >
-                  <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full bg-primary/10 text-primary text-xs">
-                    Q
-                  </div>
-                  <p className="text-sm">{q}</p>
+            {loading ? (
+              <div className="space-y-4">
+                <div className="h-10 bg-muted animate-pulse rounded"></div>
+                <div className="h-20 bg-muted animate-pulse rounded"></div>
+                <div className="h-20 bg-muted animate-pulse rounded"></div>
+              </div>
+            ) : (
+              activeModel === "factory_astro" ? (
+                <div className="transition-all duration-300 ease-in-out">
+                  <FactoryAstro />
                 </div>
-              ))}
-            </div>
+              ) : (
+                <div className="transition-all duration-300 ease-in-out">
+                  <ChurnAstro />
+                </div>
+              )
+            )}
           </CardContent>
         </Card>
         

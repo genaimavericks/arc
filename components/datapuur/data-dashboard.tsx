@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation"
 import { DatasetPreviewModal } from "@/components/datapuur/dataset-preview-modal"
 import { format, formatDistanceToNow } from "date-fns"
 import { useToast } from "@/components/ui/use-toast"
+import { fetchWithAuth } from "@/lib/auth-utils"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -77,32 +78,19 @@ export function DataDashboard() {
   const router = useRouter()
   const { toast } = useToast()
 
-  // Helper function to make authenticated API requests
-  const fetchWithAuth = useCallback(async (url: string, options?: RequestInit) => {
-    const token = localStorage.getItem("token")
-
-    if (!token) {
-      setAuthError("Authentication token not found. Please log in again.")
-      throw new Error("Authentication token not found")
+  // Use the centralized fetchWithAuth from auth-utils.ts
+  // This is just a wrapper to maintain compatibility with existing code
+  const fetchWithAuthWrapper = useCallback(async (url: string, options?: RequestInit) => {
+    try {
+      // Use the centralized fetchWithAuth function
+      return await fetchWithAuth(url, options)
+    } catch (error) {
+      // Set local error state for UI feedback
+      if (error instanceof Error && error.message === "Authentication failed") {
+        setAuthError("Your session has expired. Please log in again.")
+      }
+      throw error
     }
-
-    const response = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      ...options,
-    })
-
-    if (response.status === 401) {
-      setAuthError("Your session has expired. Please log in again.")
-      throw new Error("Authentication failed")
-    }
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
-    }
-
-    return response.json()
   }, [])
 
   // Function to fetch all data from the API
@@ -112,12 +100,12 @@ export function DataDashboard() {
       setAuthError(null)
 
       // Fetch data sources
-      const dataSources = await fetchWithAuth("/api/datapuur/sources")
+      const dataSources = await fetchWithAuthWrapper("/api/datapuur/sources")
       setDatasets(dataSources)
 
       // Fetch metrics
       try {
-        const metrics = await fetchWithAuth("/api/datapuur/metrics")
+        const metrics = await fetchWithAuthWrapper("/api/datapuur/metrics")
         console.log("API Response - Metrics:", metrics)
         setDataMetrics(metrics)
       } catch (error) {
@@ -126,7 +114,7 @@ export function DataDashboard() {
 
       // Fetch activities
       try {
-        const activitiesData = await fetchWithAuth("/api/datapuur/activities")
+        const activitiesData = await fetchWithAuthWrapper("/api/datapuur/activities")
         console.log("API Response - Activities:", activitiesData)
         setActivities(activitiesData)
       } catch (error) {
@@ -135,7 +123,7 @@ export function DataDashboard() {
 
       // Fetch dashboard data
       try {
-        const dashboardData = await fetchWithAuth("/api/datapuur/dashboard")
+        const dashboardData = await fetchWithAuthWrapper("/api/datapuur/dashboard")
         console.log("API Response - Dashboard:", dashboardData)
         setDashboardData(dashboardData)
         
@@ -160,7 +148,7 @@ export function DataDashboard() {
       setIsLoading(false)
       setIsRefreshing(false)
     }
-  }, [fetchWithAuth, toast, authError])
+  }, [fetchWithAuthWrapper, toast, authError])
 
   // Fetch data on component mount
   useEffect(() => {
@@ -320,8 +308,8 @@ export function DataDashboard() {
     try {
       setIsDeleting(true)
       
-      // Use the correct HTTP method (DELETE) with fetchWithAuth
-      const response = await fetchWithAuth(`/api/datapuur/delete-dataset/${datasetToDelete.id}`, {
+      // Use the correct HTTP method (DELETE) with fetchWithAuthWrapper
+      const response = await fetchWithAuthWrapper(`/api/datapuur/delete-dataset/${datasetToDelete.id}`, {
         method: "DELETE",
       })
 
@@ -352,8 +340,8 @@ export function DataDashboard() {
     try {
       setSelectedDataset({ id: datasetId, name: datasetName })
 
-      // Fetch preview data from the API using the fetchWithAuth helper
-      const previewData = await fetchWithAuth(`/api/datapuur/ingestion-preview/${datasetId}`)
+      // Fetch preview data from the API using the fetchWithAuthWrapper helper
+      const previewData = await fetchWithAuthWrapper(`/api/datapuur/ingestion-preview/${datasetId}`)
       setPreviewData(previewData)
       setPreviewModalOpen(true)
     } catch (error) {
@@ -386,50 +374,22 @@ export function DataDashboard() {
   const formatDate = (dateString: string) => {
     if (!dateString) return "N/A"
     try {
-      // Remove debugging logs in production
-      // console.log("Original date string:", dateString);
+      // Parse the UTC date from the ISO string
+      const utcDate = new Date(dateString)
       
-      // Create current time for reference
-      const now = new Date();
+      // Get the client's timezone offset in minutes
+      const timezoneOffset = new Date().getTimezoneOffset()
       
-      // Parse the date with proper timezone handling
-      let date: Date;
+      // Convert from UTC to client's local time by adjusting for timezone offset
+      // Note: getTimezoneOffset() returns minutes WEST of UTC, so we negate it
+      const localDate = new Date(utcDate.getTime() - (timezoneOffset * 60 * 1000))
       
-      // First, normalize the date string format
-      if (dateString.includes('Z')) {
-        // Already has UTC marker - parse directly
-        date = new Date(dateString);
-      } else if (
-        (dateString.includes('+') && dateString.indexOf('T') < dateString.indexOf('+')) ||
-        (dateString.includes('-') && dateString.indexOf('T') < dateString.lastIndexOf('-'))
-      ) {
-        // Has timezone offset like +05:30 - parse directly
-        date = new Date(dateString);
-      } else if (dateString.includes('T')) {
-        // Handle database records: has T separator but no timezone
-        // Always treat these as UTC time by adding the Z marker
-        date = new Date(dateString + 'Z');
-      } else {
-        // Plain date string without time - parse as local time
-        date = new Date(dateString);
-      }
+      // For relative time display, use the timezone-adjusted date
+      const relativeTime = formatDistanceToNow(localDate, { addSuffix: true })
       
-      // Force conversion to local time by creating a new Date object
-      // This ensures consistent handling for both file and database records
-      const localDate = new Date(date.getTime());
-      // console.log("Date converted to local:", localDate.toString());
-      date = localDate;
-      
-      // Calculate time difference in minutes for debugging
-      const diffMs = now.getTime() - date.getTime();
-      const diffMinutes = Math.floor(diffMs / (1000 * 60));
-      console.log(`Time difference: ${diffMinutes} minutes ago`);
-      
-      // Format for relative time display - using addSuffix ensures we get "X time ago"
-      const relativeTime = formatDistanceToNow(date, { addSuffix: true });
-      
-      // Format the date in local time with seconds
-      const formattedDate = format(date, 'yyyy-MM-dd HH:mm:ss');
+      // Format the local date
+      // This uses ISO string and then removes the 'T' and timezone part
+      const formattedDate = localDate.toISOString().replace('T', ' ').substring(0, 19)
       
       return (
         <div>
@@ -438,8 +398,8 @@ export function DataDashboard() {
         </div>
       )
     } catch (error) {
-      console.error("Error formatting date:", error, dateString);
-      return dateString;
+      console.error("Error formatting date:", error, dateString)
+      return dateString
     }
   }
 
@@ -562,7 +522,7 @@ export function DataDashboard() {
                   {currentItems.length > 0 ? (
                     currentItems.map((dataset) => (
                       <TableRow key={dataset.id}>
-                        <TableCell className="font-medium px-4 py-3">{dataset.dataset || dataset.name}</TableCell>
+                        <TableCell className="font-medium px-4 py-3">{dataset.name}</TableCell>
                         <TableCell className="px-4 py-3">{dataset.type}</TableCell>
                         <TableCell className="px-4 py-3">{formatDate(dataset.last_updated)}</TableCell>
                         <TableCell className={`${getStatusClass(dataset.status)} px-4 py-3`}>{dataset.status}</TableCell>
