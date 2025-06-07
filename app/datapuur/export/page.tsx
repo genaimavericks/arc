@@ -25,7 +25,7 @@ import {
 import { motion } from "framer-motion"
 import { formatDistanceToNow, format } from "date-fns"
 import { getApiBaseUrl } from "@/lib/config"
-import { fetchWithAuth, handleAuthFailure } from "@/lib/auth-utils"
+import { useAdminLogout } from "@/components/admin-logout-fix"
 import { toast } from "@/hooks/use-toast"
 import { DataPuurLayout } from "@/components/datapuur/datapuur-layout"
 
@@ -74,6 +74,8 @@ export default function ExportPage() {
   
   // Add state for filters
   const [activeFilters, setActiveFilters] = useState<Record<string, { column: string; operator: string; value: string }>>({})
+  
+  const logout = useAdminLogout()
   
   // Animation variants
   const container = {
@@ -135,9 +137,27 @@ export default function ExportPage() {
 
     try {
       const apiBaseUrl = getApiBaseUrl()
-      const data = await fetchWithAuth(
-        `/api/export/datasets?page=${page}&limit=${itemsPerPage}&search=${encodeURIComponent(searchQuery)}`
+      const response = await fetch(
+        `${apiBaseUrl}/api/export/datasets?page=${page}&limit=${itemsPerPage}&search=${encodeURIComponent(searchQuery)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        },
       )
+
+      // Check specifically for authentication errors
+      if (response.status === 401 || response.status === 403) {
+        console.error("Authentication failed. Redirecting to login page.")
+        logout()
+        return
+      }
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch datasets")
+      }
+
+      const data = await response.json()
       const sortedData = sortDatasets(data.datasets)
       setDatasets(data.datasets)
       setFilteredDatasets(sortedData)
@@ -200,15 +220,24 @@ export default function ExportPage() {
       const currentPage = previewPage[id] || 1
       
       // Apply filters if they exist
-      let endpoint = `/api/export/datasets/${id}/preview?page=${currentPage}&page_size=${previewPageSize}`
+      let url = `${apiBaseUrl}/api/export/datasets/${id}/preview?page=${currentPage}&page_size=${previewPageSize}`
       
       if (activeFilters[id]) {
         const { column, operator, value } = activeFilters[id]
-        endpoint = `/api/export/datasets/${id}/filter?column=${column}&operator=${operator}&value=${encodeURIComponent(value)}&page=${currentPage}&page_size=${previewPageSize}`
+        url = `${apiBaseUrl}/api/export/datasets/${id}/filter?column=${column}&operator=${operator}&value=${encodeURIComponent(value)}&page=${currentPage}&page_size=${previewPageSize}`
       }
       
-      // Use fetchWithAuth for authenticated requests
-      const data = await fetchWithAuth(endpoint)
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch preview data")
+      }
+
+      const data = await response.json()
       
       // Update item data
       setItemData((prev) => ({
@@ -261,61 +290,19 @@ export default function ExportPage() {
     }
 
     try {
-      // Update active filters and reset to page 1 in a single batch update
-      const newFilter = { column, operator, value }
+      // Update active filters
       setActiveFilters((prev) => ({
         ...prev,
-        [id]: newFilter,
+        [id]: { column, operator, value },
       }))
       
       // Reset to page 1 when applying a filter
       setPreviewPage((prev) => ({ ...prev, [id]: 1 }))
       
-      // Directly fetch filtered data with the new filter values
-      // This ensures we're using the new filter values directly rather than depending on state update
-      const apiBaseUrl = getApiBaseUrl()
-      const currentPage = 1 // Always start at page 1 when applying a filter
-      
-      // Set loading state
-      setTabLoadingStates((prev) => ({
-        ...prev,
-        [id]: { ...prev[id], preview: true },
-      }))
-      
-      // Construct endpoint with the new filter values directly (not from state)
-      const endpoint = `/api/export/datasets/${id}/filter?column=${column}&operator=${operator}&value=${encodeURIComponent(value)}&page=${currentPage}&page_size=${previewPageSize}`
-      
-      // Use fetchWithAuth for authenticated requests
-      fetchWithAuth(endpoint)
-      .then(data => {
-        // Update item data
-        setItemData((prev) => ({
-          ...prev,
-          [id]: { ...prev[id], preview: data },
-        }))
-      })
-      .catch(err => {
-        console.error(`Error fetching preview for dataset ${id}:`, err)
-        toast({
-          title: "Error",
-          description: "Failed to load preview data. Please try again.",
-          variant: "destructive",
-        })
-        
-        // Use mock data for demonstration
-        const mockPreviewData = generateMockPreviewData(id)
-        setItemData((prev) => ({
-          ...prev,
-          [id]: { ...prev[id], preview: mockPreviewData },
-        }))
-      })
-      .finally(() => {
-        // Clear loading state
-        setTabLoadingStates((prev) => ({
-          ...prev,
-          [id]: { ...prev[id], preview: false },
-        }))
-      })
+      // Fetch filtered data
+      setTimeout(() => {
+        fetchPreviewData(id)
+      }, 0)
     } catch (error) {
       console.error("Error applying filter:", error)
       toast({
@@ -355,62 +342,11 @@ export default function ExportPage() {
         return newValues
       })
       
-      // Reset to page 1
+      // Reset to page 1 and refetch data
       setPreviewPage((prev) => ({ ...prev, [id]: 1 }))
-      
-      // Directly fetch unfiltered data without waiting for state updates
-      const apiBaseUrl = getApiBaseUrl()
-      const currentPage = 1 // Always start at page 1 when clearing a filter
-      
-      // Set loading state
-      setTabLoadingStates((prev) => ({
-        ...prev,
-        [id]: { ...prev[id], preview: true },
-      }))
-      
-      // Use the unfiltered endpoint directly
-      const url = `${apiBaseUrl}/api/export/datasets/${id}/preview?page=${currentPage}&page_size=${previewPageSize}`
-      
-      fetch(url, {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-      })
-      .then(response => {
-        if (!response.ok) {
-          throw new Error("Failed to fetch preview data")
-        }
-        return response.json()
-      })
-      .then(data => {
-        // Update item data
-        setItemData((prev) => ({
-          ...prev,
-          [id]: { ...prev[id], preview: data },
-        }))
-      })
-      .catch(err => {
-        console.error(`Error fetching preview for dataset ${id}:`, err)
-        toast({
-          title: "Error",
-          description: "Failed to load preview data. Please try again.",
-          variant: "destructive",
-        })
-        
-        // Use mock data for demonstration
-        const mockPreviewData = generateMockPreviewData(id)
-        setItemData((prev) => ({
-          ...prev,
-          [id]: { ...prev[id], preview: mockPreviewData },
-        }))
-      })
-      .finally(() => {
-        // Clear loading state
-        setTabLoadingStates((prev) => ({
-          ...prev,
-          [id]: { ...prev[id], preview: false },
-        }))
-      })
+      setTimeout(() => {
+        fetchPreviewData(id)
+      }, 0)
     } catch (error) {
       console.error("Error clearing filter:", error)
       toast({
@@ -634,7 +570,12 @@ export default function ExportPage() {
   useEffect(() => {
     fetchDatasets()
     
-    // No auto-refresh - only fetch when page or search query changes
+    // Set up auto-refresh every 30 seconds
+    const refreshInterval = setInterval(() => {
+      fetchDatasets()
+    }, 30000)
+    
+    return () => clearInterval(refreshInterval)
   }, [page, searchQuery])
 
   // Function to render the preview tab content
@@ -816,25 +757,17 @@ export default function ExportPage() {
           description: "You must be logged in to download data.",
           variant: "destructive"
         })
-        handleAuthFailure()
+        logout()
         return
       }
       
-      // Use fetchWithAuth for authenticated requests
-      // We need to extract the endpoint from the full URL
-      const endpoint = downloadUrl.replace(apiBaseUrl, '')
-      const response = await fetch(`${apiBaseUrl}${endpoint}`, {
+      // Use fetch with proper authentication to get the file
+      const response = await fetch(downloadUrl, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`
         }
       })
-      
-      // Check for authentication errors
-      if (response.status === 401 || response.status === 403) {
-        handleAuthFailure()
-        return
-      }
       
       if (!response.ok) {
         throw new Error(`Download failed with status: ${response.status}`)

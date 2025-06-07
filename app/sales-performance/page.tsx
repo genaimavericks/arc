@@ -133,37 +133,37 @@ export default function SalesPerformancePage() {
 
   return (
     <MainLayout>
-      <div className="bg-white dark:bg-[#0e111a] min-h-screen p-4 md:p-6">
+      <div className="bg-[#0e111a] min-h-screen p-4 md:p-6">
         <div className="flex justify-between items-center mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Sales Performance Deep Dive</h1>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
+            <h1 className="text-2xl font-bold text-white">Sales Performance Deep Dive</h1>
+            <p className="text-sm text-gray-400">
               Complete analysis of sales trends, customer segments, and performance across different dimensions
             </p>
           </div>
           
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" className="border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800">
+            <Button variant="outline" size="sm" className="border-gray-700 text-gray-300 hover:bg-gray-800">
               Last Month
             </Button>
-            <Button variant="outline" size="sm" className="border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800">
+            <Button variant="outline" size="sm" className="border-gray-700 text-gray-300 hover:bg-gray-800">
               All Products
             </Button>
-            <Button variant="outline" size="sm" className="border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800">
+            <Button variant="outline" size="sm" className="border-gray-700 text-gray-300 hover:bg-gray-800">
               All Regions
             </Button>
-            <Button size="sm" className="bg-blue-600 hover:bg-blue-700 dark:bg-[#3730a3] dark:hover:bg-[#4338ca] text-white">
+            <Button size="sm" className="bg-[#3730a3] hover:bg-[#4338ca] text-white">
               Export Report
             </Button>
           </div>
         </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="bg-gray-50 dark:bg-[#121725] rounded-lg p-4 border border-gray-200 dark:border-[#1e293b]">
+        <div className="bg-[#121725] rounded-lg p-4 border border-[#1e293b]">
           <div className="flex items-center justify-between mb-2">
             <div>
-              <div className="text-sm font-medium text-gray-700 dark:text-gray-400">Sales Growth</div>
-              <div className="text-xs text-gray-600 dark:text-gray-500">Month over month</div>
+              <div className="text-sm font-medium text-gray-400">Sales Growth</div>
+              <div className="text-xs text-gray-500">Month over month</div>
             </div>
             <div className="bg-blue-900/30 p-2 rounded-md">
               <BarChart2 className="h-4 w-4 text-blue-400" />
@@ -175,33 +175,33 @@ export default function SalesPerformancePage() {
           </div>
         </div>
         
-        <div className="bg-gray-50 dark:bg-[#121725] rounded-lg p-4 border border-gray-200 dark:border-[#1e293b]">
+        <div className="bg-[#121725] rounded-lg p-4 border border-[#1e293b]">
           <div className="flex items-center justify-between mb-2">
             <div>
-              <div className="text-sm font-medium text-gray-700 dark:text-gray-400">Active Customers</div>
-              <div className="text-xs text-gray-600 dark:text-gray-500">Across all segments</div>
+              <div className="text-sm font-medium text-gray-400">Active Customers</div>
+              <div className="text-xs text-gray-500">Across all segments</div>
             </div>
             <div className="bg-green-900/30 p-2 rounded-md">
               <PlusCircle className="h-4 w-4 text-green-400" />
             </div>
           </div>
-          <div className="text-xl font-bold text-gray-900 dark:text-white">1,573</div>
+          <div className="text-xl font-bold text-white">1,573</div>
           <div className="text-xs text-gray-500 mt-1">
             +120 from last month
           </div>
         </div>
         
-        <div className="bg-gray-50 dark:bg-[#121725] rounded-lg p-4 border border-gray-200 dark:border-[#1e293b]">
+        <div className="bg-[#121725] rounded-lg p-4 border border-[#1e293b]">
           <div className="flex items-center justify-between mb-2">
             <div>
-              <div className="text-sm font-medium text-gray-700 dark:text-gray-400">Time to Close</div>
-              <div className="text-xs text-gray-600 dark:text-gray-500">Average sales cycle</div>
+              <div className="text-sm font-medium text-gray-400">Time to Close</div>
+              <div className="text-xs text-gray-500">Average sales cycle</div>
             </div>
             <div className="bg-purple-900/30 p-2 rounded-md">
               <ChevronRight className="h-4 w-4 text-purple-400" />
             </div>
           </div>
-          <div className="text-xl font-bold text-gray-900 dark:text-white">28 days</div>
+          <div className="text-xl font-bold text-white">28 days</div>
           <div className="text-xs text-gray-500 mt-1">
             -2.5 days from previous quarter
           </div>
@@ -209,10 +209,10 @@ export default function SalesPerformancePage() {
       </div>
 
       {/* Main Chart */}
-      <div className="bg-gray-50 dark:bg-[#121725] rounded-lg p-6 border border-gray-200 dark:border-[#1e293b] mb-6">
+      <div className="bg-[#121725] rounded-lg p-6 border border-[#1e293b] mb-6">
         <div className="mb-3">
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white">Sales vs Target Performance</h3>
-          <p className="text-sm text-gray-600 dark:text-gray-500">Monthly revenue and target comparison over past 6 months</p>
+          <h3 className="text-lg font-medium text-white">Sales vs Target Performance</h3>
+          <p className="text-sm text-gray-500">Monthly revenue and target comparison over past 6 months</p>
         </div>
         {renderChart()}
       </div>
@@ -220,28 +220,28 @@ export default function SalesPerformancePage() {
       {/* Two-column layout for Customer and Product Segments */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
         {/* Customer Segments */}
-        <div className="bg-gray-50 dark:bg-[#121725] rounded-lg p-6 border border-gray-200 dark:border-[#1e293b]">
+        <div className="bg-[#121725] rounded-lg p-6 border border-[#1e293b]">
           <div className="mb-3">
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white">Customer Segment Performance</h3>
-            <p className="text-sm text-gray-600 dark:text-gray-500">Revenue and growth rate by customer segment</p>
+            <h3 className="text-lg font-medium text-white">Customer Segment Performance</h3>
+            <p className="text-sm text-gray-500">Revenue and growth rate by customer segment</p>
           </div>
           <div className="space-y-4">
             {customerSegments.map((segment) => (
-              <div key={segment.name} className="border border-gray-200 dark:border-[#2d3748] rounded-lg p-4 space-y-2 bg-gray-100/50 dark:bg-[#1a202c]/50">
+              <div key={segment.name} className="border border-[#2d3748] rounded-lg p-4 space-y-2 bg-[#1a202c]/50">
                 <div className="flex justify-between items-center">
                   <div>
-                    <h4 className="font-medium text-gray-800 dark:text-gray-200">{segment.name}</h4>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                    <h4 className="font-medium text-gray-200">{segment.name}</h4>
+                    <p className="text-sm text-gray-400">
                       {segment.count} customers
                     </p>
                   </div>
-                  <div className={`px-2 py-1 rounded text-xs font-medium ${segment.growth > 8 ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-400' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'}`}>
+                  <div className={`px-2 py-1 rounded text-xs font-medium ${segment.growth > 8 ? 'bg-emerald-900/50 text-emerald-400' : 'bg-gray-700 text-gray-300'}`}>
                     {segment.growth > 0 ? "+" : ""}{segment.growth}%
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-600 dark:text-gray-500">Avg Sales (YTD)</p>
-                  <p className="font-medium text-gray-700 dark:text-gray-300">${segment.revenue.toLocaleString()}</p>
+                  <p className="text-xs text-gray-500">Avg Sales (YTD)</p>
+                  <p className="font-medium text-gray-300">${segment.revenue.toLocaleString()}</p>
                 </div>
               </div>
             ))}
@@ -249,28 +249,28 @@ export default function SalesPerformancePage() {
         </div>
 
         {/* Product Performance */}
-        <div className="bg-gray-50 dark:bg-[#121725] rounded-lg p-6 border border-gray-200 dark:border-[#1e293b]">
+        <div className="bg-[#121725] rounded-lg p-6 border border-[#1e293b]">
           <div className="mb-3">
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white">Product Performance</h3>
-            <p className="text-sm text-gray-600 dark:text-gray-500">Sales volume and revenue by product category</p>
+            <h3 className="text-lg font-medium text-white">Product Performance</h3>
+            <p className="text-sm text-gray-500">Sales volume and revenue by product category</p>
           </div>
           <div className="space-y-4">
             {productPerformance.map((product) => (
-              <div key={product.name} className="border border-gray-200 dark:border-[#2d3748] rounded-lg p-4 space-y-2 bg-gray-100/50 dark:bg-[#1a202c]/50">
+              <div key={product.name} className="border border-[#2d3748] rounded-lg p-4 space-y-2 bg-[#1a202c]/50">
                 <div className="flex justify-between items-center">
                   <div>
-                    <h4 className="font-medium text-gray-800 dark:text-gray-200">{product.name}</h4>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                    <h4 className="font-medium text-gray-200">{product.name}</h4>
+                    <p className="text-sm text-gray-400">
                       {product.count} units
                     </p>
                   </div>
-                  <div className={`px-2 py-1 rounded text-xs font-medium ${product.growth > 10 ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-400' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'}`}>
+                  <div className={`px-2 py-1 rounded text-xs font-medium ${product.growth > 10 ? 'bg-emerald-900/50 text-emerald-400' : 'bg-gray-700 text-gray-300'}`}>
                     {product.growth > 0 ? "+" : ""}{product.growth}%
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-600 dark:text-gray-500">Unit Sales (YTD)</p>
-                  <p className="font-medium text-gray-700 dark:text-gray-300">${product.revenue.toLocaleString()}</p>
+                  <p className="text-xs text-gray-500">Unit Sales (YTD)</p>
+                  <p className="font-medium text-gray-300">${product.revenue.toLocaleString()}</p>
                 </div>
               </div>
             ))}
@@ -279,29 +279,29 @@ export default function SalesPerformancePage() {
       </div>
 
       {/* Sales Representatives Table */}
-      <div className="bg-gray-50 dark:bg-[#121725] rounded-lg p-6 border border-gray-200 dark:border-[#1e293b]">
+      <div className="bg-[#121725] rounded-lg p-6 border border-[#1e293b]">
         <div className="mb-4">
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white">Sales Representative Performance</h3>
-          <p className="text-sm text-gray-600 dark:text-gray-500">Individual performance metrics for sales team</p>
+          <h3 className="text-lg font-medium text-white">Sales Representative Performance</h3>
+          <p className="text-sm text-gray-500">Individual performance metrics for sales team</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
-              <tr className="border-b border-gray-200 dark:border-[#2d3748]">
-                <th className="text-left py-3 px-4 text-sm font-medium text-gray-600 dark:text-gray-400">Sales Rep</th>
-                <th className="text-right py-3 px-4 text-sm font-medium text-gray-600 dark:text-gray-400">Deals Closed</th>
-                <th className="text-right py-3 px-4 text-sm font-medium text-gray-600 dark:text-gray-400">Average Value</th>
-                <th className="text-right py-3 px-4 text-sm font-medium text-gray-600 dark:text-gray-400">Conversion Rate</th>
+              <tr className="border-b border-[#2d3748]">
+                <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Sales Rep</th>
+                <th className="text-right py-3 px-4 text-sm font-medium text-gray-400">Deals Closed</th>
+                <th className="text-right py-3 px-4 text-sm font-medium text-gray-400">Average Value</th>
+                <th className="text-right py-3 px-4 text-sm font-medium text-gray-400">Conversion Rate</th>
               </tr>
             </thead>
             <tbody>
               {salesRepresentatives.map((rep) => (
-                <tr key={rep.name} className="border-b border-gray-200 dark:border-[#2d3748]">
-                  <td className="py-3 px-4 text-sm font-medium text-gray-700 dark:text-gray-300">{rep.name}</td>
-                  <td className="py-3 px-4 text-sm text-right text-gray-700 dark:text-gray-300">{rep.closed}</td>
-                  <td className="py-3 px-4 text-sm text-right text-gray-700 dark:text-gray-300">${rep.averageValue.toLocaleString()}</td>
+                <tr key={rep.name} className="border-b border-[#2d3748]">
+                  <td className="py-3 px-4 text-sm font-medium text-gray-300">{rep.name}</td>
+                  <td className="py-3 px-4 text-sm text-right text-gray-300">{rep.closed}</td>
+                  <td className="py-3 px-4 text-sm text-right text-gray-300">${rep.averageValue.toLocaleString()}</td>
                   <td className="py-3 px-4 text-sm text-right">
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${rep.conversion > 65 ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-400' : rep.conversion > 50 ? 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300' : 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-400'}`}>
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${rep.conversion > 65 ? 'bg-emerald-900/50 text-emerald-400' : rep.conversion > 50 ? 'bg-gray-700 text-gray-300' : 'bg-red-900/50 text-red-400'}`}>
                       {rep.conversion}%
                     </span>
                   </td>

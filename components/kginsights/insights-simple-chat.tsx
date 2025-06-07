@@ -78,7 +78,7 @@ export function InsightsSimpleChat() {
   
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLTextAreaElement>(null!)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const socketRef = useRef<WebSocket | null>(null)
   const { toast } = useToast()
 
@@ -549,7 +549,7 @@ export function InsightsSimpleChat() {
   }
 
   return (
-    <div className="flex flex-col h-full w-full bg-background">
+    <div className="flex flex-col h-full bg-background">
       {/* Header */}
       <div className="p-4 border-b">
         <div className="flex items-center justify-between">
@@ -579,7 +579,7 @@ export function InsightsSimpleChat() {
       </div>
       
       {/* Chat messages */}
-      <div className="flex-1 overflow-auto p-4 w-full">
+      <div className="flex-1 overflow-auto p-4">
         <div className="space-y-4">
           {messages.map(message => (
             <div 
@@ -725,7 +725,7 @@ export function InsightsSimpleChat() {
             disabled={!input.trim() || loading}
             size="icon"
           >
-            {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </Button>
         </div>
         

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useSchemaSelection, Schema } from "@/lib/schema-selection-context"
+import { useSchemaSelection } from "@/lib/schema-selection-context"
 import { useKGInsightsJobs } from "@/lib/kginsights-job-context"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -39,7 +39,7 @@ interface SchemaStatus {
 }
 
 export default function SchemaDetail() {
-  const { selectedSchemaId, getSchemaById, deleteSchema, schemas, selectSchema } = useSchemaSelection()
+  const { selectedSchemaId, getSchemaById } = useSchemaSelection()
   const { jobs, getActiveJobsForSchema, startLoadDataJob, startCleanDataJob, refreshJobs } = useKGInsightsJobs()
   
   const [schemaStatus, setSchemaStatus] = useState<SchemaStatus | null>(null)
@@ -317,7 +317,7 @@ export default function SchemaDetail() {
                   </AlertDialogTrigger>
                 </TooltipTrigger>
                 <TooltipContent side="bottom">
-                  <p>Delete schema</p>
+                  <p>Delete schema (Requires confirmation)</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -330,20 +330,8 @@ export default function SchemaDetail() {
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={async () => {
-                  if (selectedSchema) {
-                    const success = await deleteSchema(selectedSchema.id);
-                    if (success) {
-                      // Navigate to the schemas list or select another schema if available
-                      if (schemas.length > 1) {
-                        const remainingSchemas = schemas.filter((schema: Schema) => schema.id !== selectedSchema.id);
-                        if (remainingSchemas.length > 0) {
-                          selectSchema(remainingSchemas[0].id);
-                        }
-                      }
-                    }
-                  }
-                }}>Confirm Delete</AlertDialogAction>
+                {/* TODO: Implement actual delete function call */}
+                <AlertDialogAction onClick={() => console.warn('Delete schema not implemented yet')}>Confirm Delete</AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
@@ -532,8 +520,8 @@ export default function SchemaDetail() {
                       <FileCode className="h-4 w-4 mr-1" />
                       Schema Structure
                     </h3>
-                    <div className="bg-slate-50 dark:bg-slate-900/40 p-3 rounded-md overflow-hidden">
-                      <pre className="text-xs overflow-x-auto max-h-[400px] whitespace-pre-wrap break-all w-full">
+                    <div className="bg-slate-50 dark:bg-slate-900/40 p-3 rounded-md">
+                      <pre className="text-xs overflow-auto max-h-[400px]">
                         {(() => {
                           try {
                             // Parse the schema property if it exists

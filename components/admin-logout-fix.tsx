@@ -2,7 +2,6 @@
 
 import { useAuth } from "@/lib/auth-context"
 import { useRouter } from "next/navigation"
-import { handleAuthFailure } from "@/lib/auth-utils"
 
 // This is a utility component to ensure proper logout behavior
 export function useAdminLogout() {
@@ -10,13 +9,14 @@ export function useAdminLogout() {
   const router = useRouter()
 
   const logout = () => {
-    // Use the centralized auth failure handler which will:
-    // 1. Clear tokens from localStorage
-    // 2. Set the authExpired flag in sessionStorage
-    // 3. Redirect to the login page
-    handleAuthFailure()
-    
-    // Then call the original logout (which will also clear user state)
+    // Clear auth data
+    localStorage.removeItem("token")
+    localStorage.removeItem("user")
+
+    // Force navigation to home page
+    router.push("/")
+
+    // Then call the original logout (which might also try to navigate)
     setTimeout(() => {
       authLogout()
     }, 100)

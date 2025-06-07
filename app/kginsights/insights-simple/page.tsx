@@ -10,9 +10,9 @@ const InsightsSimpleChat = dynamic(
 
 export default function InsightsSimplePage() {
   return (
-    <div className="flex h-screen w-full bg-background">
-      <div className="flex-1 flex flex-col h-full w-full overflow-hidden">
-        <div className="flex-1 flex flex-col w-full">
+    <div className="flex h-screen bg-background">
+      <div className="flex-1 flex flex-col h-full overflow-hidden">
+        <div className="flex-1 flex flex-col">
           <InsightsSimpleChat />
         </div>
       </div>

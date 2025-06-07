@@ -69,70 +69,20 @@ class SystemSettingUpdate(BaseModel):
     maintenance_mode: Optional[bool] = None
     debug_mode: Optional[bool] = None
     api_rate_limiting: Optional[bool] = None
-    djinni_active_model: Optional[str] = None
 
 class SystemSettings(BaseModel):
     maintenance_mode: bool
     debug_mode: bool
     api_rate_limiting: bool
     last_backup: str
-    djinni_active_model: str
 
-import os
-import json
-
-# Path to the settings file
-SETTINGS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "system_settings.json")
-
-# Default system settings
-DEFAULT_SETTINGS = {
+# In-memory storage for system settings (in a real app, this would be in the database)
+system_settings = {
    "maintenance_mode": False,
    "debug_mode": True,
    "api_rate_limiting": True,
-   "last_backup": (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d %H:%M:%S"),
-   "djinni_active_model": "factory_astro"  # Default to factory_astro
+   "last_backup": (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d %H:%M:%S")
 }
-
-# Load settings from file or use defaults
-def load_system_settings():
-    try:
-        # Ensure the data directory exists
-        os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
-        
-        # If the file exists, load settings from it
-        if os.path.exists(SETTINGS_FILE):
-            with open(SETTINGS_FILE, 'r') as f:
-                settings = json.load(f)
-                # Ensure all required settings are present
-                for key in DEFAULT_SETTINGS:
-                    if key not in settings:
-                        settings[key] = DEFAULT_SETTINGS[key]
-                return settings
-        else:
-            # If the file doesn't exist, create it with default settings
-            with open(SETTINGS_FILE, 'w') as f:
-                json.dump(DEFAULT_SETTINGS, f, indent=4)
-            return DEFAULT_SETTINGS.copy()
-    except Exception as e:
-        print(f"Error loading system settings: {e}")
-        return DEFAULT_SETTINGS.copy()
-
-# Save settings to file
-def save_system_settings(settings):
-    try:
-        # Ensure the data directory exists
-        os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
-        
-        # Save settings to file
-        with open(SETTINGS_FILE, 'w') as f:
-            json.dump(settings, f, indent=4)
-        return True
-    except Exception as e:
-        print(f"Error saving system settings: {e}")
-        return False
-
-# Initialize system settings
-system_settings = load_system_settings()
 
 # API Routes
 # User management endpoints
@@ -631,19 +581,6 @@ async def update_system_settings(
         system_settings["api_rate_limiting"] = settings.api_rate_limiting
         if old_value != settings.api_rate_limiting:
             changes.append(f"api_rate_limiting: {old_value} -> {settings.api_rate_limiting}")
-    
-    if settings.djinni_active_model is not None:
-        old_value = system_settings["djinni_active_model"]
-        system_settings["djinni_active_model"] = settings.djinni_active_model
-        if old_value != settings.djinni_active_model:
-            changes.append(f"djinni_active_model: {old_value} -> {settings.djinni_active_model}")
-    
-    # Save settings to file if there are changes
-    if changes:
-        save_result = save_system_settings(system_settings)
-        if not save_result:
-            # Log warning if saving failed, but don't fail the request
-            print("Warning: Failed to save system settings to file")
     
     # Log the settings changes
     if changes:

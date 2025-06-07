@@ -10,7 +10,7 @@ import { updateSystemSetting, runBackup, exportData, cleanupData } from "@/lib/a
 export function SettingsTab() {
   const { systemSettings, setSystemSettings, isProcessing, setIsProcessing, setNotification } = useAdminStore()
 
-  const handleUpdateSetting = async (setting: string, value: any) => {
+  const handleUpdateSetting = async (setting, value) => {
     setIsProcessing(true)
     try {
       const updatedSettings = await updateSystemSetting(setting, value)
@@ -114,104 +114,11 @@ export function SettingsTab() {
     }
   }
 
-  // Djinni model options
-  const djinniModelOptions = [
-    { value: "factory_astro", label: "Factory Astro", description: "AI assistant for factory performance and predictions" },
-    { value: "churn_astro", label: "Churn Astro", description: "AI assistant for customer churn analysis and predictions" }
-  ];
-
-  // Handle Djinni model selection change
-  const handleDjinniModelChange = async (model: string) => {
-    // Don't do anything if the model is already selected
-    if (systemSettings?.djinni_active_model === model) {
-      return;
-    }
-    
-    setIsProcessing(true);
-    try {
-      // Update the system setting
-      const updatedSettings = await updateSystemSetting("djinni_active_model", model);
-      
-      // Verify the update was successful
-      if (updatedSettings?.djinni_active_model !== model) {
-        throw new Error("Model update was not applied correctly");
-      }
-      
-      // Store the model selection in localStorage
-      localStorage.setItem('djinni_active_model', model);
-      
-      // Update local state
-      setSystemSettings(updatedSettings);
-      
-      // Show success notification
-      setNotification({
-        type: "success",
-        message: `Djinni model has been updated to ${model === "factory_astro" ? "Factory Astro" : "Churn Astro"}`,
-      });
-
-      // Clear notification after 3 seconds
-      setTimeout(() => setNotification(null), 3000);
-    } catch (error) {
-      console.error("Error updating Djinni model:", error);
-      setNotification({
-        type: "error",
-        message: "Failed to update Djinni model. Please try again.",
-      });
-
-      // Clear notification after 3 seconds
-      setTimeout(() => setNotification(null), 3000);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-foreground mb-4">Settings</h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Djinni Assistant Settings */}
-        <div className="bg-card p-6 rounded-lg border border-border">
-          <h3 className="text-lg font-medium text-card-foreground mb-4">Djinni Assistant Settings</h3>
-          <div className="space-y-4">
-            <div className="p-3 border-b border-border">
-              <h4 className="text-card-foreground font-medium mb-2">Active Model</h4>
-              <p className="text-muted-foreground text-xs mb-3">
-                Select which AI model to use in the Djinni Assistant page
-              </p>
-              <div className="space-y-3">
-                {djinniModelOptions.map((option) => (
-                  <div key={option.value} className="flex items-start">
-                    <div className="flex items-center h-5">
-                      <input
-                        id={`model-${option.value}`}
-                        name="djinni-model"
-                        type="radio"
-                        className="h-4 w-4 text-primary border-gray-300 focus:ring-primary"
-                        checked={systemSettings?.djinni_active_model === option.value}
-                        onChange={() => handleDjinniModelChange(option.value)}
-                        disabled={isProcessing}
-                      />
-                    </div>
-                    <div className="ml-3 text-sm flex-grow">
-                      <div className="flex items-center gap-2">
-                        <label htmlFor={`model-${option.value}`} className="font-medium text-card-foreground">
-                          {option.label}
-                        </label>
-                        {systemSettings?.djinni_active_model === option.value && (
-                          <span className="px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full">
-                            Active
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-muted-foreground text-xs">{option.description}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
         <div className="bg-card p-6 rounded-lg border border-border">
           <h3 className="text-lg font-medium text-card-foreground mb-4">System Settings</h3>
           <div className="space-y-4">

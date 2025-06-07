@@ -250,8 +250,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem("user")
     setUser(null)
 
-    // Navigate to login page instead of home page
-    router.push("/login")
+    // Navigate to home page
+    router.push("/")
   }
 
   return (

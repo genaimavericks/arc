@@ -3028,7 +3028,7 @@ async def get_data_sources(
                 id=job.id,
                 name=name_for_display,
                 type="File" if job.type == "file" else "Database",
-                last_updated=file_info.uploaded_at.isoformat(), #job.end_time.strftime("%Y-%m-%d %H:%M:%S") if isinstance(job.end_time, datetime) else job.end_time,
+                last_updated=last_updated,
                 status="Active",
                 uploaded_by=uploaded_by,
                 dataset=dataset_value

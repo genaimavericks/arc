@@ -99,22 +99,6 @@ app.include_router(admin_router)
 # Include the Gen AI Layer router
 app.include_router(gen_ai_router)
 
-# Include the Factory Astro router
-try:
-    from api.factory_astro import router as factory_astro_router
-    app.include_router(factory_astro_router)
-    print("Factory Astro router included successfully")
-except ImportError as e:
-    print(f"Could not import Factory Astro router: {e}")
-
-# Include the Churn Astro router
-try:
-    from api.churn_astro import router as churn_astro_router
-    app.include_router(churn_astro_router)
-    print("Churn Astro router included successfully")
-except ImportError as e:
-    print(f"Could not import Churn Astro router: {e}")
-
 # Add additional admin routes that map to datapuur admin endpoints
 app.add_api_route("/api/admin/jobs", get_all_jobs_admin, methods=["GET"])
 app.add_api_route("/api/admin/jobs/{job_id}/stop", stop_job_admin, methods=["POST"])

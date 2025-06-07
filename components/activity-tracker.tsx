@@ -4,7 +4,6 @@ import { useEffect } from "react"
 import { usePathname } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
 import { getApiBaseUrl } from "@/lib/config"
-import { fetchWithAuth } from "@/lib/auth-utils"
 
 export function ActivityTracker() {
   const pathname = usePathname()
@@ -16,10 +15,15 @@ export function ActivityTracker() {
 
     const logPageVisit = async () => {
       try {
-        // Use fetchWithAuth for proper token expiration handling
-        await fetchWithAuth("/api/admin/activity/log", {
+        const apiBaseUrl = getApiBaseUrl()
+        const token = localStorage.getItem("token")
+
+        if (!token) return
+
+        await fetch(`${apiBaseUrl}/api/admin/activity/log`, {
           method: "POST",
           headers: {
+            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
