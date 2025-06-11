@@ -176,11 +176,13 @@ class SourceIdInput(BaseModel):
     metadata: str = None  # Optional metadata about the data
     file_path: str = None  # Add file_path field to accept path from frontend
     domain: str = None  # Data domain (e.g., 'telecom_churn', 'foam_factory')
+    dataset_type: str = "source"  # Can be 'source' or 'transformed'
 
 class SaveSchemaInput(BaseModel):
     schema: dict
     output_path: str = None  # Optional output path, if not provided will use default location
     csv_file_path: str = None  # Path to the original CSV file used to generate the schema
+    dataset_type: str = "source"  # Type of dataset: "source" or "transformed"
 
 class SaveSchemaResponse(BaseModel):
     message: str
@@ -400,6 +402,13 @@ async def build_schema_from_source(
 ):
     """Generate Neo4j schema from a source ID and return the results."""
     print(f"DEBUG: build_schema_from_source called with source_id: {source_input.source_id}")
+    # Construct absolute path using data directory in datapuur_ai
+    import os.path
+    from pathlib import Path
+    # Get the path to the datapuur_ai data directory
+    api_dir = Path(__file__).parent.parent  # api directory
+    data_dir = os.path.join(api_dir, "datapuur_ai", "data")
+    
     try:
         source_id = source_input.source_id
         temp_json_file = None
@@ -407,7 +416,17 @@ async def build_schema_from_source(
         # Check if file_path is provided directly in the request
         if source_input.file_path:
             print(f"DEBUG: Using provided file path: {source_input.file_path}")
-            file_path = source_input.file_path
+            raw_file_path = source_input.file_path
+            
+            # Handle dataset type-specific path construction
+            dataset_type = source_input.dataset_type
+            if dataset_type == "transformed" and raw_file_path.endswith('.parquet'):
+                # For transformed datasets, construct absolute path in the data directory
+                file_path = os.path.join(data_dir, os.path.basename(raw_file_path))
+                print(f"DEBUG: Mapped transformed dataset path to: {file_path}")
+            else:
+                # For source datasets or if not a parquet file, use as-is
+                file_path = raw_file_path
             
             # Validate file exists
             if not os.path.exists(file_path):
@@ -425,27 +444,55 @@ async def build_schema_from_source(
             # If file_path is not provided, try to get it from the source_id
             print(f"DEBUG: No file path provided, retrieving from source_id: {source_id}")
             
-            # Query the database to get the file path from the source_id
-            from models import UploadedFile, IngestionJob
+            # Get dataset type to determine which API to use
+            dataset_type = source_input.dataset_type
+            print(f"DEBUG: Dataset type: {dataset_type}")
             
-            # Try to find the file in UploadedFile table
-            uploaded_file = db.query(UploadedFile).filter(UploadedFile.id == source_id).first()
-            
-            if uploaded_file and uploaded_file.file_path:
-                file_path = uploaded_file.file_path
-                print(f"DEBUG: Found file path in UploadedFile: {file_path}")
-            else:
-                # Try to find the file in IngestionJob table
-                ingestion_job = db.query(IngestionJob).filter(IngestionJob.id == source_id).first()
-                
-                if ingestion_job and ingestion_job.file_path:
-                    file_path = ingestion_job.file_path
-                    print(f"DEBUG: Found file path in IngestionJob: {file_path}")
-                else:
+            if dataset_type == "transformed":
+                # For transformed datasets, we need to use a different approach
+                from api.datapuur_ai.transformed_dataset import get_transformed_dataset
+                try:
+                    # Get the transformed dataset details
+                    transformed_dataset = await get_transformed_dataset(source_id, current_user, db)
+                    if not transformed_dataset or "file_path" not in transformed_dataset:
+                        raise HTTPException(
+                            status_code=404,
+                            detail=f"Could not find file path for transformed dataset ID: {source_id}"
+                        )
+                    # Get relative file path from transformed dataset
+                    relative_file_path = transformed_dataset["file_path"]
+                    
+                    # Construct absolute file path
+                    file_path = os.path.join(data_dir, os.path.basename(relative_file_path))
+                    print(f"DEBUG: Found transformed dataset at: {file_path}")
+                except Exception as e:
+                    print(f"ERROR: Failed to get transformed dataset: {e}")
                     raise HTTPException(
                         status_code=404,
-                        detail=f"Could not find file path for source_id: {source_id}"
+                        detail=f"Error retrieving transformed dataset: {str(e)}"
                     )
+            else:
+                # Original logic for source datasets
+                from models import UploadedFile, IngestionJob
+                
+                # Try to find the file in UploadedFile table
+                uploaded_file = db.query(UploadedFile).filter(UploadedFile.id == source_id).first()
+                
+                if uploaded_file and uploaded_file.file_path:
+                    file_path = uploaded_file.file_path
+                    print(f"DEBUG: Found file path in UploadedFile: {file_path}")
+                else:
+                    # Try to find the file in IngestionJob table
+                    ingestion_job = db.query(IngestionJob).filter(IngestionJob.id == source_id).first()
+                    
+                    if ingestion_job and ingestion_job.file_path:
+                        file_path = ingestion_job.file_path
+                        print(f"DEBUG: Found file path in IngestionJob: {file_path}")
+                    else:
+                        raise HTTPException(
+                            status_code=404,
+                            detail=f"Could not find file path for source_id: {source_id}"
+                        )
             
             # Validate file exists
             if not os.path.exists(file_path):
@@ -1328,12 +1375,20 @@ async def save_schema(
         
         try:
             # Save schema to database
+            # Determine if this is a transformed dataset based on file path
+            dataset_type = 'source'  # Default to source dataset
+            # Also check if dataset_type is explicitly set in save_input
+            if hasattr(save_input, 'dataset_type') and save_input.dataset_type:
+                dataset_type = save_input.dataset_type
+                print(f"DEBUG: Using explicitly provided dataset_type: {dataset_type}")
+                
             schema_record = Schema(
                 name=schema_data.get('name', f"schema_{datetime.now().isoformat()}"),
                 source_id=str(current_user.id),  # Using user ID as source_id
                 description=schema_data.get('description', ''),
                 schema=json.dumps(save_input.schema),
-                csv_file_path=save_input.csv_file_path
+                csv_file_path=save_input.csv_file_path,
+                dataset_type=dataset_type  # Set the dataset type
                 # created_at and updated_at have default values
             )
             db.add(schema_record)
@@ -1761,6 +1816,7 @@ async def load_data_from_schema(
     schema_id: int,
     graph_name: str = "default",
     drop_existing: bool = False,
+    dataset_type: str = None,  # Add dataset_type parameter with default None
     current_user: User = Depends(has_any_permission(["kginsights:write"])),
     db: SessionLocal = Depends(get_db),
     job_id: str = None
@@ -1793,10 +1849,32 @@ async def load_data_from_schema(
                 detail="Schema does not have an associated CSV file path"
             )
             
+        # Make sure the file path is absolute for transformed datasets
+        data_path = schema.csv_file_path
+        
+        # Only apply path resolution for transformed datasets with just a filename
+        if dataset_type == 'transformed':
+            print(f"Resolving path for transformed dataset: {data_path}")
+            # If just a filename without path, check in data directories
+            data_dirs = [
+                os.path.join(os.path.dirname(__file__), '..', 'data'),
+                os.path.join(os.path.dirname(__file__), '..', 'datapuur_ai', 'data'),
+                os.path.join(os.path.dirname(__file__), '..', 'uploads')
+            ]
+            
+            for dir_path in data_dirs:
+                full_path = os.path.join(dir_path, data_path)
+                if os.path.exists(full_path):
+                    print(f"Found transformed dataset at {full_path}")
+                    data_path = full_path
+                    break
+            
+            print(f"Using data path: {data_path}")
+        
         # Initialize data loader
         loader = DataLoader(
             schema_id=schema_id,
-            data_path=schema.csv_file_path,
+            data_path=data_path,
             graph_name=graph_name,
             batch_size=1000,  # Default batch size
             drop_existing=drop_existing,

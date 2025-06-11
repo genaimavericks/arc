@@ -192,7 +192,9 @@ export function MainSidebar() {
         { label: "Dashboard", href: "/datapuur", icon: LayoutDashboard },
         { label: "Ingestion", href: "/datapuur/ingestion", icon: FileInput },
         { label: "Profiles", href: "/datapuur/profile", icon: BarChart2 },
-        { label: "Transformation", href: "/datapuur/transformation", icon: Wand2 },
+        { label: "AI Profile", href: "/datapuur/ai-profile", icon: Brain },
+        { label: "AI Transformation", href: "/datapuur/ai-transformation", icon: Zap },
+        { label: "Data Catalog", href: "/datapuur/data-catalog", icon: Database },
         { label: "Export", href: "/datapuur/export", icon: Download }
       ]
     },

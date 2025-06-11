@@ -27,6 +27,7 @@ interface SchemaViewerModalProps {
   onClose: () => void
   datasetId: string
   datasetName: string
+  datasetType: string // 'source' or 'transformed'
 }
 
 interface SchemaField {
@@ -59,7 +60,7 @@ interface GraphSchema {
   }>
 }
 
-export function SchemaViewerModal({ isOpen, onClose, datasetId, datasetName }: SchemaViewerModalProps) {
+export function SchemaViewerModal({ isOpen, onClose, datasetId, datasetName, datasetType }: SchemaViewerModalProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [schema, setSchema] = useState<SchemaField[]>([])
   const [graphSchema, setGraphSchema] = useState<GraphSchema | null>(null)
@@ -102,7 +103,7 @@ export function SchemaViewerModal({ isOpen, onClose, datasetId, datasetName }: S
       setIsLoading(true)
       setError(null)
 
-      // First try to fetch from the schema database if it's a schema ID
+      // First try to fetch from the schema database if it's a schema ID (this is for KG schemas)
       try {
         const schemaResponse = await fetch(`/api/graphschema/schemas/${datasetId}`, {
           headers: {
@@ -146,14 +147,43 @@ export function SchemaViewerModal({ isOpen, onClose, datasetId, datasetName }: S
         // Continue to try other methods
       }
 
-      // If not a graph schema, try the dataset schema endpoint
-      const response = await fetch(`/api/datapuur/ingestion-schema/${datasetId}`, {
+      // Choose the appropriate API endpoint based on dataset type
+      let apiUrl;
+      if (datasetType === 'transformed') {
+        // For transformed datasets
+        apiUrl = `/api/datapuur-ai/transformed-datasets/${datasetId}/schema`;
+      } else {
+        // For source datasets (use the file_id directly)
+        apiUrl = `/api/datapuur/file-schema/${datasetId}`;
+      }
+      
+      const response = await fetch(apiUrl, {
         headers: {
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
       })
 
       if (!response.ok) {
+        // Fallback to ingestion schema endpoint if the new API fails
+        console.warn(`New schema API failed, falling back to legacy endpoint`)
+        const fallbackResponse = await fetch(`/api/datapuur/ingestion-schema/${datasetId}`, {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        });
+        
+        if (!fallbackResponse.ok) {
+          throw new Error(`Failed to fetch schema data: ${response.status}`)
+        }
+        
+        const fallbackData = await fallbackResponse.json()
+        if (fallbackData && fallbackData.fields) {
+          setSchema(fallbackData.fields || [])
+          setActiveTab("fields")
+          setIsLoading(false)
+          return
+        }
+        
         throw new Error(`Failed to fetch schema data: ${response.status}`)
       }
 
@@ -162,6 +192,15 @@ export function SchemaViewerModal({ isOpen, onClose, datasetId, datasetName }: S
       // Extract schema from the response
       if (data && data.fields) {
         setSchema(data.fields || [])
+        setActiveTab("fields")
+      } else if (data && data.columns) {
+        // Handle transformed dataset schema format which might have 'columns' instead of 'fields'
+        const formattedFields = data.columns.map((col: any) => ({
+          name: col.name,
+          type: col.type,
+          nullable: true // Assume nullable by default
+        }));
+        setSchema(formattedFields);
         setActiveTab("fields")
       } else if (data && data.schema && data.schema.fields) {
         // Alternative location where schema might be stored

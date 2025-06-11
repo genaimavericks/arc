@@ -138,6 +138,7 @@ class Schema(Base):
     db_loaded = Column(Text, nullable=True, default='no')
     db_id = Column(String, nullable=True, default='invalid')
     generation_id = Column(String, nullable=True)
+    dataset_type = Column(String, nullable=True, default='source')  # 'source' or 'transformed'
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

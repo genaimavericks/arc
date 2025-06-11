@@ -79,7 +79,7 @@ def configure_logging():
     
     # Create console handler
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.INFO)
+    console_handler.setLevel(logging.DEBUG)
     console_handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
     
     # Add our custom filter to the console handler

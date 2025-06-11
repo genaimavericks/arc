@@ -40,9 +40,11 @@ const CytoscapeGraph = dynamic(
 interface DataSource {
   id: string
   name: string
-  type: string
+  type: string // Source dataset file type or "transformed" for transformed dataset
+  datasetType?: "source" | "transformed" // Indicates if this is a source or transformed dataset
   last_updated: string
   status: string
+  description?: string
 }
 
 interface SchemaNode {
@@ -80,6 +82,7 @@ function GenerateGraphContent() {
   const [sources, setSources] = useState<DataSource[]>([])
   const [selectedSource, setSelectedSource] = useState<string>("")
   const [selectedSourceName, setSelectedSourceName] = useState<string>("")
+  const [selectedDatasetType, setSelectedDatasetType] = useState<"source" | "transformed" | "">("")
   const [loading, setLoading] = useState(false)
   const [loadingSources, setLoadingSources] = useState(true)
   const [schema, setSchema] = useState<Schema | null>(null)
@@ -105,27 +108,85 @@ function GenerateGraphContent() {
     const fetchDataSources = async () => {
       try {
         setLoadingSources(true)
-        const response = await fetch("/api/datapuur/sources", {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-        })
+        
+        // Fetch both source and transformed datasets in parallel
+        const [sourceResponse, transformedResponse] = await Promise.all([
+          // Source datasets
+          fetch("/api/datapuur/sources", {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${localStorage.getItem("token")}`,
+            },
+          }),
+          
+          // Transformed datasets
+          fetch("/api/datapuur-ai/transformed-datasets", {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${localStorage.getItem("token")}`,
+            },
+          })
+        ])
 
-        if (!response.ok) {
-          throw new Error(`Failed to fetch data sources: ${response.status}`)
+        if (!sourceResponse.ok) {
+          throw new Error(`Failed to fetch source datasets: ${sourceResponse.status}`)
         }
 
-        const data = await response.json()
-        setSources(data)
+        // Process source datasets
+        const sourceData = await sourceResponse.json()
+        const sourcesFormatted = sourceData.map((item: any) => ({
+          id: item.id,
+          name: item.name,
+          dataset: item.dataset || item.name,
+          datasetType: "source" as const,
+          type: item.type?.toLowerCase(),
+          status: "completed",
+          last_updated: item.last_updated || new Date().toISOString(),
+        }))
+        
+        // Process transformed datasets if available
+        let transformedDatasets: DataSource[] = []
+        if (transformedResponse.ok) {
+          try {
+            const transformedData = await transformedResponse.json()
+            transformedDatasets = transformedData.map((item: any) => ({
+              id: item.id,
+              name: item.name,
+              dataset: item.name,
+              datasetType: "transformed" as const,
+              type: "transformed",
+              status: "completed",
+              description: item.description || '',
+              last_updated: item.updated_at || item.created_at || new Date().toISOString(),
+            }))
+          } catch (e) {
+            console.warn("Error parsing transformed datasets:", e)
+          }
+        } else {
+          console.warn(`Could not fetch transformed datasets: ${transformedResponse.status}`)
+        }
+        
+        // Combine and sort all datasets
+        const allDatasets = [...sourcesFormatted, ...transformedDatasets]
+        const sortedDatasets = allDatasets.sort((a, b) => 
+          new Date(b.last_updated).getTime() - new Date(a.last_updated).getTime()
+        )
+        
+        setSources(sortedDatasets)
       } catch (error) {
-        console.error("Error fetching data sources:", error)
+        console.error("Error fetching datasets:", error)
         toast({
           title: "Error",
-          description: "Failed to load data sources. Please try again.",
+          description: "Failed to load datasets. Please try again.",
           variant: "destructive",
         })
+        // Set fallback data
+        setSources([
+          { id: "1", name: "Sales Q1", datasetType: "source", type: "file", status: "completed", last_updated: new Date().toISOString() },
+          { id: "2", name: "HR Data", datasetType: "transformed", type: "transformed", status: "completed", last_updated: new Date().toISOString() },
+        ])
       } finally {
         setLoadingSources(false)
       }
@@ -136,38 +197,42 @@ function GenerateGraphContent() {
     // Check if we have query parameters
     const sourceId = searchParams.get("sourceId")
     const sourceName = searchParams.get("sourceName")
-    const name = searchParams.get("kgName")
-    const description = searchParams.get("kgDescription")
+    const kgNameParam = searchParams.get("kgName")
+    const kgDescParam = searchParams.get("kgDescription")
+    const datasetType = searchParams.get("datasetType") as "source" | "transformed" | null
+    
+    // Debug URL parameters
+    console.log("URL parameters received:", { sourceId, sourceName, kgNameParam, kgDescParam, datasetType })
 
-    if (sourceId && sourceName) {
+    // If we have a specific sourceId from URL params, set as selected
+    if (sourceId) {
       setSelectedSource(sourceId)
-      setSelectedSourceName(sourceName)
-      
-      if (name) {
-        setKgName(name)
+      setSelectedSourceName(sourceName || "")
+      if (datasetType) {
+        console.log("Setting dataset type to:", datasetType);
+        setSelectedDatasetType(datasetType)
       }
-      
-      if (description) {
-        setKgDescription(description)
-      }
-      
-      // Show notification to select data domain if not already selected
-      setTimeout(() => {
-        if (!domain) {
-          toast({
-            title: "Data Domain Required",
-            description: "Please select a data domain to generate a knowledge graph.",
-            duration: 5000,
-          })
-        }
-      }, 1500)
+      if (kgNameParam) setKgName(kgNameParam)
+      if (kgDescParam) setKgDescription(kgDescParam)
     }
+
+    // Show notification to select data domain if not already selected
+    setTimeout(() => {
+      if (!domain) {
+        toast({
+          title: "Data Domain Required",
+          description: "Please select a data domain to generate a knowledge graph.",
+          duration: 5000,
+        })
+      }
+    }, 1500)
   }, [searchParams, toast, domain])
 
   const handleSourceChange = (value: string) => {
-    const source = sources.find(s => s.id === value)
     setSelectedSource(value)
-    setSelectedSourceName(source?.name || "")
+    const selected = sources.find(s => s.id === value)
+    setSelectedSourceName(selected?.name || "")
+    setSelectedDatasetType(selected?.datasetType || "source")
   }
 
   const handleDomainChange = (value: string) => {
@@ -178,10 +243,10 @@ function GenerateGraphContent() {
   }
 
   const generateSchema = async () => {
-    if (!selectedSource) {
+    if (!selectedSource || !selectedDatasetType) {
       toast({
-        title: "Error",
-        description: "Please select a data source",
+        title: "Missing Source",
+        description: "Please select a data source first.",
         variant: "destructive",
       })
       return
@@ -224,10 +289,10 @@ function GenerateGraphContent() {
   }
 
   const handleSaveSchema = async () => {
-    if (!schema) {
+    if (!schema || !selectedSource || !kgName || !selectedDatasetType) {
       toast({
-        title: "Error",
-        description: "No schema to save. Please generate a schema first.",
+        title: "Missing Information",
+        description: "Please ensure you have generated a schema and provided a name for your knowledge graph.",
         variant: "destructive",
       })
       return
@@ -243,15 +308,6 @@ function GenerateGraphContent() {
       
       // Update the state
       setKgName(schemaName)
-    }
-
-    if (!selectedSource) {
-      toast({
-        title: "Error",
-        description: "Please select a data source.",
-        variant: "destructive",
-      })
-      return
     }
 
     try {
@@ -270,8 +326,20 @@ function GenerateGraphContent() {
         name: schemaName,
         description: kgDescription,
         source_id: selectedSource,
+        source_type: selectedDatasetType, // Include the dataset type
+        nodes: schema.nodes,
+        relationships: schema.relationships,
+        indexes: schema.indexes || [],
+        cypher: cypher
       })
 
+      console.log("Saving schema with parameters:", {
+        name: schemaName,
+        source_id: selectedSource,
+        source_type: selectedDatasetType
+      });
+
+      // Use the correct API route - the router is mounted at /api prefix in main.py
       const response = await fetch("/api/graphschema/save-schema", {
         method: "POST",
         headers: {
@@ -284,9 +352,11 @@ function GenerateGraphContent() {
             name: schemaName,
             description: kgDescription,
             source_id: selectedSource,
+            source_type: selectedDatasetType, // Include the dataset type
             created_at: new Date().toISOString(),
           },
-          csv_file_path: schema.csv_file_path || ""
+          csv_file_path: schema.csv_file_path || "",
+          dataset_type: selectedDatasetType // Add dataset type at the top level too
         }),
       })
 
@@ -320,8 +390,8 @@ function GenerateGraphContent() {
         throw new Error(errorMessage)
       }
 
-      const data = await response.json()
-      console.log("Schema saved successfully:", data)
+      const responseData = await response.json()
+      console.log("Schema saved successfully:", responseData)
       
       // Set success status
       setSavingStatus('success')
@@ -329,7 +399,7 @@ function GenerateGraphContent() {
       // Set saved schema info for the success message
       const schemaInfo = {
         name: schemaName,
-        path: data.file_path || ""
+        path: `/kginsights/schemas/${responseData.id}`
       };
       console.log("Setting saved schema info:", schemaInfo);
       setSavedSchemaInfo(schemaInfo);
@@ -433,23 +503,36 @@ function GenerateGraphContent() {
                     <SelectValue placeholder="Select a dataset" />
                   </SelectTrigger>
                   <SelectContent className="bg-card/95 backdrop-blur-md border-primary/20">
-                    {loadingSources ? (
-                      <div className="flex justify-center p-2">
-                        <LoadingSpinner size="sm" />
-                      </div>
-                    ) : sources.length > 0 ? (
-                      sources.map((source) => (
+                    <div className="px-3 py-2 text-sm font-medium text-muted-foreground">Source Datasets</div>
+                    {sources
+                      .filter(s => s.datasetType === "source")
+                      .map((source) => (
                         <SelectItem key={source.id} value={source.id}>
                           {source.name}
                         </SelectItem>
-                      ))
-                    ) : (
-                      <div className="p-2 text-center text-muted-foreground">
-                        No datasets available
-                      </div>
-                    )}
+                      ))}
+                    <Separator className="my-2" />
+                    <div className="px-3 py-2 text-sm font-medium text-muted-foreground">Transformed Datasets</div>
+                    {sources
+                      .filter(s => s.datasetType === "transformed")
+                      .map((source) => (
+                        <SelectItem key={source.id} value={source.id}>
+                          {source.name}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
+                
+                {selectedSource && selectedDatasetType && (
+                  <div className="mt-1">
+                    <Badge variant="outline" className={selectedDatasetType === "transformed" ? 
+                      "bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border-emerald-300" : 
+                      "bg-blue-100 text-blue-800 hover:bg-blue-200 border-blue-300"}
+                    >
+                      {selectedDatasetType === "transformed" ? "Transformed Dataset" : "Source Dataset"}
+                    </Badge>
+                  </div>
+                )}
               </div>
               
               <div className="w-full md:w-64">
@@ -589,6 +672,7 @@ function GenerateGraphContent() {
                     ref={chatRef}
                     selectedSource={selectedSource}
                     selectedSourceName={selectedSourceName}
+                    selectedDatasetType={selectedDatasetType}
                     domain={domain}
                     onSchemaGenerated={handleSchemaGenerated}
                     loading={loading}

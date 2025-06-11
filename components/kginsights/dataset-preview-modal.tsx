@@ -11,9 +11,10 @@ interface DatasetPreviewModalProps {
   onClose: () => void
   datasetId: string
   datasetName: string
+  datasetType: string // 'source' or 'transformed'
 }
 
-export function DatasetPreviewModal({ isOpen, onClose, datasetId, datasetName }: DatasetPreviewModalProps) {
+export function DatasetPreviewModal({ isOpen, onClose, datasetId, datasetName, datasetType }: DatasetPreviewModalProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [data, setData] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
@@ -29,8 +30,19 @@ export function DatasetPreviewModal({ isOpen, onClose, datasetId, datasetName }:
       setIsLoading(true)
       setError(null)
 
+      let apiUrl;
+      
+      // Use different API endpoints based on dataset type
+      if (datasetType === 'transformed') {
+        // For transformed datasets
+        apiUrl = `/api/datapuur-ai/transformed-datasets/${datasetId}/preview`;
+      } else {
+        // For source datasets (use the file_id directly)
+        apiUrl = `/api/datapuur/preview/${datasetId}`;
+      }
+
       // Fetch preview data from the API
-      const response = await fetch(`/api/datapuur/ingestion-preview/${datasetId}`, {
+      const response = await fetch(apiUrl, {
         headers: {
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },

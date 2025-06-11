@@ -319,7 +319,7 @@ def log_activity(
     db: Session, 
     username: str, 
     action: str, 
-    details: Optional[str] = None, 
+    details: Optional[dict | str] = None, 
     ip_address: Optional[str] = None, 
     user_agent: Optional[str] = None,
     page_url: Optional[str] = None
@@ -330,6 +330,12 @@ def log_activity(
     try:
         # Use system's default time instead of IST
         now = datetime.now()
+        
+        # Convert details to a JSON string if it's a dictionary
+        if isinstance(details, dict):
+            details_str = json.dumps(details)
+        else:
+            details_str = details
         
         # Print debug information
         print(f"Creating activity log: username={username}, action={action}, details={details}")
@@ -342,7 +348,7 @@ def log_activity(
         activity_log = ActivityLog(
             username=username,
             action=action,
-            details=details,
+            details=details_str,  # Use the serialized string
             timestamp=now,
             ip_address=ip_address,
             user_agent=user_agent,
@@ -360,6 +366,7 @@ def log_activity(
     except Exception as e:
         # Print error message
         print(f"Error creating activity log: {str(e)}")
+        db.rollback()  # Make sure to rollback the transaction on error
         
         # Don't raise the exception, just log it
         return None

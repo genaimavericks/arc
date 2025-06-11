@@ -35,6 +35,7 @@ export interface SchemaChatRef {
 interface SchemaChatProps {
   selectedSource: string
   selectedSourceName: string
+  selectedDatasetType?: "source" | "transformed" | ""
   domain: string
   onSchemaGenerated: (schema: any, cypher: string) => void
   loading: boolean
@@ -44,11 +45,19 @@ interface SchemaChatProps {
 export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function SchemaChat({ 
   selectedSource, 
   selectedSourceName,
+  selectedDatasetType = "source",
   domain,
   onSchemaGenerated,
   loading,
   setLoading
 }, ref) {
+  // Debug initial props
+  console.log("SchemaChat initialized with:", {
+    selectedSource,
+    selectedSourceName,
+    selectedDatasetType,
+    domain
+  });
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [message, setMessage] = useState("")
   const [currentSchema, setCurrentSchema] = useState<any>(null)
@@ -77,12 +86,25 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
     scrollToBottom()
   }, [messages])
 
-  // Handle auto-resize of textarea
+  // Handle auto-resize of textarea with improved resize behavior
   useEffect(() => {
     const textarea = textareaRef.current
     if (textarea) {
+      // Save current scroll position before resizing
+      const scrollPos = window.scrollY
+      
+      // Reset height to auto for proper calculation
       textarea.style.height = "auto"
-      textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`
+      
+      // Set new height based on content
+      const newHeight = Math.min(textarea.scrollHeight, 200)
+      textarea.style.height = `${newHeight}px`
+      
+      // Restore scroll position
+      window.scrollTo(0, scrollPos)
+      
+      // Log for debugging
+      console.log("Textarea resized to:", newHeight, "px")
     }
   }, [message])
 
@@ -97,6 +119,8 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
 
   // Handle sending message
   const handleSendMessage = async () => {
+    console.log("handleSendMessage called with dataset type:", selectedDatasetType);
+    
     if (!message.trim() || loading) return
     
     if (!selectedSource) {
@@ -135,30 +159,70 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
     setLoading(true)
     
     try {
-      // First, fetch the detailed source information to get the file path
-      const sourceResponse = await fetch(`/api/datapuur/sources/${selectedSource}`, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
+      // First, fetch the detailed source information to get the file path based on dataset type
+      let sourceResponse;
+      
+      // Critical debugging for API selection
+      console.log("BEFORE API CALL - Dataset type check:", {
+        selectedDatasetType,
+        isTransformed: selectedDatasetType === "transformed",
+        typeOfVar: typeof selectedDatasetType,
+        selectedSource
       });
       
+      if (selectedDatasetType === "transformed") {
+        // For transformed datasets, use the transformed dataset API
+        console.log("Using transformed dataset API for ID:", selectedSource);
+        sourceResponse = await fetch(`/api/datapuur-ai/transformed-datasets/${selectedSource}`, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        });
+      } else {
+        // For source datasets, use the new source file API
+        console.log("Using source file API for ID:", selectedSource);
+        sourceResponse = await fetch(`/api/datapuur/source-file/${selectedSource}`, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        });
+      }
+      
       if (!sourceResponse.ok) {
-        throw new Error(`Failed to fetch source details: ${sourceResponse.status}`);
+        throw new Error(`Failed to fetch ${selectedDatasetType} details: ${sourceResponse.status}`);
       }
       
       const sourceData = await sourceResponse.json();
       
-      // Extract file path from source details
-      if (!sourceData.file || !sourceData.file.path) {
-        throw new Error("File path not found in source details");
+      // Handle different response formats based on dataset type
+      let filePath;
+      if (selectedDatasetType === "transformed") {
+        filePath = sourceData.transformed_file_path;
+      } else {
+        filePath = sourceData.full_path || sourceData.file_path || sourceData.filepath;
       }
       
-      const filePath = sourceData.file.path;
-      const fileType = sourceData.file.type;
-      const fileName = sourceData.file.filename;
-      const fileMetadata = sourceData.file.schema; // Any pre-existing schema information
+      setFilePath(filePath);
+      // Extract file type and name based on dataset type
+      let fileType;
+      let fileName;
+      
+      if (selectedDatasetType === "transformed") {
+        fileType = "parquet";
+        fileName = sourceData.name || "transformed-dataset";
+      } else {
+        fileType = sourceData.file_type || sourceData.type;
+        fileName = sourceData.filename;
+      }
+      
+      // Any pre-existing schema information
+      const fileMetadata = selectedDatasetType === "transformed" ? 
+        sourceData.column_metadata : 
+        (sourceData.schema || {})
       
       // Enhanced metadata for schema generation
       const enhancedMetadata = {
@@ -175,6 +239,13 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
       setFilePath(filePath);
       
       // Now, send request to build schema API with the file path and enhanced metadata
+      console.log("Calling schema generation API with:", {
+        source_id: selectedSource,
+        dataset_type: selectedDatasetType,
+        file_path: filePath
+      });
+      
+      // Use the correct API route - the router is mounted at /api prefix in main.py
       const response = await fetch("/api/graphschema/build-schema-from-source", {
         method: "POST",
         headers: {
@@ -185,6 +256,7 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
           source_id: selectedSource,
           metadata: JSON.stringify(enhancedMetadata),
           file_path: filePath,
+          dataset_type: selectedDatasetType, // Add dataset type to the payload
           domain: domain
         }),
       })
@@ -403,12 +475,37 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
   
   // Handle keyboard shortcuts
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    // Log key events for debugging
+    console.log("Key pressed:", e.key, "Shift:", e.shiftKey)
+    
+    // If Enter key is pressed without Shift key and not on iOS
+    if (e.key === "Enter" && !e.shiftKey && !/(iPad|iPhone|iPod)/.test(navigator.userAgent)) {
       e.preventDefault()
-      if (currentSchema) {
-        handleRefinement()
+      
+      // Check if we can send a message
+      const canSend = !loading && message.trim() && selectedSource
+      console.log("Can send message:", canSend, { loading, hasMessage: !!message.trim(), hasSource: !!selectedSource })
+      
+      if (canSend) {
+        if (currentSchema) {
+          handleRefinement()
+        } else {
+          handleSendMessage()
+        }
       } else {
-        handleSendMessage()
+        // Show toast if button is disabled but user tries to send
+        if (!selectedSource) {
+          toast({
+            title: "No dataset selected",
+            description: "Please select a dataset first before sending a message.",
+            variant: "destructive",
+          })
+        } else if (loading) {
+          toast({
+            title: "Processing",
+            description: "Please wait while we process your current request.",
+          })
+        }
       }
     }
   }
@@ -505,7 +602,10 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
             id="schema-chat-input"
             ref={textareaRef}
             value={message}
-            onChange={(e) => setMessage(e.target.value)}
+            onChange={(e) => {
+              console.log("Setting message to:", e.target.value);
+              setMessage(e.target.value);
+            }}
             onKeyDown={handleKeyDown}
             placeholder="Ask about schema..."
             className="flex-grow resize-none min-h-[60px] max-h-[200px] overflow-y-auto"
@@ -513,7 +613,20 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
           />
           <Button
             className="flex-shrink-0"
-            onClick={currentSchema ? handleRefinement : handleSendMessage}
+            onClick={() => {
+              console.log("Button clicked. Current state:", {
+                message: message,
+                messageEmpty: !message.trim(),
+                loading: loading,
+                selectedSource: selectedSource,
+                currentSchema: currentSchema !== null
+              });
+              if (currentSchema) {
+                handleRefinement();
+              } else {
+                handleSendMessage();
+              }
+            }}
             disabled={!message.trim() || loading || !selectedSource}
           >
             {loading ? (

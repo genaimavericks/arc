@@ -7,6 +7,7 @@ import { useEffect, useState } from "react"
 import { getKGraphDashboard } from "@/lib/api"
 import LoadingSpinner from "@/components/loading-spinner"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -40,15 +41,22 @@ interface KnowledgeGraph {
 interface Dataset {
   id: string
   name: string
-  type: string
+  dataset?: string
+  type: string // "source" or "transformed"
+  sourceType?: string
   status: string
   last_updated: string
-  dataset?: string  // Optional to maintain backward compatibility
-  uploaded_by?: string
+  description?: string
 }
 
 interface Neo4jGraph {
   name: string
+}
+
+interface SelectedDataset {
+  id: string
+  name: string
+  type: string
 }
 
 export default function KGraphDashboardPage() {
@@ -78,66 +86,118 @@ function KGraphDashboardContent() {
   ])
 
   const [datasets, setDatasets] = useState<Dataset[]>([])
-  const [loadingDatasets, setLoadingDatasets] = useState(true)
+  const [loadingDatasets, setLoadingDatasets] = useState(false)
+  const [datasetsError, setDatasetsError] = useState<string | null>(null)
+  
+  // Dataset filter state
+  const [datasetFilter, setDatasetFilter] = useState<string>("all") // "all", "source", "transformed"
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [datasetsError, setDatasetsError] = useState<string | null>(null)
   const [neo4jGraphs, setNeo4jGraphs] = useState<Neo4jGraph[]>([])
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage] = useState(10)
   const { toast } = useToast()
   const router = useRouter()
 
-  // State for modals
+  // Preview modal states
   const [previewModalOpen, setPreviewModalOpen] = useState(false)
+  const [selectedDataset, setSelectedDataset] = useState<SelectedDataset | null>(null)
+  const [previewData, setPreviewData] = useState<any[]>([])
+  const [loadingPreview, setLoadingPreview] = useState(false)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+  
+  // Schema modal states
   const [schemaModalOpen, setSchemaModalOpen] = useState(false)
+  const [schemaData, setSchemaData] = useState<any>({})
+  const [loadingSchema, setLoadingSchema] = useState(false)
+  const [schemaError, setSchemaError] = useState<string | null>(null)
+  
+  // KG Generation modal states
   const [generateKGModalOpen, setGenerateKGModalOpen] = useState(false)
-  const [selectedDataset, setSelectedDataset] = useState<{ id: string; name: string } | null>(null)
   const [applyToNeo4jModalOpen, setApplyToNeo4jModalOpen] = useState(false)
   const [graphToApply, setGraphToApply] = useState<KnowledgeGraph | null>(null)
 
-  // Function to fetch available datasets from sources
+  // Function to fetch available datasets (source and transformed)
   const fetchDataSources = async () => {
     setLoadingDatasets(true)
     try {
-      // Make API call to get data sources
-      const response = await fetch("/api/datapuur/sources", {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-      })
+      // Fetch all required datasets in parallel
+      const [sourceResponse, transformedResponse] = await Promise.all([
+        // Original source datasets
+        fetch("/api/datapuur/sources", {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        }),
+        
+        // Transformed datasets
+        fetch("/api/datapuur-ai/transformed-datasets", {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        })
+      ])
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch data sources: ${response.status}`)
+      if (!sourceResponse.ok) {
+        throw new Error(`Failed to fetch data sources: ${sourceResponse.status}`)
+      }
+      
+      if (!transformedResponse.ok) {
+        console.warn(`Failed to fetch transformed datasets: ${transformedResponse.status}`)
       }
 
-      const data = await response.json()
+      const sourceData = await sourceResponse.json()
+      let transformedData: any[] = []
+      
+      try {
+        transformedData = await transformedResponse.json()
+      } catch (e) {
+        console.warn("Error parsing transformed datasets response:", e)
+      }
 
-      // Map the data sources to our dataset format
-      const availableDatasets = data.map((item: any) => ({
+      // Map source datasets to our dataset format
+      const availableSourceDatasets = sourceData.map((item: any) => ({
         id: item.id,
         name: item.name,
         dataset: item.dataset,
-        type: item.type.toLowerCase(),
+        type: "source", // Mark as source type for filtering
+        sourceType: item.type.toLowerCase(),
         status: "completed",
-        last_updated: item.last_updated || new Date().toISOString(), // Use created_at from the API or current date as fallback
+        last_updated: item.last_updated || new Date().toISOString(),
+      }))
+      
+      // Map transformed datasets to our dataset format
+      const availableTransformedDatasets = transformedData.map((item: any) => ({
+        id: item.id,
+        name: item.name,
+        description: item.description || '',
+        dataset: item.name,
+        type: "transformed", // Mark as transformed type for filtering
+        sourceFileId: item.source_file_id,
+        status: "completed",
+        last_updated: item.updated_at || item.created_at || new Date().toISOString(),
       }))
 
-      // Reverse the order so newest datasets appear first
-      const sortedDatasets = [...availableDatasets].reverse()
+      // Combine and sort all datasets by last updated date
+      const allDatasets = [...availableSourceDatasets, ...availableTransformedDatasets]
+      const sortedDatasets = allDatasets.sort((a, b) => 
+        new Date(b.last_updated).getTime() - new Date(a.last_updated).getTime()
+      )
 
       setDatasets(sortedDatasets)
       setDatasetsError(null)
     } catch (err) {
-      console.error("Error fetching data sources:", err)
+      console.error("Error fetching datasets:", err)
       setDatasetsError("Failed to load available datasets. Using fallback data.")
 
       // Fallback data
       setDatasets([
-        { id: "1", name: "Sales Q1", type: "file", status: "completed", last_updated: new Date().toISOString() },
-        { id: "2", name: "HR Data", type: "file", status: "completed", last_updated: new Date().toISOString() },
+        { id: "1", name: "Sales Q1", type: "source", sourceType: "file", status: "completed", last_updated: new Date().toISOString() },
+        { id: "2", name: "HR Data", type: "transformed", status: "completed", last_updated: new Date().toISOString() },
       ])
 
       toast({
@@ -250,8 +310,9 @@ function KGraphDashboardContent() {
   }
 
   // Function to handle view schema
-  const handleViewSchema = (id: string, name: string) => {
-    setSelectedDataset({ id, name })
+  const handleViewSchema = (datasetId: string, name: string, datasetType: string) => {
+    // Logic to view dataset schema based on type (source or transformed)
+    setSelectedDataset({ id: datasetId, name, type: datasetType })
     setSchemaModalOpen(true)
   }
 
@@ -262,15 +323,16 @@ function KGraphDashboardContent() {
   }
 
   // Function to handle dataset preview
-  const handlePreview = (datasetId: string, datasetName: string) => {
-    setSelectedDataset({ id: datasetId, name: datasetName })
+  const handlePreview = (datasetId: string, name: string, datasetType: string) => {
+    // Logic to preview dataset based on type (source or transformed)
+    setSelectedDataset({ id: datasetId, name, type: datasetType })
     setPreviewModalOpen(true)
   }
 
   // Function to handle KG generation
-  const handleGenerateKG = (datasetId: string, datasetName: string) => {
-    setSelectedDataset({ id: datasetId, name: datasetName })
-    setGenerateKGModalOpen(true)
+  const handleGenerateKG = (datasetId: string, name: string, datasetType: string) => {
+    // Logic to initiate knowledge graph generation with dataset type
+    router.push(`/kginsights/generate?sourceId=${datasetId}&sourceName=${encodeURIComponent(name)}&datasetType=${datasetType}`)
   }
 
   // Function to handle manage schema
@@ -498,7 +560,7 @@ function KGraphDashboardContent() {
                                     variant="ghost"
                                     size="icon"
                                     className="text-orange-500 hover:text-orange-600 hover:bg-orange-500/10"
-                                    onClick={() => handleViewSchema(graph.id, graph.name)}
+                                    onClick={() => handleViewSchema(graph.id, graph.name, "graph")}
                                     title="View Schema"
                                   >
                                     <FileText className="w-5 h-5" />
@@ -539,17 +601,33 @@ function KGraphDashboardContent() {
           <motion.div variants={item} className="w-full">
             <Card className="bg-card/80 backdrop-blur-sm border border-border mt-6 w-full min-w-full">
               <CardContent className="p-0 w-full">
-                <div className="p-4 flex items-center gap-2">
-                  <h2 className="text-xl font-semibold text-foreground">Available Datasets for KG Generation</h2>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={fetchDataSources}
-                    disabled={loadingDatasets}
-                    title="Refresh datasets"
-                  >
-                    <RefreshCw className={`w-4 h-4 ${loadingDatasets ? "animate-spin" : ""}`} />
-                  </Button>
+                <div className="p-4 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xl font-semibold text-foreground">Available Datasets for KG Generation</h2>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={fetchDataSources}
+                      disabled={loadingDatasets}
+                      title="Refresh datasets"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${loadingDatasets ? "animate-spin" : ""}`} />
+                    </Button>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="dataset-filter" className="text-sm mr-2">Show:</label>
+                    <select
+                      id="dataset-filter"
+                      className="py-1 px-2 rounded border border-border bg-background text-sm"
+                      value={datasetFilter}
+                      onChange={(e) => setDatasetFilter(e.target.value)}
+                    >
+                      <option value="all">All Datasets</option>
+                      <option value="source">Source Datasets</option>
+                      <option value="transformed">Transformed Datasets</option>
+                    </select>
+                  </div>
                 </div>
 
                 <div className="overflow-x-auto w-full">
@@ -568,7 +646,10 @@ function KGraphDashboardContent() {
                           </tr>
                         </thead>
                         <tbody>
-                          {currentItems.map((dataset, index) => (
+                          {currentItems
+                            // Filter datasets based on selected filter
+                            .filter(dataset => datasetFilter === "all" || dataset.type === datasetFilter)
+                            .map((dataset, index) => (
                             <motion.tr
                               key={dataset.id}
                               initial={{ opacity: 0, y: 10 }}
@@ -582,7 +663,20 @@ function KGraphDashboardContent() {
                               <td className="px-4 py-3 text-foreground font-medium">
                                 <div className="flex flex-col">
                                   <span>{dataset.dataset || dataset.name}</span>
-                                  <span className="text-xs text-muted-foreground capitalize">{dataset.type}</span>
+                                  <div className="flex items-center gap-1 mt-0.5">
+                                    {dataset.type === "transformed" ? (
+                                      <Badge variant="outline" className="bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border-emerald-300">
+                                        Transformed
+                                      </Badge>
+                                    ) : (
+                                      <Badge variant="outline" className="bg-blue-100 text-blue-800 hover:bg-blue-200 border-blue-300">
+                                        Source
+                                      </Badge>
+                                    )}
+                                    {dataset.sourceType && (
+                                      <span className="text-xs text-muted-foreground capitalize">{dataset.sourceType}</span>
+                                    )}
+                                  </div>
                                 </div>
                               </td>
                               <td className="px-4 py-3">
@@ -624,7 +718,7 @@ function KGraphDashboardContent() {
                                     variant="ghost"
                                     size="icon"
                                     className="text-amber-500 hover:text-amber-600 hover:bg-amber-500/10"
-                                    onClick={() => handlePreview(dataset.id, dataset.dataset || dataset.name)}
+                                    onClick={() => handlePreview(dataset.id, dataset.dataset || dataset.name, dataset.type)}
                                     title="Preview"
                                   >
                                     <Eye className="w-5 h-5" />
@@ -633,7 +727,7 @@ function KGraphDashboardContent() {
                                     variant="ghost"
                                     size="icon"
                                     className="text-orange-500 hover:text-orange-600 hover:bg-orange-500/10"
-                                    onClick={() => handleViewSchema(dataset.id, dataset.dataset || dataset.name)}
+                                    onClick={() => handleViewSchema(dataset.id, dataset.dataset || dataset.name, dataset.type)}
                                     title="Schema"
                                   >
                                     <FileText className="w-5 h-5" />
@@ -642,7 +736,7 @@ function KGraphDashboardContent() {
                                     variant="ghost"
                                     size="icon"
                                     className="text-primary hover:text-primary/80 hover:bg-primary/10"
-                                    onClick={() => handleGenerateKG(dataset.id, dataset.dataset || dataset.name)}
+                                    onClick={() => handleGenerateKG(dataset.id, dataset.dataset || dataset.name, dataset.type)}
                                     title="Generate KG"
                                   >
                                     <PlusCircle className="w-5 h-5" />
@@ -732,52 +826,32 @@ function KGraphDashboardContent() {
       </div>
 
       {/* Modals */}
-      {selectedDataset && (
-        <>
-          <DatasetPreviewModal
-            isOpen={previewModalOpen}
-            onClose={() => setPreviewModalOpen(false)}
-            datasetId={selectedDataset.id}
-            datasetName={selectedDataset.name}
-          />
-
-          <SchemaViewerModal
-            isOpen={schemaModalOpen}
-            onClose={() => setSchemaModalOpen(false)}
-            datasetId={selectedDataset.id}
-            datasetName={selectedDataset.name}
-          />
-
-          <GenerateKGModal
-            isOpen={generateKGModalOpen}
-            onClose={() => setGenerateKGModalOpen(false)}
-            datasetId={selectedDataset.id}
-            datasetName={selectedDataset.name}
-          />
-        </>
+      {previewModalOpen && selectedDataset && (
+        <DatasetPreviewModal
+          isOpen={previewModalOpen}
+          onClose={() => setPreviewModalOpen(false)}
+          datasetId={selectedDataset.id}
+          datasetName={selectedDataset.name}
+          datasetType={selectedDataset.type}
+        />
       )}
-
-      {/* Apply to Neo4j Modal */}
-      {applyToNeo4jModalOpen && graphToApply && (
-        <AlertDialog
-          open={applyToNeo4jModalOpen}
-          onOpenChange={(open) => setApplyToNeo4jModalOpen(open)}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Apply Schema to Neo4j</AlertDialogTitle>
-            </AlertDialogHeader>
-            <AlertDialogDescription>
-              Are you sure you want to apply the schema "{graphToApply.name}" to Neo4j?
-            </AlertDialogDescription>
-            <AlertDialogFooter>
-              <AlertDialogAction onClick={confirmApplyToNeo4j}>
-                Apply
-              </AlertDialogAction>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+      {schemaModalOpen && selectedDataset && (
+        <SchemaViewerModal
+          isOpen={schemaModalOpen}
+          onClose={() => setSchemaModalOpen(false)}
+          datasetId={selectedDataset.id}
+          datasetName={selectedDataset.name}
+          datasetType={selectedDataset.type}
+        />
+      )}
+      {generateKGModalOpen && selectedDataset && (
+        <GenerateKGModal
+          isOpen={generateKGModalOpen}
+          onClose={() => setGenerateKGModalOpen(false)}
+          datasetId={selectedDataset.id}
+          datasetName={selectedDataset.name}
+          datasetType={selectedDataset.type === "transformed" ? "transformed" : "source"}
+        />
       )}
     </div>
   )

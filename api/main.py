@@ -40,6 +40,7 @@ from api.kgdatainsights.data_insights_api import router as kgdatainsights_router
 from api.kginsights.graphschemaapi import router as graphschema_router, build_schema_from_source, SourceIdInput, SchemaResult
 from api.kgdatainsights.register_websocket import setup_websocket_api
 from api.profiler import router as profiler_router
+from api.datapuur_ai import router as datapuur_ai_router
 from api.admin import router as admin_router
 from api.gen_ai_layer.router import router as gen_ai_router
 from api.export_router import router as export_router
@@ -94,6 +95,10 @@ print(f"DEBUG: Full application routes: {[route.path for route in app.routes]}")
 app.include_router(graphschema_router, prefix="/api")
 app.include_router(kgdatainsights_router, prefix="/api")
 app.include_router(profiler_router)
+# The datapuur_ai_router already has a prefix of /api/datapuur-ai in its definition,
+# so we should ensure it doesn't get an extra /api prefix
+app.include_router(datapuur_ai_router, prefix="")
+
 app.include_router(export_router)
 app.include_router(admin_router)
 # Include the Gen AI Layer router

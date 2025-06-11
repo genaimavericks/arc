@@ -128,11 +128,15 @@ router = APIRouter(prefix="/api/datapuur", tags=["datapuur"])
 
 # Create uploads directory if it doesn't exist
 UPLOAD_DIR = Path(__file__).parent / "uploads"
-UPLOAD_DIR.mkdir(exist_ok=True)
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 # Create data directory if it doesn't exist
 DATA_DIR = Path(__file__).parent / "data"
-DATA_DIR.mkdir(exist_ok=True)
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+# Log directory paths for debugging
+logger.info(f"Upload directory: {UPLOAD_DIR}")
+logger.info(f"Data directory: {DATA_DIR}")
 
 # Functions to interact with the database
 def get_uploaded_file(db, file_id):
@@ -251,14 +255,27 @@ def delete_dataset(db, dataset_id):
         db.delete(dataset)
         
         # Delete any processed data files
-        data_path = DATA_DIR / f"{dataset_id}.parquet"
-        if data_path.exists():
-            data_path.unlink()
-            logger.info(f"Deleted parquet file for dataset {dataset_id}")
-        
-        # Delete associated profile records
-        from .profiler.models import ProfileResult
-        profile_results = db.query(ProfileResult).filter(ProfileResult.file_id == dataset_id).all()
+        if 'file_id' in locals() and file_id:
+            data_path = DATA_DIR / f"{file_id}.parquet"
+            if data_path.exists():
+                data_path.unlink()
+                logger.info(f"Deleted parquet file for dataset {dataset_id} (file_id: {file_id})")
+            
+            # Delete associated profile records using file_id
+            from .profiler.models import ProfileResult
+            profile_results = db.query(ProfileResult).filter(ProfileResult.file_id == file_id).all()
+            logger.info(f"Found {len(profile_results)} profile results for file_id {file_id}")
+        else:
+            # Fallback to using dataset_id for backward compatibility
+            data_path = DATA_DIR / f"{dataset_id}.parquet"
+            if data_path.exists():
+                data_path.unlink()
+                logger.info(f"Deleted parquet file for dataset {dataset_id} (using dataset_id)")
+            
+            # Delete associated profile records using dataset_id for backward compatibility
+            from .profiler.models import ProfileResult
+            profile_results = db.query(ProfileResult).filter(ProfileResult.file_id == dataset_id).all()
+            logger.info(f"Found {len(profile_results)} profile results for dataset_id {dataset_id}")
         
         for profile in profile_results:
             db.delete(profile)
@@ -824,8 +841,8 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
             db_session.commit()
             return error_data
         
-        # Create output file path
-        output_file = DATA_DIR / f"{job_id}.parquet"
+        # Create output file path using file_id for better traceability
+        output_file = DATA_DIR / f"{file_id}.parquet"
         
         # Helper function to check if job has been cancelled
         def check_job_cancelled():
@@ -1459,13 +1476,6 @@ def process_db_ingestion_with_db(job_id, db_type, db_config, chunk_size, db):
         if not table_name.isalnum() and not all(c.isalnum() or c in ['_', '.'] for c in table_name):
             raise ValueError(f"Invalid table name: {table_name}. Table names must contain only alphanumeric characters, underscores, or dots.")
         
-        # Create output file path
-        output_file = DATA_DIR / f"{job_id}.parquet"
-        
-        # Create temporary directory for parquet chunks
-        temp_dir = DATA_DIR / f"temp_{job_id}"
-        temp_dir.mkdir(exist_ok=True)
-        
         # Create an entry in the uploaded_files table for consistency with file-based ingestion
         try:
             # Extract username from job config if available
@@ -1478,8 +1488,15 @@ def process_db_ingestion_with_db(job_id, db_type, db_config, chunk_size, db):
                 except json.JSONDecodeError:
                     pass
                     
-            # Create a record in the uploaded_files table
+            # Create a record in the uploaded_files table with a unique ID
             file_id = str(uuid.uuid4())
+            
+            # Create output file path using file_id for better traceability
+            output_file = DATA_DIR / f"{file_id}.parquet"
+            
+            # Create temporary directory for parquet chunks
+            temp_dir = DATA_DIR / f"temp_{job_id}"
+            temp_dir.mkdir(exist_ok=True)
             
             # Format the connection details for the filename field (host:port:database)
             host = db_config.get('host', 'localhost')
@@ -1787,11 +1804,25 @@ async def upload_file(
     file_id = str(uuid.uuid4())
     file_path = UPLOAD_DIR / f"{file_id}.{file_ext}"
     
-    # Save the file
+    # Ensure the upload directory exists
     try:
+        if not UPLOAD_DIR.exists():
+            logger.info(f"Creating upload directory: {UPLOAD_DIR}")
+            UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        
+        # Log the directory path for debugging
+        logger.info(f"Saving file to: {file_path}")
+        
+        # Save the file
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
+            
+        # Verify the file was saved correctly
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found after save: {file_path}")
+            
     except Exception as e:
+        logger.error(f"Error saving file: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error saving file: {str(e)}"
@@ -2190,12 +2221,31 @@ async def cancel_job(
     job.details = f"{job.details} (Cancelled by user)"  # Add cancellation info to details
     job.end_time = datetime.now()
     
+    # Extract file_id from job config if available
+    file_id = None
+    try:
+        if job.config:
+            config_data = json.loads(job.config)
+            if "file_id" in config_data:
+                file_id = config_data["file_id"]
+                logger.info(f"Found file_id {file_id} in job config for job {job_id}")
+    except json.JSONDecodeError:
+        logger.warning(f"Could not parse config JSON for job {job_id}")
+    
     # Delete any associated data files
     try:
-        data_path = DATA_DIR / f"{job_id}.parquet"
-        if data_path.exists():
-            data_path.unlink()
-            logger.info(f"Deleted data file for cancelled job: {job_id}")
+        if file_id:
+            # Use file_id for parquet file naming
+            data_path = DATA_DIR / f"{file_id}.parquet"
+            if data_path.exists():
+                data_path.unlink()
+                logger.info(f"Deleted data file for cancelled job: {job_id} (file_id: {file_id})")
+        else:
+            # Fallback to job_id for backward compatibility
+            data_path = DATA_DIR / f"{job_id}.parquet"
+            if data_path.exists():
+                data_path.unlink()
+                logger.info(f"Deleted data file for cancelled job: {job_id} (using job_id)")
     except Exception as e:
         logger.error(f"Error deleting data file for job {job_id}: {str(e)}")
     
@@ -2203,7 +2253,16 @@ async def cancel_job(
     try:
         # First, check if there are any profiles associated with this job
         from .profiler.models import ProfileResult
-        profiles = db.query(ProfileResult).filter(ProfileResult.parquet_file_path == f"{job_id}.parquet").all()
+        
+        if file_id:
+            # Use file_id to find associated profiles
+            profiles = db.query(ProfileResult).filter(ProfileResult.file_id == file_id).all()
+            logger.info(f"Found {len(profiles)} profiles for file_id {file_id}")
+        else:
+            # Fallback to job_id for backward compatibility
+            profiles = db.query(ProfileResult).filter(ProfileResult.parquet_file_path == f"{job_id}.parquet").all()
+            logger.info(f"Found {len(profiles)} profiles for job_id {job_id}")
+
         
         for profile in profiles:
             # Delete the profile
@@ -2322,7 +2381,13 @@ async def get_ingestion_history(
                 try:
                     # Construct the path to the expected parquet file
                     data_folder = os.path.join(os.getcwd(), "data")
-                    parquet_file = os.path.join(data_folder, f"{job.id}.parquet")
+                    # Get file_id from job config
+                    file_id = None
+                    if config and "file_id" in config:
+                        file_id = config["file_id"]
+                    
+                    # Use file_id if available, otherwise fall back to job.id for backward compatibility
+                    parquet_file = os.path.join(data_folder, f"{file_id if file_id else job.id}.parquet")
                     
                     # Check if the file exists and get its size
                     if os.path.exists(parquet_file):
@@ -2370,6 +2435,85 @@ async def get_ingestion_history(
             detail=f"Error fetching ingestion history: {str(e)}"
         )
 
+@router.get("/file-preview/{file_id}", response_model=PreviewResponse)
+async def get_file_preview(
+    file_id: str,
+    current_user: User = Depends(has_permission("datapuur:read")),
+    db: Session = Depends(get_db)
+):
+    """Get preview data for a file by file_id"""
+    try:
+        # Find the job associated with this file_id
+        from sqlalchemy import desc
+        file_info = get_uploaded_file(db, file_id)
+        if not file_info:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found"
+            )
+            
+        # Log file info for debugging
+        logging.info(f"Found file: {file_info.id}, {file_info.filename}")
+            
+        # Look for jobs with this file_id in their config
+        jobs = db.query(IngestionJob)\
+            .filter(IngestionJob.type == "file")\
+            .filter(IngestionJob.status == "completed")\
+            .order_by(desc(IngestionJob.start_time))\
+            .all()
+            
+        logging.info(f"Found {len(jobs)} completed ingestion jobs to check")
+            
+        # Find the job with this file_id in config
+        target_job = None
+        for j in jobs:
+            if not j.config:
+                continue
+            
+            try:
+                config = json.loads(j.config) if isinstance(j.config, str) else j.config
+                # Try multiple possible keys where file_id might be stored
+                file_id_in_config = config.get("file_id") or config.get("fileId") or \
+                                  config.get("file", {}).get("id") if isinstance(config.get("file"), dict) else None
+                
+                # Log for debugging
+                if file_id_in_config:
+                    logging.info(f"Job {j.id} has file_id: {file_id_in_config}")
+                
+                if file_id_in_config == file_id:
+                    target_job = j
+                    break
+            except (json.JSONDecodeError, AttributeError) as e:
+                logging.error(f"Error parsing job config for job {j.id}: {str(e)}")
+                continue
+        
+        if not target_job:
+            # Fall back to most recent job if specific job for this file not found
+            # This is a temporary workaround until we have better job-file mapping
+            if jobs:
+                logging.warning(f"No job found with matching file_id {file_id}, falling back to most recent job")
+                target_job = jobs[0]
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="No completed ingestion found for this file"
+                )
+        
+        logging.info(f"Using job ID {target_job.id} for preview of file {file_id}")
+        
+        # Forward to the existing preview endpoint with job ID
+        return await get_ingestion_preview(target_job.id, current_user, db)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error in get_file_preview: {str(e)}")
+        import traceback
+        logging.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting file preview: {str(e)}"
+        )
+
 @router.get("/ingestion-preview/{ingestion_id}", response_model=PreviewResponse)
 async def get_ingestion_preview(
     ingestion_id: str,
@@ -2390,11 +2534,26 @@ async def get_ingestion_preview(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot preview ingestion with status: {job.status}"
         )
-    
     try:
-        # Get the parquet file path
-        parquet_path = DATA_DIR / f"{ingestion_id}.parquet"
+        # Extract file_id from job config if available
+        file_id = None
+        if job.config:
+            try:
+                config = json.loads(job.config)
+                file_id = config.get("file_id")
+                if file_id:
+                    logger.info(f"Found file_id {file_id} in job config for ingestion {ingestion_id}")
+            except json.JSONDecodeError:
+                logger.warning(f"Could not parse config JSON for ingestion {ingestion_id}")
         
+        # Get the parquet file path using file_id if available
+        if file_id:
+            parquet_path = DATA_DIR / f"{file_id}.parquet"
+            logger.info(f"Looking for parquet file with file_id: {file_id}")
+        else:
+            # Fallback to ingestion_id for backward compatibility
+            parquet_path = DATA_DIR / f"{ingestion_id}.parquet"
+            logger.info(f"Falling back to ingestion_id for parquet file: {ingestion_id}")        
         if not os.path.exists(parquet_path):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -2591,9 +2750,26 @@ async def get_ingestion_schema(
         )
     
     try:
-        # Get the parquet file path
-        parquet_path = DATA_DIR / f"{ingestion_id}.parquet"
+        # Extract file_id from job config if available
+        file_id = None
+        if job.config:
+            try:
+                config = json.loads(job.config)
+                file_id = config.get("file_id")
+                if file_id:
+                    logger.info(f"Found file_id {file_id} in job config for ingestion {ingestion_id}")
+            except json.JSONDecodeError:
+                logger.warning(f"Could not parse config JSON for ingestion {ingestion_id}")
         
+        # Get the parquet file path using file_id if available
+        if file_id:
+            parquet_path = DATA_DIR / f"{file_id}.parquet"
+            logger.info(f"Looking for parquet file with file_id: {file_id}")
+        else:
+            # Fallback to ingestion_id for backward compatibility
+            parquet_path = DATA_DIR / f"{ingestion_id}.parquet"
+            logger.info(f"Falling back to ingestion_id for parquet file: {ingestion_id}")
+            
         if not os.path.exists(parquet_path):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -2694,8 +2870,25 @@ async def debug_schema(
 ):
     """Debug endpoint to check schema data directly"""
     try:
-        # Get the parquet file path
-        parquet_path = DATA_DIR / f"{ingestion_id}.parquet"
+        # Extract file_id from job config if available
+        file_id = None
+        if job.config:
+            try:
+                config = json.loads(job.config)
+                file_id = config.get("file_id")
+                if file_id:
+                    logger.info(f"Found file_id {file_id} in job config for ingestion {ingestion_id}")
+            except json.JSONDecodeError:
+                logger.warning(f"Could not parse config JSON for ingestion {ingestion_id}")
+        
+        # Get the parquet file path using file_id if available
+        if file_id:
+            parquet_path = DATA_DIR / f"{file_id}.parquet"
+            logger.info(f"Looking for parquet file with file_id: {file_id}")
+        else:
+            # Fallback to ingestion_id for backward compatibility
+            parquet_path = DATA_DIR / f"{ingestion_id}.parquet"
+            logger.info(f"Falling back to ingestion_id for parquet file: {ingestion_id}")
         
         if not os.path.exists(parquet_path):
             return {"error": "Ingestion data file not found"}
@@ -2781,8 +2974,25 @@ async def get_ingestion_statistics(
         )
     
     try:
-        # Get the parquet file path
-        parquet_path = DATA_DIR / f"{ingestion_id}.parquet"
+        # Extract file_id from job config if available
+        file_id = None
+        if job.config:
+            try:
+                config = json.loads(job.config)
+                file_id = config.get("file_id")
+                if file_id:
+                    logger.info(f"Found file_id {file_id} in job config for ingestion {ingestion_id}")
+            except json.JSONDecodeError:
+                logger.warning(f"Could not parse config JSON for ingestion {ingestion_id}")
+        
+        # Get the parquet file path using file_id if available
+        if file_id:
+            parquet_path = DATA_DIR / f"{file_id}.parquet"
+            logger.info(f"Looking for parquet file with file_id: {file_id}")
+        else:
+            # Fallback to ingestion_id for backward compatibility
+            parquet_path = DATA_DIR / f"{ingestion_id}.parquet"
+            logger.info(f"Falling back to ingestion_id for parquet file: {ingestion_id}")
         
         if not os.path.exists(parquet_path):
             raise HTTPException(
@@ -2869,8 +3079,25 @@ async def download_ingestion(
         )
     
     try:
-        # Get the parquet file path
-        parquet_path = DATA_DIR / f"{ingestion_id}.parquet"
+        # Extract file_id from job config if available
+        file_id = None
+        if job.config:
+            try:
+                config = json.loads(job.config)
+                file_id = config.get("file_id")
+                if file_id:
+                    logger.info(f"Found file_id {file_id} in job config for ingestion {ingestion_id}")
+            except json.JSONDecodeError:
+                logger.warning(f"Could not parse config JSON for ingestion {ingestion_id}")
+        
+        # Get the parquet file path using file_id if available
+        if file_id:
+            parquet_path = DATA_DIR / f"{file_id}.parquet"
+            logger.info(f"Looking for parquet file with file_id: {file_id}")
+        else:
+            # Fallback to ingestion_id for backward compatibility
+            parquet_path = DATA_DIR / f"{ingestion_id}.parquet"
+            logger.info(f"Falling back to ingestion_id for parquet file: {ingestion_id}")
         
         if not os.path.exists(parquet_path):
             raise HTTPException(
@@ -3023,15 +3250,55 @@ async def get_data_sources(
             # For file types without dataset, extract filename without extension
             dataset_value = os.path.splitext(job.name)[0]
             
+        # Get file size and row count information
+        file_size = 0
+        row_count = None
+        created_at = None
+        
+        # For file-based ingestion, get file size from the file_info
+        if file_info and hasattr(file_info, 'path') and file_info.path and os.path.exists(file_info.path):
+            try:
+                file_size = os.path.getsize(file_info.path)
+            except OSError:
+                logger.warning(f"Could not get file size for {file_info.path}")
+                
+        # For both file and database ingestion, try to get row count from parquet file
+        data_path = None
+        if file_info:
+            data_path = DATA_DIR / f"{file_info.id}.parquet"
+        else:
+            data_path = DATA_DIR / f"{job.id}.parquet"
+            
+        if data_path and data_path.exists():
+            try:
+                # Use pandas to get row count from parquet file
+                import pandas as pd
+                df = pd.read_parquet(data_path)
+                row_count = len(df)
+            except Exception as e:
+                logger.warning(f"Could not get row count from parquet file: {str(e)}")
+                
+        # Set created_at from file_info or job start_time
+        if file_info and file_info.uploaded_at:
+            created_at = file_info.uploaded_at.isoformat()
+        elif isinstance(job.start_time, datetime):
+            created_at = job.start_time.isoformat()
+        else:
+            # Default to last_updated if no other timestamp is available
+            created_at = last_updated
+            
         sources.append(
             DataSource(
-                id=job.id,
+                id=file_info.id,
                 name=name_for_display,
                 type="File" if job.type == "file" else "Database",
                 last_updated=last_updated,
                 status="Active",
                 uploaded_by=uploaded_by,
-                dataset=dataset_value
+                dataset=dataset_value,
+                file_size=file_size,  # Add file size
+                row_count=row_count,  # Add row count
+                created_at=created_at  # Add created date
             )
         )
     
@@ -3581,8 +3848,8 @@ async def upload_chunk(
         if not UPLOAD_DIR.exists():
             logger.info(f"Creating upload directory: {UPLOAD_DIR}")
             UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-        
-        # Ensure the chunks parent directory exists
+
+         # Ensure the chunks parent directory exists
         chunks_parent = UPLOAD_DIR / "chunks"
         if not chunks_parent.exists():
             logger.info(f"Creating chunks parent directory: {chunks_parent}")
@@ -3623,6 +3890,216 @@ async def upload_chunk(
         file.file.close()
     
     return {"message": f"Chunk {chunkIndex + 1} of {totalChunks} uploaded successfully"}
+
+@router.get("/file-schema/{file_id}", response_model=SchemaResponse)
+async def get_file_schema(
+    file_id: str,
+    current_user: User = Depends(has_permission("datapuur:read")),
+    db: Session = Depends(get_db)
+):
+    """Get schema for a file based on file_id"""
+    file_info = get_uploaded_file(db, file_id)
+    if not file_info:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found"
+        )
+    
+    file_path = file_info.path
+    
+    if not os.path.exists(file_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found on disk"
+        )
+    
+    try:
+        fields = []
+        sample_values = []
+        
+        # For CSV files
+        if file_info.type.lower() == "csv":
+            # Use pandas to read the file and extract schema
+            df = pd.read_csv(file_path, nrows=5)  # Only need a few rows to get schema
+            
+            for column in df.columns:
+                dtype = df[column].dtype
+                
+                # Determine field type
+                if pd.api.types.is_integer_dtype(dtype):
+                    field_type = "integer"
+                elif pd.api.types.is_float_dtype(dtype):
+                    field_type = "float"
+                elif pd.api.types.is_bool_dtype(dtype):
+                    field_type = "boolean"
+                elif pd.api.types.is_datetime64_dtype(dtype):
+                    field_type = "datetime"
+                else:
+                    field_type = "string"
+                
+                # Check nullability
+                nullable = bool(df[column].isna().any())
+                
+                # Get sample value
+                sample = None
+                non_null_values = df[column].dropna()
+                if not non_null_values.empty:
+                    sample_value = non_null_values.iloc[0]
+                    
+                    # Convert NumPy types to Python native types
+                    if isinstance(sample_value, (np.integer, np.floating)):
+                        sample = sample_value.item()  # Convert NumPy scalar to Python native type
+                    elif isinstance(sample_value, np.bool_):
+                        sample = bool(sample_value)  # Convert NumPy boolean to Python boolean
+                    elif pd.api.types.is_datetime64_dtype(dtype):
+                        sample = str(sample_value)
+                    elif isinstance(sample_value, np.ndarray):
+                        sample = sample_value.tolist()  # Convert NumPy array to list
+                    elif isinstance(sample_value, pd.Timestamp):
+                        sample = str(sample_value)
+                    else:
+                        sample = sample_value
+                        
+                fields.append({
+                    "name": column,
+                    "type": field_type,
+                    "nullable": nullable
+                })
+                
+                sample_values.append(sample)
+        
+        # For JSON files
+        elif file_info.type.lower() == "json":
+            with open(file_path, 'r', encoding='utf-8', errors='replace') as jsonfile:
+                try:
+                    data = json.load(jsonfile)
+                    
+                    # If the data is a list of objects, infer schema from the first item
+                    if isinstance(data, list) and data and isinstance(data[0], dict):
+                        first_item = data[0]
+                        for key, value in first_item.items():
+                            field_type = "string"
+                            if isinstance(value, int):
+                                field_type = "integer"
+                            elif isinstance(value, float):
+                                field_type = "float"
+                            elif isinstance(value, bool):
+                                field_type = "boolean"
+                                
+                            fields.append({
+                                "name": key,
+                                "type": field_type,
+                                "nullable": True  # Assume nullable for JSON
+                            })
+                            
+                            sample_values.append(value)
+                    else:
+                        # For simple JSON or complex nested structures, provide basic info
+                        fields.append({
+                            "name": "json_content",
+                            "type": "object",
+                            "nullable": False
+                        })
+                        sample_values.append(None)
+                        
+                except json.JSONDecodeError as e:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Invalid JSON file: {str(e)}"
+                    )
+        
+        # Log the schema data being returned
+        logger.info(f"Schema data for file {file_id}: {len(fields)} fields")
+        
+        # Return schema data - ensure all NumPy types are converted to Python native types
+        def convert_numpy_types(obj):
+            if isinstance(obj, np.bool_):
+                return bool(obj)
+            elif isinstance(obj, (np.integer, np.floating)):
+                return obj.item()
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, dict):
+                return {k: convert_numpy_types(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_numpy_types(i) for i in obj]
+            else:
+                return obj
+                
+        # Apply conversion to both fields and sample_values
+        converted_fields = convert_numpy_types(fields)
+        converted_sample_values = convert_numpy_types(sample_values)
+        
+        # Log activity
+        log_activity(
+            db=db,
+            username=current_user.username,
+            action="Get file schema",
+            details=f"Retrieved schema for file: {file_info.filename}"
+        )
+        
+        return {
+            "fields": converted_fields,
+            "sample_values": converted_sample_values,
+            "file_id": file_id,
+            "file_name": file_info.filename
+        }
+    except Exception as e:
+        logger.error(f"Error generating schema for file {file_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating schema: {str(e)}"
+        )
+
+
+@router.get("/source-file/{file_id}", status_code=status.HTTP_200_OK)
+async def get_source_file_details(
+    file_id: str,
+    current_user: User = Depends(has_permission("datapuur:read")),
+    db: Session = Depends(get_db)
+):
+    """
+    Get source file details by file_id for knowledge graph generation
+    """
+    try:
+        # Get file info from database
+        file_info = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
+        
+        if not file_info:
+            raise HTTPException(status_code=404, detail=f"File with ID {file_id} not found")
+        
+        # Get file path
+        file_path = file_info.path
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail=f"File not found at {file_path}")
+        
+        # Build response with necessary details for KG generation
+        response = {
+            "id": file_info.id,
+            "filename": file_info.filename,
+            "filepath": file_info.path,
+            "full_path": file_path,
+            "file_type": file_info.type,
+            "uploaded_by": file_info.uploaded_by,
+            "uploaded_at": file_info.uploaded_at,
+            "status": "available"
+        }
+        
+        # Log activity
+        log_activity(
+            db=db,
+            username=current_user.username,
+            action="Get source file details",
+            details=f"Retrieved file details for KG generation: {file_info.filename}"
+        )
+        
+        return response
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving source file details: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get file details: {str(e)}")
+
 
 @router.post("/complete-chunked-upload", status_code=status.HTTP_200_OK)
 async def complete_chunked_upload(
@@ -3894,6 +4371,83 @@ async def cancel_chunked_upload(
             return {"success": True, "message": "No active upload found with this ID"}
 
 # Delete a dataset
+@router.delete("/delete-file/{file_id}")
+def delete_file_endpoint(
+    file_id: str,
+    current_user: User = Depends(has_permission("datapuur:manage")),
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a file and its associated datasets by file_id.
+    
+    This endpoint requires the 'datapuur:manage' permission, which is restricted
+    to admin role.
+    """
+    try:
+        # Find the job associated with this file_id
+        from sqlalchemy import desc
+        file_info = get_uploaded_file(db, file_id)
+        if not file_info:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found"
+            )
+            
+        # Log the activity
+        log_activity(
+            db=db,
+            username=current_user.username,
+            action="Delete file",
+            details=f"Deleting file with ID: {file_id}"
+        )
+        
+        # Look for jobs with this file_id in their config
+        jobs = db.query(IngestionJob)\
+            .filter(IngestionJob.type == "file")\
+            .all()
+            
+        # Find the job(s) with this file_id in config
+        deleted_job_ids = []
+        for job in jobs:
+            if not job.config:
+                continue
+            
+            try:
+                config = json.loads(job.config)
+                if config.get("file_id") == file_id:
+                    # Call the delete function for each matching job
+                    success, message = delete_dataset(db, job.id)
+                    if success:
+                        deleted_job_ids.append(job.id)
+            except json.JSONDecodeError:
+                continue
+        
+        if not deleted_job_ids:
+            # Even if no jobs found, try to delete the file record directly
+            if file_info:
+                db.delete(file_info)
+                db.commit()
+                return {"success": True, "message": "File record deleted successfully"}
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="No datasets found associated with this file"
+                )
+        
+        return {
+            "success": True, 
+            "message": f"Successfully deleted file and {len(deleted_job_ids)} associated datasets",
+            "deleted_job_ids": deleted_job_ids
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting file: {str(e)}"
+        )
+
 @router.delete("/delete-dataset/{dataset_id}")
 def delete_dataset_endpoint(
     dataset_id: str,
@@ -4318,10 +4872,31 @@ async def delete_job_admin(
         # If the job has associated files, may need to delete them as well
         # This is job-type specific
         if job.type == "file":
-            # For file ingestion jobs, we might want to delete associated files
-            file_path = os.path.join(os.path.dirname(__file__), "data", f"{job_id}.parquet")
+            # Get file_id from job config
+            file_id = None
+            config = json.loads(job.config) if job.config else {}
+            if config and "file_id" in config:
+                file_id = config["file_id"]
+                
+            # For file ingestion jobs, delete associated parquet file
+            file_path = os.path.join(os.path.dirname(__file__), "data", f"{file_id if file_id else job_id}.parquet")
             if os.path.exists(file_path):
                 os.remove(file_path)
+                logger.info(f"Deleted parquet file for job {job_id} (file_id: {file_id})")
+            else:
+                logger.warning(f"Parquet file not found for job {job_id} (file_id: {file_id})")
+                
+            # Also check for any profile results associated with this file
+            try:
+                from .profiler.models import ProfileResult
+                profiles = db.query(ProfileResult).filter(ProfileResult.file_id == file_id).all() if file_id else []
+                for profile in profiles:
+                    db.delete(profile)
+                if profiles:
+                    logger.info(f"Deleted {len(profiles)} profile results for file_id {file_id}")
+            except Exception as e:
+                logger.error(f"Error deleting profile results: {str(e)}")
+
         
         # Delete the job from the database
         db.delete(job)

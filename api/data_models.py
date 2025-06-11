@@ -11,6 +11,9 @@ class DataSource(BaseModel):
     status: str
     uploaded_by: str = "Unknown"
     dataset: Optional[str] = None
+    file_size: Optional[int] = 0
+    row_count: Optional[int] = None
+    created_at: Optional[str] = None
 
 class DataMetrics(BaseModel):
     total_records: int

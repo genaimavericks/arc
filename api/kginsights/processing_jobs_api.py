@@ -75,6 +75,7 @@ class LoadDataRequest(BaseModel):
     graph_name: str = "default_graph"
     drop_existing: bool = False
     batch_size: int = 1000
+    dataset_type: Optional[str] = None  # Optional parameter to specify the dataset type (source/transformed)
 
 class CleanDataRequest(BaseModel):
     schema_id: int
@@ -154,7 +155,7 @@ def format_job_response(job: GraphIngestionJob) -> JobStatus:
     )
 
 # Background task for processing Neo4j data loading
-async def process_load_data_job(job_id: str, schema_id: int, graph_name: str, drop_existing: bool, db: Session):
+async def process_load_data_job(job_id: str, schema_id: int, graph_name: str, drop_existing: bool, dataset_type: str = None, db: Session = None):
     """
     Background task to load data into Neo4j
     """
@@ -177,10 +178,16 @@ async def process_load_data_job(job_id: str, schema_id: int, graph_name: str, dr
         
         try:
             # Call the existing load_data_from_schema function with our new session
+            # if dataset_type is empty or null then it will load it from schema table using given schema id
+            if dataset_type is None or dataset_type == "":
+                schema_db = db.query(Schema).filter(Schema.id == schema_id).first()
+                dataset_type = schema_db.dataset_type
+                
             result = await graphschema_load_data(
                 schema_id=schema_id,
                 graph_name=graph_name,
                 drop_existing=drop_existing,
+                dataset_type=dataset_type,  # Pass the dataset_type parameter
                 db=task_db,  # Pass the new session
                 current_user=None,  # We're in a background task, no user context
                 job_id=job_id  # Pass the job_id to track the specific job
@@ -362,8 +369,8 @@ async def process_clean_data_job(job_id: str, schema_id: int, graph_name: str, d
                 
                 # Store the result
                 result_data = {
-                    "nodes_removed": total_nodes_before,
-                    "relationships_removed": total_relationships_before
+                    "nodes_removed": total_deleted,  # Using the actual defined variable
+                    "relationships_removed": 0  # We don't track relationships separately
                 }
                 job.result = json.dumps(result_data)
                 
@@ -474,6 +481,7 @@ async def load_data_to_neo4j(
         schema_id=request.schema_id,
         graph_name=request.graph_name,
         drop_existing=request.drop_existing,
+        dataset_type=request.dataset_type,
         db=db
     )
     

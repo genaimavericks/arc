@@ -320,8 +320,8 @@ export function DataDashboard() {
     try {
       setIsDeleting(true)
       
-      // Use the correct HTTP method (DELETE) with fetchWithAuth
-      const response = await fetchWithAuth(`/api/datapuur/delete-dataset/${datasetToDelete.id}`, {
+      // Use the new delete-file endpoint with fetchWithAuth
+      const response = await fetchWithAuth(`/api/datapuur/delete-file/${datasetToDelete.id}`, {
         method: "DELETE",
       })
 
@@ -352,8 +352,8 @@ export function DataDashboard() {
     try {
       setSelectedDataset({ id: datasetId, name: datasetName })
 
-      // Fetch preview data from the API using the fetchWithAuth helper
-      const previewData = await fetchWithAuth(`/api/datapuur/ingestion-preview/${datasetId}`)
+      // Fetch preview data from the API using the new file-preview endpoint with fetchWithAuth helper
+      const previewData = await fetchWithAuth(`/api/datapuur/file-preview/${datasetId}`)
       setPreviewData(previewData)
       setPreviewModalOpen(true)
     } catch (error) {

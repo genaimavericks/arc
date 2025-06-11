@@ -4,7 +4,6 @@ import json
 from datetime import date
 from pathlib import Path
 
-
 class CustomJSONEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, date):
@@ -14,10 +13,12 @@ class CustomJSONEncoder(json.JSONEncoder):
 class Cache:
     def __init__(self, db_path: Optional[str] = None):
         """Initialize the cache with optional custom database path."""
+        OUTPUT_DIR = Path("runtime-data/output/kgdatainsights")
+        CACHE_DIR = OUTPUT_DIR / "kg_cache"
+
         try:
-            cache_dir = Path(r"C:\\Users\\athar\\OneDrive\\Documents\\GitHub\\form-factory\\modules\\data\\kg_cache")
-            cache_dir.mkdir(parents=True, exist_ok=True)
-            self.db_path = str(cache_dir / 'cache.db')
+            CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            self.db_path = str(CACHE_DIR / 'cache.db')
             self._create_table()
         except Exception:
             # Fallback to in-memory cache if file-based cache fails

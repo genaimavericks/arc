@@ -64,11 +64,26 @@ class SchemaAwareGraphAssistant:
         self.session_id = session_id or f"session_{uuid4()}"
         self.formatted_schema = None
         
-        # Read CSV path from Schema table and format schema (needed for both modes)
-        self.csv_file_path = self._get_csv_path()
+        # Get the schema CSV path first (unresolved)
+        db = SessionLocal()
+        try:
+            schema_record = db.query(Schema).filter(Schema.id == self.schema_id).first()
+            self.csv_file_path = schema_record.csv_file_path if schema_record else None
+        finally:
+            db.close()
+        
         print(f"TRACE: Before _format_schema() for {self.db_id}")
         self._format_schema()
         print(f"TRACE: After _format_schema() for {self.db_id}")
+        
+        # After formatting schema, use our enhanced path resolution logic
+        # We don't need _get_csv_path anymore as _resolve_data_path is more robust
+        resolved_path = self._resolve_data_path()
+        if resolved_path:
+            self.csv_file_path = resolved_path
+            print(f"TRACE: CSV file path resolved to: {self.csv_file_path}")
+        else:
+            print(f"WARNING: Could not resolve CSV file path for schema {self.schema_id}")
         
         # If gen_schema is True, skip expensive initializations
         print(f"TRACE: Initializing in schema generation mode for {self.db_id}")
@@ -558,8 +573,55 @@ class SchemaAwareGraphAssistant:
             cypher_response = llm_local.invoke(cypher_messages)
             cypher_prompt_template = cypher_response.content.strip()
             
-            cypher_generator = CsvToCypherGenerator(self.schema, self.csv_file_path, LLMConstants.Providers.GOOGLE, LLMConstants.GoogleModels.DEFAULT)
-            cypher_queries = cypher_generator.generate_cypher_for_rows()
+            import pandas as pd
+            import tempfile
+            import os
+            
+            # Get resolved data file path to ensure proper handling of transformed datasets
+            data_file_path = self._resolve_data_path()
+            if not data_file_path or not os.path.exists(data_file_path):
+                print(f"Warning: Data file not found at {data_file_path}, falling back to original path")
+                data_file_path = self.csv_file_path  # Fallback to original path
+            
+            # Check file type to handle differently based on extension
+            is_parquet = data_file_path and data_file_path.lower().endswith('.parquet')
+            
+            print(f"Using data file for cypher generation: {data_file_path} (is_parquet={is_parquet})")
+            
+            # Use the proper generator based on file type
+            if is_parquet:
+                # For parquet files, we need to convert to a temporary CSV first
+                
+                temp_csv_path = None
+                try:
+                    # Create a temporary CSV file
+                    with tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as temp_file:
+                        temp_csv_path = temp_file.name
+                    
+                    # Read parquet and write to CSV
+                    print(f"Converting parquet to temporary CSV for processing")
+                    df = pd.read_parquet(data_file_path, engine='pyarrow')
+                    df.head(100).to_csv(temp_csv_path, index=False)
+                    
+                    # Use the temporary CSV file for CsvToCypherGenerator
+                    cypher_generator = CsvToCypherGenerator(self.schema, temp_csv_path, 
+                                                         LLMConstants.Providers.GOOGLE, 
+                                                         LLMConstants.GoogleModels.DEFAULT)
+                    cypher_queries = cypher_generator.generate_cypher_for_rows()
+                    
+                finally:
+                    # Clean up the temporary file
+                    if temp_csv_path and os.path.exists(temp_csv_path):
+                        try:
+                            os.unlink(temp_csv_path)
+                        except Exception as e:
+                            print(f"Warning: Could not delete temp file {temp_csv_path}: {str(e)}")
+            else:
+                # For CSV files, use the standard approach
+                cypher_generator = CsvToCypherGenerator(self.schema, data_file_path, 
+                                                     LLMConstants.Providers.GOOGLE, 
+                                                     LLMConstants.GoogleModels.DEFAULT)
+                cypher_queries = cypher_generator.generate_cypher_for_rows()
             #cypher_queries_str = '\n'.join(cypher_queries)
             #import_notes = '\n\n Note: DO NOT return example question and cypher query. Return PROPER cypher query only. DO NOT include any explanation'
             #cypher_prompt_template = f"### Task: Generate Cypher queries for time-series data using this schema:\n\n### Cypher Queries:\n\n{cypher_queries_str}\n\n{import_notes}\n\n{cypher_prompt_template}"
@@ -646,10 +708,31 @@ class SchemaAwareGraphAssistant:
         """Generate a JSON with column names as keys and lists of unique values for each column."""
         import pandas as pd
         import json
+        import os
         
         try:
-            # Read only the first 100 rows of the CSV to avoid memory issues with large files
-            df = pd.read_csv(self.csv_file_path, nrows=100)
+            # Resolve the file path for the data file
+            file_path = self._resolve_data_path()
+            
+            if not file_path or not os.path.exists(file_path):
+                print(f"Error: Data file not found at {file_path}")
+                return "{}"
+                
+            print(f"Reading data from resolved path: {file_path}")
+            
+            # Determine file type and read accordingly
+            if file_path.endswith('.csv'):
+                df = pd.read_csv(file_path, nrows=100)
+            elif file_path.endswith('.parquet'):
+                df = pd.read_parquet(file_path, engine='pyarrow')
+                # Limit to first 100 rows after loading
+                df = df.head(100)
+            elif file_path.endswith('.json'):
+                df = pd.read_json(file_path)
+                df = df.head(100)
+            else:
+                print(f"Unsupported file format for {file_path}")
+                return "{}"
             
             # Create a dictionary to store column names and unique values
             sample_data = {}
@@ -672,6 +755,58 @@ class SchemaAwareGraphAssistant:
         except Exception as e:
             print(f"Error generating sample data JSON: {str(e)}")
             return "{}"
+            
+    def _resolve_data_path(self):
+        """Resolve the data file path, handling both source and transformed datasets."""
+        import os
+        from sqlalchemy.orm import Session
+        from ...models import Schema
+        from ...db_config import SessionLocal
+        
+        # Get the schema record from the database
+        db = SessionLocal()
+        try:
+            schema = db.query(Schema).filter(Schema.id == self.schema_id).first()
+            if not schema:
+                print(f"Schema with ID {self.schema_id} not found")
+                return None
+                
+            # Get the file path from the schema
+            data_path = schema.csv_file_path
+            if not data_path:
+                print(f"No file path found in schema {self.schema_id}")
+                return None
+                
+            # Check if this is a transformed dataset based on dataset_type flag
+            is_transformed_dataset = schema.dataset_type == 'transformed'
+            
+            # Only apply path resolution for transformed datasets with just a filename
+            if is_transformed_dataset:
+                print(f"Resolving path for transformed dataset: {data_path}")
+                # If just a filename without path, check in data directories
+                data_dirs = [
+                    os.path.join(os.path.dirname(__file__), '..', '..', 'data'),
+                    os.path.join(os.path.dirname(__file__), '..', '..', 'datapuur_ai', 'data'),
+                    os.path.join(os.path.dirname(__file__), '..', '..', 'uploads')
+                ]
+                
+                for dir_path in data_dirs:
+                    full_path = os.path.join(dir_path, data_path)
+                    if os.path.exists(full_path):
+                        print(f"Found transformed dataset at {full_path}")
+                        return full_path
+                        
+                print(f"Warning: Could not find transformed dataset in any of the data directories")
+            
+            # If not a transformed dataset or if it already has a full path, use as-is
+            if os.path.exists(data_path):
+                return data_path
+            else:
+                print(f"Warning: File does not exist at path: {data_path}")
+                return None
+                
+        finally:
+            db.close()
 
     def _escape_neo4j_properties(self, prompt_text: str) -> str:
         """

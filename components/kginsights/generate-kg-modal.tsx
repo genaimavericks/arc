@@ -16,9 +16,12 @@ interface GenerateKGModalProps {
   onClose: () => void
   datasetId: string
   datasetName: string
+  datasetType?: "source" | "transformed"
 }
 
-export function GenerateKGModal({ isOpen, onClose, datasetId, datasetName }: GenerateKGModalProps) {
+export function GenerateKGModal({ isOpen, onClose, datasetId, datasetName, datasetType = "source" }: GenerateKGModalProps) {
+  // Debug: Log the received props
+  console.log("GenerateKGModal initialized with:", { datasetId, datasetName, datasetType });
   const [kgName, setKgName] = useState("")
   const [kgDescription, setKgDescription] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -40,9 +43,17 @@ export function GenerateKGModal({ isOpen, onClose, datasetId, datasetName }: Gen
     try {
       setIsSubmitting(true)
 
-      // Redirect to the Generate Graph page with the dataset ID and name
-      router.push(`/kginsights/generate?sourceId=${datasetId}&sourceName=${encodeURIComponent(datasetName)}&kgName=${encodeURIComponent(kgName)}&kgDescription=${encodeURIComponent(kgDescription || '')}`)
+      console.log("Navigating to generate graph page with params:", {
+        datasetId,
+        datasetName,
+        kgName,
+        datasetType
+      });
       
+      // Redirect to the Generate Graph page with the dataset ID, name, and type
+      const url = `/kginsights/generate?sourceId=${datasetId}&sourceName=${encodeURIComponent(datasetName)}&kgName=${encodeURIComponent(kgName)}&kgDescription=${encodeURIComponent(kgDescription || '')}&datasetType=${datasetType}`;
+      console.log("Generated URL:", url);
+      router.push(url);
       // Reset form and close modal
       setKgName("")
       setKgDescription("")
