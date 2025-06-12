@@ -713,8 +713,8 @@ export default function InsightsChat() {
   }, [messages]);
 
   return (
-    <div className="flex h-full bg-gradient-to-b from-background to-background/95 insights-chat-container">
-      <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0 opacity-10 pointer-events-none">
+    <div className="flex h-full bg-gradient-to-b from-background to-background/95 insights-chat-container overflow-hidden" style={{ height: '100vh', maxHeight: '100vh' }}>
+      <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0 opacity-5 pointer-events-none">
         <SparklesCore
           id="insightsparkles"
           background="transparent"
@@ -730,7 +730,7 @@ export default function InsightsChat() {
 
       {/* Sidebar with predefined queries and history */}
       {sidebarOpen && (
-        <div className="w-72 border-r bg-card/50 p-4 flex flex-col h-full max-h-full sidebar">
+        <div className="w-72 border-r bg-card/50 p-4 flex flex-col h-full sidebar overflow-hidden">
           <Tabs defaultValue="queries" className="w-full h-full flex flex-col" onValueChange={(value) => {
               if (value === "history") {
                 loadHistoryData()
@@ -752,7 +752,7 @@ export default function InsightsChat() {
             </TabsList>
             
             <TabsContent value="queries" className="mt-0 flex-1 overflow-hidden">
-              <div className="p-3 h-full overflow-auto">
+              <div className="p-3 overflow-y-auto flex-1 flex flex-col" style={{ maxHeight: 'calc(100vh - 150px)' }}>
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <div className="text-sm font-medium">Suggested Queries</div>
@@ -763,7 +763,7 @@ export default function InsightsChat() {
                         .map(query => (
                           <button
                             key={query.id}
-                            className="w-full text-left text-xs p-2 bg-accent/50 hover:bg-accent rounded-md flex items-start"
+                            className="w-full text-left text-xs p-3 bg-primary/10 hover:bg-primary/20 rounded-2xl flex items-start transition-colors duration-200"
                             onClick={() => handlePredefinedQuery(query.query)}
                           >
                             <ChevronRight className="h-3 w-3 mr-1 mt-0.5 flex-shrink-0" />
@@ -782,7 +782,7 @@ export default function InsightsChat() {
                         .map(query => (
                           <button
                             key={query.id}
-                            className="w-full text-left text-xs p-2 bg-accent/50 hover:bg-accent rounded-md flex items-start"
+                            className="w-full text-left text-xs p-3 bg-primary/10 hover:bg-primary/20 rounded-2xl flex items-start transition-colors duration-200"
                             onClick={() => handlePredefinedQuery(query.query)}
                           >
                             <ChevronRight className="h-3 w-3 mr-1 mt-0.5 flex-shrink-0" />
@@ -801,7 +801,7 @@ export default function InsightsChat() {
                         .map(query => (
                           <button
                             key={query.id}
-                            className="w-full text-left text-xs p-2 bg-accent/50 hover:bg-accent rounded-md flex items-start"
+                            className="w-full text-left text-xs p-3 bg-primary/10 hover:bg-primary/20 rounded-2xl flex items-start transition-colors duration-200"
                             onClick={() => handlePredefinedQuery(query.query)}
                           >
                             <ChevronRight className="h-3 w-3 mr-1 mt-0.5 flex-shrink-0" />
@@ -818,7 +818,7 @@ export default function InsightsChat() {
               value="history" 
               className="mt-0 flex-1 overflow-hidden"
             >
-              <div className="p-3 h-full overflow-auto">
+              <div className="p-3 overflow-y-auto flex-1 flex flex-col" style={{ maxHeight: 'calc(100vh - 150px)' }}>
                 <div className="flex justify-between items-center mb-3">
                 <div className="text-sm font-medium">Recent Conversations</div>
                 
@@ -863,8 +863,8 @@ export default function InsightsChat() {
               </div>
               
               <div className="flex-1 overflow-hidden flex flex-col">
-                <ScrollArea className="flex-1 h-full overflow-auto relative">
-                  <div className="space-y-3 pr-2">
+                <ScrollArea className="flex-1 overflow-auto relative" style={{ height: 'calc(100vh - 200px)' }}>
+                  <div className="space-y-3 pr-2 flex-1">
                   {loadingHistory ? (
                     <div className="flex items-center justify-center p-4">
                       <Loader2 className="h-5 w-5 animate-spin mr-2" />
@@ -937,7 +937,7 @@ export default function InsightsChat() {
               value="settings" 
               className="mt-0 flex-1 overflow-hidden"
             >
-              <div className="p-3 h-full overflow-auto">
+              <div className="p-3 overflow-y-auto flex-1 flex flex-col" style={{ maxHeight: 'calc(100vh - 150px)' }}>
                 <div className="space-y-4">
                   {/* Settings content at the top */}
                   <div className="space-y-2">
@@ -977,9 +977,9 @@ export default function InsightsChat() {
       )}
       
       {/* Main chat area */}
-      <div className="flex-1 flex flex-col relative z-10 main-chat-area">
+      <div className="flex-1 flex flex-col relative z-10 main-chat-area overflow-hidden" style={{ height: '100%', maxHeight: '100vh', display: 'flex', justifyContent: 'space-between' }}>
         {/* Chat messages */}
-        <div className="flex-1 overflow-hidden relative">
+        <div className="overflow-hidden relative" style={{ height: 'calc(100% - 100px)', maxHeight: 'calc(100vh - 150px)' }}>
           <InsightsChatMessages 
             messages={sortedMessages} 
             loading={loading} 
@@ -993,163 +993,20 @@ export default function InsightsChat() {
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.5 }}
-          className="p-3 border-t border-primary/10 bg-background/90 backdrop-blur-md shadow-lg"
+          className="p-3 border-t border-primary/10 bg-background/90 backdrop-blur-md shadow-lg relative sticky bottom-0"
+          style={{ marginTop: 'auto' }}
         >
-          <div className="flex items-center gap-2">
-            <div className="flex-1 flex items-center gap-2 relative">
-              <div className="relative w-full">
-                {/* Suggestions */}
-                {showSuggestions && suggestions.length > 0 && (
-                  <div className="absolute bottom-full left-0 right-0 mb-2 border border-border rounded-md overflow-hidden z-20 bg-background/95 backdrop-blur-sm shadow-lg">
-                    <div className="p-2 bg-secondary text-secondary-foreground text-xs font-medium">
-                      Suggested Queries
-                    </div>
-                    <div className="divide-y divide-border max-h-[200px] overflow-y-auto">
-                      {suggestions.map((suggestion: string, index: number) => (
-                        <div 
-                          key={index}
-                          className="p-2 hover:bg-accent cursor-pointer text-sm"
-                          onClick={() => handleUseSuggestion(suggestion)}
-                        >
-                          {suggestion}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                {/* Autocomplete suggestions */}
-                {showAutocomplete && autocompleteSuggestions.length > 0 && (
-                  <div className="absolute bottom-full left-0 right-0 mb-2 border border-border rounded-md overflow-hidden z-20 bg-background/95 backdrop-blur-sm shadow-lg">
-                    <div className="p-2 bg-secondary text-secondary-foreground text-xs font-medium">
-                      Autocomplete
-                    </div>
-                    <div className="divide-y divide-border max-h-[200px] overflow-y-auto">
-                      {autocompleteSuggestions.map((suggestion: AutocompleteSuggestion, index: number) => (
-                        <div 
-                          key={index}
-                          className="p-2 hover:bg-accent cursor-pointer"
-                          onClick={() => handleSelectSuggestion(suggestion.text)}
-                        >
-                          <div className="font-medium text-sm">{suggestion.text}</div>
-                          {suggestion.description && (
-                            <div className="text-xs text-muted-foreground">{suggestion.description}</div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                <div className="absolute right-12 bottom-2 text-xs text-muted-foreground bg-card/80 px-1.5 py-0.5 rounded-sm z-10">
-                  Shift+Enter for new line
-                </div>
-                <Textarea
-                  ref={inputRef}
-                  value={input}
-                  onChange={(e) => {
-                    const value = e.target.value
-                    // Use the event target value directly to prevent state timing issues
-                    setInput(value)
-                    
-                    // Get cursor position
-                    const currentCursorPosition = e.target.selectionStart || value.length
-                    setCursorPosition(currentCursorPosition)
-                    
-                    // Get suggestions if the input is not empty
-                    if (value.trim()) {
-                      getSuggestions(value, currentCursorPosition)
-                      getAutocompleteSuggestions(value, currentCursorPosition)
-                      setShowSuggestions(true)
-                      setShowAutocomplete(true)
-                    } else {
-                      setShowSuggestions(false)
-                      setShowAutocomplete(false)
-                    }
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      if (input.trim()) {
-                        handleSendMessage(input)
-                        setInput("")
-                        setShowSuggestions(false)
-                        setShowAutocomplete(false)
-                      }
-                    } else if (e.key === 'Escape') {
-                      setShowSuggestions(false)
-                      setShowAutocomplete(false)
-                    }
-                  }}
-                  placeholder="Ask a question about your knowledge graph..."
-                  className="flex-1 w-full min-h-[60px] max-h-[120px] text-sm bg-card/50 backdrop-blur-sm border-primary/20 shadow-sm focus-visible:ring-primary pl-4 pr-24 py-2 transition-all duration-300 resize-none overflow-y-auto"
-                />
-              </div>
-              
-              <div className="absolute right-0 flex">                
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button 
-                        onClick={handleClearChat}
-                        size="sm" 
-                        variant="ghost"
-                        className="h-9 px-2 mr-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all duration-300"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Clear chat</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-
-                <Button 
-                  onClick={() => {
-                    if (input.trim()) {
-                      handleSendMessage(input)
-                      setInput("")
-                    }
-                  }}
-                  size="sm" 
-                  className="h-9 px-3 bg-primary hover:bg-primary/90 text-primary-foreground transition-all duration-300 hover:shadow mr-1"
-                  disabled={loading || !input.trim()}
-                >
-                  {loading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-                </Button>
-                
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-9 px-2 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors duration-300"
-                        onClick={() => setSidebarOpen(!sidebarOpen)}
-                        title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-                      >
-                        {sidebarOpen ? (
-                          <ChevronRight className="h-4 w-4" />
-                        ) : (
-                          <ChevronLeft className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{sidebarOpen ? "Hide sidebar" : "Show sidebar"}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </div>
-            </div>
-          </div>
-          
-
+          <InsightsChatInput
+            onSendMessage={handleSendMessage}
+            loading={loading}
+            sourceId={sourceId}
+            token={authToken}
+            onClearChat={handleClearChat}
+            sidebarToggle={{
+              isOpen: sidebarOpen,
+              onToggle: () => setSidebarOpen(!sidebarOpen)
+            }}
+          />
         </motion.div>
       </div>
     </div>

@@ -22,12 +22,23 @@ export default function LoginPage() {
   const [showError, setShowError] = useState<string | null>(null)
   const [formFocused, setFormFocused] = useState<"username" | "password" | null>(null)
 
+  // Check for token expiration on page load
+  useEffect(() => {
+    // Check if user was redirected due to token expiration
+    const authExpired = sessionStorage.getItem("authExpired")
+    if (authExpired) {
+      setShowError("Your session has expired. Please log in again.")
+      // Clear the flag so it doesn't persist
+      sessionStorage.removeItem("authExpired")
+    }
+  }, [])
+
   // Update showError when error changes
   useEffect(() => {
-    setShowError(error)
-    
-    // Set a timer to clear the error after 5 seconds
     if (error) {
+      setShowError(error)
+      
+      // Set a timer to clear the error after 5 seconds
       const timer = setTimeout(() => {
         setShowError(null)
       }, 5000)
@@ -123,16 +134,16 @@ export default function LoginPage() {
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
-                  className="bg-destructive/10 border border-destructive/20 text-destructive-foreground px-4 py-3 rounded-lg mb-6 shadow-sm relative backdrop-blur-sm"
+                  className="bg-destructive border border-destructive text-white px-4 py-3 rounded-lg mb-6 shadow-md relative"
                 >
                   <button 
                     onClick={handleDismissError}
-                    className="absolute top-2 right-2 text-destructive-foreground/70 hover:text-destructive-foreground"
+                    className="absolute top-2 right-2 text-white hover:text-white/90"
                     aria-label="Close notification"
                   >
                     <X size={18} />
                   </button>
-                  <p className="font-medium text-center pr-6">{showError}</p>
+                  <p className="font-semibold text-center pr-6">{showError}</p>
                 </motion.div>
               )}
             </AnimatePresence>

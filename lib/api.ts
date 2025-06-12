@@ -1,5 +1,6 @@
 // API base URL - change this to your FastAPI server URL in production
 import { getApiBaseUrl } from './config'
+import { fetchWithAuth, handleAuthFailure } from './auth-utils'
 
 const API_BASE_URL = getApiBaseUrl()
 
@@ -69,30 +70,43 @@ async function fetchAPI<T>(endpoint: string, useFallback = true): Promise<T> {
   try {
     console.log(`Fetching from: ${API_BASE_URL}${endpoint}`)
 
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      // Include credentials if your API requires authentication
-      // credentials: 'include',
-    })
+    // Use the fetchWithAuth utility for authenticated requests
+    try {
+      // First try with authentication
+      return await fetchWithAuth(endpoint) as T
+    } catch (authError) {
+      // If authentication fails and it's not an auth error, try without auth
+      // This is useful for public endpoints that don't require authentication
+      if (!(authError instanceof Error && authError.message === "Authentication failed")) {
+        console.log(`Retrying without auth for ${endpoint}`)
+        
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+        })
 
-    // Check if the response is JSON
-    const contentType = response.headers.get("content-type")
-    if (!contentType || !contentType.includes("application/json")) {
-      const text = await response.text()
-      console.error("Received non-JSON response:", text.substring(0, 200) + "...")
-      throw new Error("Server returned non-JSON response")
+        // Check if the response is JSON
+        const contentType = response.headers.get("content-type")
+        if (!contentType || !contentType.includes("application/json")) {
+          const text = await response.text()
+          console.error("Received non-JSON response:", text.substring(0, 200) + "...")
+          throw new Error("Server returned non-JSON response")
+        }
+
+        if (!response.ok) {
+          throw new Error(`API error: ${response.status}`)
+        }
+
+        return (await response.json()) as T
+      } else {
+        // If it's an auth error, propagate it
+        throw authError
+      }
     }
-
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`)
-    }
-
-    return (await response.json()) as T
-  } catch (error) {
+  } catch (error: unknown) {
     console.error(`Error fetching ${endpoint}:`, error)
 
     // If fallback is enabled and we have mock data for this endpoint
@@ -140,13 +154,26 @@ export async function uploadMultipleFiles(
       formData.append("file", files[i])
       formData.append("chunkSize", chunkSize.toString())
 
+      // Get token from localStorage
+      const token = localStorage.getItem("token")
+      if (!token) {
+        handleAuthFailure()
+        throw new Error("Authentication token not found")
+      }
+
       const response = await fetch(`${API_BASE_URL}/api/datapuur/upload`, {
         method: "POST",
         body: formData,
         headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
+          Authorization: `Bearer ${token}`,
         },
       })
+
+      // Check for authentication errors
+      if (response.status === 401) {
+        handleAuthFailure()
+        throw new Error("Authentication failed")
+      }
 
       if (!response.ok) {
         throw new Error(`Failed to upload file ${files[i].name}`)
@@ -154,12 +181,11 @@ export async function uploadMultipleFiles(
 
       const data = await response.json()
 
-      // Create ingestion job
-      const ingestResponse = await fetch(`${API_BASE_URL}/api/datapuur/ingest-file`, {
+      // Create ingestion job using the fetchWithAuth utility
+      const ingestData = await fetchWithAuth(`/api/datapuur/ingest-file`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
         body: JSON.stringify({
           file_id: data.file_id,
@@ -167,12 +193,6 @@ export async function uploadMultipleFiles(
           chunk_size: chunkSize,
         }),
       })
-
-      if (!ingestResponse.ok) {
-        throw new Error(`Failed to start ingestion for ${files[i].name}`)
-      }
-
-      const ingestData = await ingestResponse.json()
 
       // Update progress
       if (onProgress) {
@@ -185,11 +205,11 @@ export async function uploadMultipleFiles(
         jobId: ingestData.job_id,
         success: true,
       })
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(`Error processing file ${files[i].name}:`, error)
       results.push({
         file: files[i],
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
         success: false,
       })
     }

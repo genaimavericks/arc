@@ -101,8 +101,8 @@ export function InsightsChatMessages({
   const sortedMessages = [...messages].filter(message => message && typeof message === 'object' && message.role);
 
   return (
-    <ScrollArea className="h-full pr-4 relative">
-      <div className="space-y-3 p-3 pb-2 flex flex-col min-h-full justify-end">
+    <ScrollArea className="h-full pr-4 relative" style={{ height: '100%', maxHeight: '100%' }}>
+      <div className="space-y-5 p-4 pb-2 flex flex-col justify-end">
         {/* Empty div at the top for proper spacing */}
         <div className="flex-grow" />
         
@@ -114,29 +114,29 @@ export function InsightsChatMessages({
               message.role === "user" ? "items-end" : "items-start"
             )}
           >
-            <div className="flex items-end gap-2">
+            <div className="flex items-end gap-3">
               {message.role !== "user" && (
-                <div className="rounded-full bg-primary/10 p-1.5 flex items-center justify-center">
+                <div className="rounded-full bg-primary/10 p-2 flex items-center justify-center">
                   {message.role === "assistant" ? (
-                    <BotMessageSquare className="h-3.5 w-3.5 text-primary" />
+                    <BotMessageSquare className="h-4 w-4 text-primary" />
                   ) : (
-                    <BotMessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
+                    <BotMessageSquare className="h-4 w-4 text-muted-foreground" />
                   )}
                 </div>
               )}
               
               <Card
                 className={cn(
-                  "px-3 py-2 max-w-[85%]",
+                  "px-4 py-3 max-w-[85%] shadow-sm",
                   message.role === "user" 
-                    ? "bg-primary text-primary-foreground" 
+                    ? "bg-primary text-primary-foreground rounded-2xl rounded-br-sm" 
                     : message.role === "system"
-                    ? "bg-secondary/50"
-                    : "bg-card"
+                    ? "bg-secondary/50 rounded-2xl"
+                    : "bg-card rounded-2xl rounded-tl-sm border"
                 )}
               >
                 <div className="space-y-2">
-                  <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap text-sm">
+                  <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap text-sm font-medium">
                     {message.content}
                   </div>
                   
@@ -197,7 +197,7 @@ export function InsightsChatMessages({
                     </div>
                   )}
                   
-                  <div className="text-xs opacity-70 text-right">
+                  <div className="text-xs opacity-60 text-right mt-1">
                     {formatTime(message.timestamp)}
                   </div>
                 </div>

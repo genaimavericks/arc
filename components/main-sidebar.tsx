@@ -91,6 +91,8 @@ interface MenuSection {
   label: string
   icon: React.ElementType
   href: string
+  key?: string
+  requiredPermission?: string
   subItems?: {
     label: string
     href: string
@@ -103,7 +105,9 @@ export function MainSidebar() {
   const [collapsed, setCollapsed] = useState(false)
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     "datapuur": pathname.startsWith("/datapuur"),
-    "kginsights": pathname.startsWith("/kginsights")
+    "kginsights": pathname.startsWith("/kginsights"),
+    "k-graff": pathname.startsWith("/kginsights"),
+    "sales-overview": pathname === "/" || pathname.startsWith("/sales-performance")
   })
   const { user, logout } = useAuth()
   
@@ -124,13 +128,25 @@ export function MainSidebar() {
     // Dispatch a custom event to notify other components
     window.dispatchEvent(new Event('sidebarStateChange'))
   }
+  
+  // Update expanded sections when pathname changes
+  useEffect(() => {
+    setExpandedSections(prev => ({
+      ...prev,
+      "datapuur": pathname.startsWith("/datapuur"),
+      "kginsights": pathname.startsWith("/kginsights"),
+      "k-graff": pathname.startsWith("/kginsights"),
+      "sales-overview": pathname === "/" || pathname.startsWith("/sales-performance")
+    }))
+  }, [pathname])
 
   // Group menu sections by category
-  const allCommandCenters = [
+  const allCommandCenters: MenuSection[] = [
     {
       label: "Sales Overview",
       icon: LayoutDashboard,
       href: "/",
+      key: "sales-overview",
       requiredPermission: "command:read",
       subItems: [
         {
@@ -156,15 +172,16 @@ export function MainSidebar() {
   
   // Filter command centers based on user permissions
   const commandCenters = allCommandCenters.filter(item => {
-    if (!user || !user.permissions) return false
-    return user.permissions.includes(item.requiredPermission)
+    if (!user || !user.permissions || !item.requiredPermission) return false
+    return user.permissions.includes(item.requiredPermission as string)
   })
   
-  const allDjinni = [
+  const allDjinni: MenuSection[] = [
     {
       label: "Djinni Assistant",
       icon: Bot,
       href: "/djinni",
+      key: "djinni-assistant",
       requiredPermission: "djinni:read"
     },
     {
@@ -177,17 +194,18 @@ export function MainSidebar() {
 
   // Filter djinni items based on user permissions
   const djinni = allDjinni.filter(item => {
-    if (!user || !user.permissions) return false
-    return user.permissions.includes(item.requiredPermission)
+    if (!user || !user.permissions || !item.requiredPermission) return false
+    return user.permissions.includes(item.requiredPermission as string)
   })
   
   // Define all possible tools
-  const allTools = [
+  const allTools: MenuSection[] = [
     {
       label: "DataPuur",
       icon: Database,
       href: "/datapuur",
       requiredPermission: "datapuur:read",
+      key: "datapuur", // Add a key property for consistent identification
       subItems: [
         { label: "Dashboard", href: "/datapuur", icon: LayoutDashboard },
         { label: "Ingestion", href: "/datapuur/ingestion", icon: FileInput },
@@ -203,6 +221,7 @@ export function MainSidebar() {
       icon: NetworkIcon,
       href: "/kginsights/dashboard",
       requiredPermission: "kginsights:read",
+      key: "k-graff", // Add a key property for consistent identification
       subItems: [
         { label: "KGraph Dashboard", href: "/kginsights/dashboard", icon: LayoutDashboard },
         { label: "KGraph Insights", href: "/kginsights/insights", icon: MessageSquare },
@@ -214,17 +233,18 @@ export function MainSidebar() {
   
   // Filter tools based on user permissions
   const tools = allTools.filter(tool => {
-    if (!user || !user.permissions) return false
+    if (!user || !user.permissions || !tool.requiredPermission) return false
     
     // Check if user has the required permission for this tool
-    return user.permissions.includes(tool.requiredPermission)
+    return user.permissions.includes(tool.requiredPermission as string)
   })
   
-  const allPersonalDashboards = [
+  const allPersonalDashboards: MenuSection[] = [
     {
       label: "My Dashboards",
       icon: LayoutDashboard,
       href: "/dashboards",
+      key: "my-dashboards",
       requiredPermission: "dashboard:read"
     },
     {
@@ -243,17 +263,18 @@ export function MainSidebar() {
   
   // Filter personal dashboards based on user permissions
   const personalDashboards = allPersonalDashboards.filter(item => {
-    if (!user || !user.permissions) return false
-    return user.permissions.includes(item.requiredPermission)
+    if (!user || !user.permissions || !item.requiredPermission) return false
+    return user.permissions.includes(item.requiredPermission as string)
   })
   
   // Filter system options based on user role
-  const getSystemOptions = () => {
-    const baseOptions = [
+  const getSystemOptions = (): MenuSection[] => {
+    const baseOptions: MenuSection[] = [
       {
         label: "Help",
         icon: HelpCircle,
         href: "/help",
+        key: "help"
       }
     ]
     
@@ -264,6 +285,7 @@ export function MainSidebar() {
           label: "Settings",
           icon: Settings,
           href: "/admin",
+          key: "settings"
         },
         ...baseOptions
       ]
@@ -274,10 +296,12 @@ export function MainSidebar() {
   
   const systemOptions = getSystemOptions()
 
-  const toggleSection = (section: string) => {
+  const toggleSection = (section: string | undefined) => {
+    if (!section) return;
+    
     setExpandedSections(prev => ({
       ...prev,
-      [section]: !prev[section]
+      [section]: !(prev[section] === true)
     }))
   }
 
@@ -338,14 +362,16 @@ export function MainSidebar() {
                           
                           // Then expand the section after a short delay to ensure the sidebar has expanded
                           setTimeout(() => {
+                            const sectionKey = section.key || section.label.toLowerCase();
                             setExpandedSections(prev => ({
                               ...prev,
-                              [section.label.toLowerCase()]: true
+                              [sectionKey]: true
                             }));
                           }, 100);
                         } else {
                           // If sidebar is already expanded, just toggle the section
-                          toggleSection(section.label.toLowerCase());
+                          const sectionKey = section.key || section.label.toLowerCase();
+                          toggleSection(sectionKey);
                         }
                       }}
                       className={cn(
@@ -361,14 +387,14 @@ export function MainSidebar() {
                         <section.icon className="h-4 w-4" />
                         {!collapsed && <span>{section.label}</span>}
                       </div>
-                      {!collapsed && (expandedSections[section.label.toLowerCase()] ? (
+                      {!collapsed && (Boolean(expandedSections[section.key || section.label.toLowerCase()]) ? (
                         <ChevronDown className="h-4 w-4" />
                       ) : (
                         <ChevronRight className="h-4 w-4" />
                       ))}
                     </button>
                     
-                    {expandedSections[section.label.toLowerCase()] && !collapsed && (
+                    {Boolean(expandedSections[section.key || section.label.toLowerCase()]) && !collapsed && (
                       <div className="ml-4 space-y-1 border-l border-border pl-3">
                         {section.subItems?.map((item) => (
                           <SidebarMenuItem
@@ -465,14 +491,16 @@ export function MainSidebar() {
                         
                         // Then expand the section after a short delay to ensure the sidebar has expanded
                         setTimeout(() => {
+                          const sectionKey = section.key || section.label.toLowerCase();
                           setExpandedSections(prev => ({
                             ...prev,
-                            [section.label.toLowerCase()]: true
+                            [sectionKey]: true
                           }));
                         }, 100);
                       } else {
                         // If sidebar is already expanded, just toggle the section
-                        toggleSection(section.label.toLowerCase());
+                        const sectionKey = section.key || section.label.toLowerCase();
+                        toggleSection(sectionKey);
                       }
                     }}
                     className={cn(
@@ -488,14 +516,14 @@ export function MainSidebar() {
                       <section.icon className="h-4 w-4" />
                       {!collapsed && <span>{section.label}</span>}
                     </div>
-                    {!collapsed && (expandedSections[section.label.toLowerCase()] ? (
+                    {!collapsed && (Boolean(expandedSections[section.key || section.label.toLowerCase()]) ? (
                       <ChevronDown className="h-4 w-4" />
                     ) : (
                       <ChevronRight className="h-4 w-4" />
                     ))}
                   </button>
                   
-                  {expandedSections[section.label.toLowerCase()] && !collapsed && (
+                  {Boolean(expandedSections[section.key || section.label.toLowerCase()]) && !collapsed && (
                     <div className="ml-4 space-y-1 border-l border-border pl-3">
                       {section.subItems?.map((item) => (
                         <SidebarMenuItem

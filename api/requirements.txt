@@ -102,4 +102,5 @@ langchain_ollama
 langchain_aws
 websockets
 language-tool-python
-
+ijson
+cryptography

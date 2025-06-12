@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
 import { getApiBaseUrl } from "@/lib/config"
+import { fetchWithAuth } from "@/lib/auth-utils"
 
 // Define job interface
 export interface Job {
@@ -329,11 +330,9 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
         const apiBaseUrl = getApiBaseUrl();
         console.log(`Making API call to ${apiBaseUrl}/api/datapuur/cancel-job/${job.id}`);
         
-        const response = await fetch(`${apiBaseUrl}/api/datapuur/cancel-job/${job.id}`, {
+        // Use fetchWithAuth for proper token expiration handling
+        const response = await fetchWithAuth(`/api/datapuur/cancel-job/${job.id}`, {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${typeof window !== 'undefined' ? localStorage.getItem("token") : ''}`,
-          },
         });
         
         console.log(`API response status: ${response.status}`);
@@ -421,7 +420,7 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
         // Check the status of each active job
         for (const job of activeJobs) {
           const apiBaseUrl = getApiBaseUrl();
-          const response = await fetch(`${apiBaseUrl}/api/datapuur/job-status/${job.id}`, {
+          const response = await fetchWithAuth(`/api/datapuur/job-status/${job.id}`, {
             headers: {
               // Ensure token is accessed client-side
               Authorization: `Bearer ${typeof window !== 'undefined' ? localStorage.getItem("token") : ''}`,
@@ -507,7 +506,7 @@ export function IngestionProvider({ children }: { children: ReactNode }) {
         
         for (const job of jobsToCheck) {
           try {
-            const response = await fetch(`${apiBaseUrl}/api/datapuur/job-status/${job.id}`, {
+            const response = await fetchWithAuth(`/api/datapuur/job-status/${job.id}`, {
               headers: {
                 Authorization: `Bearer ${token}`
               }

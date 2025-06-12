@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useSchemaSelection } from "@/lib/schema-selection-context"
+import { useSchemaSelection, Schema } from "@/lib/schema-selection-context"
 import { useKGInsightsJobs } from "@/lib/kginsights-job-context"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -39,7 +39,7 @@ interface SchemaStatus {
 }
 
 export default function SchemaDetail() {
-  const { selectedSchemaId, getSchemaById } = useSchemaSelection()
+  const { selectedSchemaId, getSchemaById, deleteSchema, schemas, selectSchema } = useSchemaSelection()
   const { jobs, getActiveJobsForSchema, startLoadDataJob, startCleanDataJob, refreshJobs } = useKGInsightsJobs()
   
   const [schemaStatus, setSchemaStatus] = useState<SchemaStatus | null>(null)
@@ -317,7 +317,7 @@ export default function SchemaDetail() {
                   </AlertDialogTrigger>
                 </TooltipTrigger>
                 <TooltipContent side="bottom">
-                  <p>Delete schema (Requires confirmation)</p>
+                  <p>Delete schema</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -330,8 +330,20 @@ export default function SchemaDetail() {
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                {/* TODO: Implement actual delete function call */}
-                <AlertDialogAction onClick={() => console.warn('Delete schema not implemented yet')}>Confirm Delete</AlertDialogAction>
+                <AlertDialogAction onClick={async () => {
+                  if (selectedSchema) {
+                    const success = await deleteSchema(selectedSchema.id);
+                    if (success) {
+                      // Navigate to the schemas list or select another schema if available
+                      if (schemas.length > 1) {
+                        const remainingSchemas = schemas.filter((schema: Schema) => schema.id !== selectedSchema.id);
+                        if (remainingSchemas.length > 0) {
+                          selectSchema(remainingSchemas[0].id);
+                        }
+                      }
+                    }
+                  }
+                }}>Confirm Delete</AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
@@ -520,8 +532,8 @@ export default function SchemaDetail() {
                       <FileCode className="h-4 w-4 mr-1" />
                       Schema Structure
                     </h3>
-                    <div className="bg-slate-50 dark:bg-slate-900/40 p-3 rounded-md">
-                      <pre className="text-xs overflow-auto max-h-[400px]">
+                    <div className="bg-slate-50 dark:bg-slate-900/40 p-3 rounded-md overflow-hidden">
+                      <pre className="text-xs overflow-x-auto overflow-y-auto max-h-[400px] whitespace-pre-wrap break-all w-full">
                         {(() => {
                           try {
                             // Parse the schema property if it exists
@@ -583,10 +595,10 @@ export default function SchemaDetail() {
                                 : fullSchemaData.schema_json;
                               
                               return schema.relationships?.map((rel: any, index: number) => (
-                                <div key={index} className="text-sm">
-                                  <span className="text-xs">{rel.startNode}</span>
-                                  <Badge variant="outline" className="mx-2">{rel.type}</Badge>
-                                  <span className="text-xs">{rel.endNode}</span>
+                                <div key={index} className="text-sm flex flex-wrap items-center gap-2 mb-1">
+                                  <span className="text-xs max-w-[30%] truncate" title={rel.startNode}>{rel.startNode}</span>
+                                  <Badge variant="outline">{rel.type}</Badge>
+                                  <span className="text-xs max-w-[30%] truncate" title={rel.endNode}>{rel.endNode}</span>
                                 </div>
                               )) || <div className="text-sm text-muted-foreground">No relationship types defined</div>;
                             } catch (e) {

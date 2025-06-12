@@ -26,6 +26,7 @@ interface SchemaSelectionContextType {
   selectSchema: (id: number | null) => void
   refreshSchemas: () => Promise<void>
   getSchemaById: (id: number) => Schema | undefined
+  deleteSchema: (id: number) => Promise<boolean>
 }
 
 // Create context
@@ -96,6 +97,71 @@ export function SchemaSelectionProvider({ children }: { children: ReactNode }) {
     return schemas.find(schema => schema.id === id)
   }
 
+  // Delete a schema by ID
+  const deleteSchema = async (id: number) => {
+    setIsLoading(true)
+    setError(null)
+    
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) {
+        throw new Error('Authentication token not found.')
+      }
+      
+      const response = await fetch(`/api/graphschema/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      if (!response.ok) {
+        // Try to get more detailed error information from the response
+        try {
+          const errorData = await response.json()
+          throw new Error(`Failed to delete schema: ${errorData.detail || response.statusText}`)
+        } catch (jsonError) {
+          throw new Error(`Failed to delete schema: ${response.statusText}`)
+        }
+      }
+      
+      // Remove the schema from the list and update state
+      setSchemas(schemas.filter(schema => schema.id !== id))
+      
+      // If the deleted schema was selected, clear the selection
+      if (selectedSchemaId === id) {
+        setSelectedSchemaId(null)
+        
+        // If we have other schemas, select the first one
+        if (schemas.length > 1) {
+          const remainingSchemas = schemas.filter(schema => schema.id !== id)
+          if (remainingSchemas.length > 0) {
+            setSelectedSchemaId(remainingSchemas[0].id)
+          }
+        }
+      }
+      
+      toast({
+        title: "Success",
+        description: "Schema deleted successfully",
+      })
+      
+      return true
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error deleting schema'
+      setError(errorMessage)
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      })
+      return false
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   // Context value
   const value = {
     schemas,
@@ -104,7 +170,8 @@ export function SchemaSelectionProvider({ children }: { children: ReactNode }) {
     error,
     selectSchema,
     refreshSchemas,
-    getSchemaById
+    getSchemaById,
+    deleteSchema
   }
 
   return (

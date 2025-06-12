@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation"
 import { DatasetPreviewModal } from "@/components/datapuur/dataset-preview-modal"
 import { format, formatDistanceToNow } from "date-fns"
 import { useToast } from "@/components/ui/use-toast"
+import { fetchWithAuth } from "@/lib/auth-utils"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -77,32 +78,19 @@ export function DataDashboard() {
   const router = useRouter()
   const { toast } = useToast()
 
-  // Helper function to make authenticated API requests
-  const fetchWithAuth = useCallback(async (url: string, options?: RequestInit) => {
-    const token = localStorage.getItem("token")
-
-    if (!token) {
-      setAuthError("Authentication token not found. Please log in again.")
-      throw new Error("Authentication token not found")
+  // Use the centralized fetchWithAuth from auth-utils.ts
+  // This is just a wrapper to maintain compatibility with existing code
+  const fetchWithAuthWrapper = useCallback(async (url: string, options?: RequestInit) => {
+    try {
+      // Use the centralized fetchWithAuth function
+      return await fetchWithAuth(url, options)
+    } catch (error) {
+      // Set local error state for UI feedback
+      if (error instanceof Error && error.message === "Authentication failed") {
+        setAuthError("Your session has expired. Please log in again.")
+      }
+      throw error
     }
-
-    const response = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      ...options,
-    })
-
-    if (response.status === 401) {
-      setAuthError("Your session has expired. Please log in again.")
-      throw new Error("Authentication failed")
-    }
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
-    }
-
-    return response.json()
   }, [])
 
   // Function to fetch all data from the API
@@ -112,12 +100,12 @@ export function DataDashboard() {
       setAuthError(null)
 
       // Fetch data sources
-      const dataSources = await fetchWithAuth("/api/datapuur/sources")
+      const dataSources = await fetchWithAuthWrapper("/api/datapuur/sources")
       setDatasets(dataSources)
 
       // Fetch metrics
       try {
-        const metrics = await fetchWithAuth("/api/datapuur/metrics")
+        const metrics = await fetchWithAuthWrapper("/api/datapuur/metrics")
         console.log("API Response - Metrics:", metrics)
         setDataMetrics(metrics)
       } catch (error) {
@@ -126,7 +114,7 @@ export function DataDashboard() {
 
       // Fetch activities
       try {
-        const activitiesData = await fetchWithAuth("/api/datapuur/activities")
+        const activitiesData = await fetchWithAuthWrapper("/api/datapuur/activities")
         console.log("API Response - Activities:", activitiesData)
         setActivities(activitiesData)
       } catch (error) {
@@ -135,7 +123,7 @@ export function DataDashboard() {
 
       // Fetch dashboard data
       try {
-        const dashboardData = await fetchWithAuth("/api/datapuur/dashboard")
+        const dashboardData = await fetchWithAuthWrapper("/api/datapuur/dashboard")
         console.log("API Response - Dashboard:", dashboardData)
         setDashboardData(dashboardData)
         
@@ -160,7 +148,7 @@ export function DataDashboard() {
       setIsLoading(false)
       setIsRefreshing(false)
     }
-  }, [fetchWithAuth, toast, authError])
+  }, [fetchWithAuthWrapper, toast, authError])
 
   // Fetch data on component mount
   useEffect(() => {
@@ -320,8 +308,8 @@ export function DataDashboard() {
     try {
       setIsDeleting(true)
       
-      // Use the new delete-file endpoint with fetchWithAuth
-      const response = await fetchWithAuth(`/api/datapuur/delete-file/${datasetToDelete.id}`, {
+      // Use the new delete-file endpoint with fetchWithAuthWrapper
+      const response = await fetchWithAuthWrapper(`/api/datapuur/delete-file/${datasetToDelete.id}`, {
         method: "DELETE",
       })
 
@@ -352,8 +340,8 @@ export function DataDashboard() {
     try {
       setSelectedDataset({ id: datasetId, name: datasetName })
 
-      // Fetch preview data from the API using the new file-preview endpoint with fetchWithAuth helper
-      const previewData = await fetchWithAuth(`/api/datapuur/file-preview/${datasetId}`)
+      // Fetch preview data from the API using the new file-preview endpoint with fetchWithAuthWrapper helper
+      const previewData = await fetchWithAuthWrapper(`/api/datapuur/file-preview/${datasetId}`)
       setPreviewData(previewData)
       setPreviewModalOpen(true)
     } catch (error) {
