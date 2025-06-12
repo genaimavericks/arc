@@ -48,9 +48,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { motion } from "framer-motion"
 import { SparklesCore } from "@/components/sparkles"
 
-// Import our WebSocket services
-import { useKGInsights } from "./use-kg-insights"
-import { AutocompleteSuggestion } from "./autocomplete-service"
+// Import our services
+import { useKGInsights, AutocompleteSuggestion } from "./use-kg-insights"
 
 // Message type for chat history
 export interface ChatMessage {
@@ -122,16 +121,13 @@ export default function InsightsChat() {
     connectionStatus,
     suggestions,
     autocompleteSuggestions,
-    getSuggestions,
     getAutocompleteSuggestions,
     sendQuery,
     registerQueryResultHandler,
     unregisterQueryResultHandler
   } = useKGInsights(sourceId, authToken, {
-    suggestionOptions: {
-      maxSuggestions: 5,
-      debounceTime: 300
-    },
+    baseUrl: window.location.origin,
+    autoReconnect: true,
     autocompleteOptions: {
       maxSuggestions: 5,
       debounceTime: 150
@@ -996,17 +992,161 @@ export default function InsightsChat() {
           className="p-3 border-t border-primary/10 bg-background/90 backdrop-blur-md shadow-lg relative sticky bottom-0"
           style={{ marginTop: 'auto' }}
         >
-          <InsightsChatInput
-            onSendMessage={handleSendMessage}
-            loading={loading}
-            sourceId={sourceId}
-            token={authToken}
-            onClearChat={handleClearChat}
-            sidebarToggle={{
-              isOpen: sidebarOpen,
-              onToggle: () => setSidebarOpen(!sidebarOpen)
-            }}
-          />
+          {/* Input implementation moved to inline implementation below */}
+          <div className="flex items-center gap-2">
+            <div className="flex-1 flex items-center gap-2 relative">
+              <div className="relative w-full">
+                {/* Suggestions */}
+                {showSuggestions && suggestions.length > 0 && (
+                  <div className="absolute bottom-full left-0 right-0 mb-2 border border-border rounded-md overflow-hidden z-20 bg-background/95 backdrop-blur-sm shadow-lg">
+                    <div className="p-2 bg-secondary text-secondary-foreground text-xs font-medium">
+                      Suggested Queries
+                    </div>
+                    <div className="divide-y divide-border max-h-[200px] overflow-y-auto">
+                      {suggestions.map((suggestion: string, index: number) => (
+                        <div 
+                          key={index}
+                          className="p-2 hover:bg-accent cursor-pointer text-sm"
+                          onClick={() => handleUseSuggestion(suggestion)}
+                        >
+                          {suggestion}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Autocomplete suggestions */}
+                {showAutocomplete && autocompleteSuggestions.length > 0 && (
+                  <div className="absolute bottom-full left-0 right-0 mb-2 border border-border rounded-md overflow-hidden z-20 bg-background/95 backdrop-blur-sm shadow-lg">
+                    <div className="p-2 bg-secondary text-secondary-foreground text-xs font-medium">
+                      Autocomplete
+                    </div>
+                    <div className="divide-y divide-border max-h-[200px] overflow-y-auto">
+                      {autocompleteSuggestions.map((suggestion: AutocompleteSuggestion, index: number) => (
+                        <div 
+                          key={index}
+                          className="p-2 hover:bg-accent cursor-pointer"
+                          onClick={() => handleSelectSuggestion(suggestion.text)}
+                        >
+                          <div className="font-medium text-sm">{suggestion.text}</div>
+                          {suggestion.description && (
+                            <div className="text-xs text-muted-foreground">{suggestion.description}</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                <div className="absolute right-12 bottom-2 text-xs text-muted-foreground bg-card/80 px-1.5 py-0.5 rounded-sm z-10">
+                  Shift+Enter for new line
+                </div>
+                <Textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => {
+                    const value = e.target.value
+                    // Use the event target value directly to prevent state timing issues
+                    setInput(value)
+                    
+                    // Get cursor position
+                    const currentCursorPosition = e.target.selectionStart || value.length
+                    setCursorPosition(currentCursorPosition)
+                    
+                    // Get suggestions if the input is not empty
+                    if (value.trim()) {
+                      getAutocompleteSuggestions(value, currentCursorPosition)
+                      setShowSuggestions(true)
+                      setShowAutocomplete(true)
+                    } else {
+                      setShowSuggestions(false)
+                      setShowAutocomplete(false)
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      if (input.trim()) {
+                        handleSendMessage(input)
+                        setInput("")
+                        setShowSuggestions(false)
+                        setShowAutocomplete(false)
+                      }
+                    } else if (e.key === 'Escape') {
+                      setShowSuggestions(false)
+                      setShowAutocomplete(false)
+                    }
+                  }}
+                  placeholder="Ask a question about your knowledge graph..."
+                  className="flex-1 w-full min-h-[60px] max-h-[120px] text-sm bg-card/50 backdrop-blur-sm border-primary/20 shadow-sm focus-visible:ring-primary pl-4 pr-24 py-2 transition-all duration-300 resize-none overflow-y-auto"
+                />
+              </div>
+              
+              <div className="absolute right-0 flex">                
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button 
+                        onClick={handleClearChat}
+                        size="sm" 
+                        variant="ghost"
+                        className="h-9 px-2 mr-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all duration-300"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Clear chat</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+
+                <Button 
+                  onClick={() => {
+                    if (input.trim()) {
+                      handleSendMessage(input)
+                      setInput("")
+                    }
+                  }}
+                  size="sm" 
+                  className="h-9 px-3 bg-primary hover:bg-primary/90 text-primary-foreground transition-all duration-300 hover:shadow mr-1"
+                  disabled={loading || !input.trim()}
+                >
+                  {loading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                </Button>
+                
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-9 px-2 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors duration-300"
+                        onClick={() => setSidebarOpen(!sidebarOpen)}
+                        title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+                      >
+                        {sidebarOpen ? (
+                          <ChevronRight className="h-4 w-4" />
+                        ) : (
+                          <ChevronLeft className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{sidebarOpen ? "Hide sidebar" : "Show sidebar"}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+            </div>
+          </div>
+          
+
         </motion.div>
       </div>
     </div>

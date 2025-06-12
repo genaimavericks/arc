@@ -4,6 +4,7 @@ from fastapi import APIRouter
 from .graphschemaapi import router as graphschema_router
 from .database_api import router as database_router
 from .kginsights import router as kginsights_router
+from .websocket_api import router as websocket_router
 
 from .graph_visualization_api import router as graph_visualization_router
 from .processing_jobs_api import router as processing_jobs_router
@@ -31,3 +32,8 @@ print(f"DEBUG: processing_jobs_router routes: {[{route.path: route.methods} for 
 
 # Include the schema status router
 router.include_router(schema_status_router)
+
+# Include the websocket router
+print("DEBUG: Including websocket_router in kginsights router")
+router.include_router(websocket_router)
+print(f"DEBUG: websocket_router routes: {[route.path for route in websocket_router.routes]}")

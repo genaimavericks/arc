@@ -1,11 +1,10 @@
 "use client"
 
 import React, { useState, useRef, useEffect } from 'react';
-import { useKGInsights } from './use-kg-insights';
+import { useKGInsights, AutocompleteSuggestion } from './use-kg-insights';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Send, AlertTriangle, Loader2 } from "lucide-react";
-import { AutocompleteSuggestion } from './autocomplete-service';
 import { cn } from "@/lib/utils";
 
 interface ExampleChatComponentProps {
@@ -32,15 +31,14 @@ export function ExampleChatComponent({ schemaId, token }: ExampleChatComponentPr
     error,
     suggestions,
     autocompleteSuggestions,
-    getSuggestions,
     getAutocompleteSuggestions,
-    sendQuery
+    sendQuery,
+    registerQueryResultHandler,
+    unregisterQueryResultHandler
   } = useKGInsights(schemaId, token, {
     // Configure the services
-    suggestionOptions: {
-      maxSuggestions: 5,
-      debounceTime: 300
-    },
+    baseUrl: window.location.origin,
+    autoReconnect: true,
     autocompleteOptions: {
       maxSuggestions: 5,
       debounceTime: 150
@@ -82,7 +80,6 @@ export function ExampleChatComponent({ schemaId, token }: ExampleChatComponentPr
     
     // Get suggestions if the input is not empty
     if (value.trim()) {
-      getSuggestions(value, cursorPosition);
       getAutocompleteSuggestions(value, cursorPosition);
       setShowSuggestions(true);
       setShowAutocomplete(true);

@@ -1,191 +1,205 @@
 /**
- * WebSocketService - Core service for WebSocket communication
- * Handles connection management, message sending/receiving, and event handling
+ * WebSocket Service for KG Insights
+ * Handles WebSocket connections to the backend for real-time data
  */
 
-export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
+export type WebSocketMessageHandler = (message: any) => void;
+
+export interface WebSocketServiceOptions {
+  url: string;
+  autoReconnect?: boolean;
+  reconnectInterval?: number;
+  maxReconnectAttempts?: number;
+}
+
+export enum ConnectionStatus {
+  CONNECTING = 'connecting',
+  CONNECTED = 'connected',
+  DISCONNECTED = 'disconnected',
+  RECONNECTING = 'reconnecting',
+  FAILED = 'failed'
+}
 
 export class WebSocketService {
   private socket: WebSocket | null = null;
-  private messageHandlers: Map<string, Function[]> = new Map();
-  private connectionStatus: ConnectionStatus = 'disconnected';
+  private url: string;
+  private autoReconnect: boolean;
+  private reconnectInterval: number;
+  private maxReconnectAttempts: number;
   private reconnectAttempts: number = 0;
-  private maxReconnectAttempts: number = 5;
-  private reconnectInterval: number = 3000; // 3 seconds
-  private reconnectTimeoutId: NodeJS.Timeout | null = null;
-  
-  constructor(private baseUrl: string, private autoReconnect: boolean = true) {}
-  
+  private messageHandlers: Map<string, WebSocketMessageHandler[]> = new Map();
+  private statusChangeHandlers: ((status: ConnectionStatus) => void)[] = [];
+  private connectionStatus: ConnectionStatus = ConnectionStatus.DISCONNECTED;
+
+  constructor(options: WebSocketServiceOptions) {
+    this.url = options.url;
+    this.autoReconnect = options.autoReconnect ?? true;
+    this.reconnectInterval = options.reconnectInterval ?? 3000;
+    this.maxReconnectAttempts = options.maxReconnectAttempts ?? 5;
+  }
+
   /**
    * Connect to the WebSocket server
-   * @param schemaId The schema ID to connect to
-   * @param token Authentication token
-   * @returns Promise that resolves when connected
    */
-  connect(schemaId: string, token: string): Promise<void> {
+  public connect(): Promise<void> {
+    if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
+      return Promise.resolve();
+    }
+
+    this.updateConnectionStatus(ConnectionStatus.CONNECTING);
+
     return new Promise((resolve, reject) => {
       try {
-        // Clear any existing reconnect attempts
-        if (this.reconnectTimeoutId) {
-          clearTimeout(this.reconnectTimeoutId);
-          this.reconnectTimeoutId = null;
-        }
-        
-        this.connectionStatus = 'connecting';
-        
-        // Create the WebSocket URL with schema ID and token
-        const url = `${this.baseUrl}/api/kgdatainsights/ws/${schemaId}?token=${token}`;
-        this.socket = new WebSocket(url);
-        
+        this.socket = new WebSocket(this.url);
+
         this.socket.onopen = () => {
-          console.log('WebSocket connected');
-          this.connectionStatus = 'connected';
           this.reconnectAttempts = 0;
+          this.updateConnectionStatus(ConnectionStatus.CONNECTED);
           resolve();
         };
-        
+
         this.socket.onclose = (event) => {
-          console.log(`WebSocket closed: ${event.code} ${event.reason}`);
-          this.connectionStatus = 'disconnected';
-          
-          // Attempt to reconnect if enabled
+          this.updateConnectionStatus(ConnectionStatus.DISCONNECTED);
           if (this.autoReconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
+            this.updateConnectionStatus(ConnectionStatus.RECONNECTING);
             this.reconnectAttempts++;
-            console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
-            
-            this.reconnectTimeoutId = setTimeout(() => {
-              this.connect(schemaId, token).catch(err => {
-                console.error('Reconnection failed:', err);
-              });
-            }, this.reconnectInterval);
+            setTimeout(() => this.connect(), this.reconnectInterval);
+          } else if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+            this.updateConnectionStatus(ConnectionStatus.FAILED);
           }
         };
-        
+
         this.socket.onerror = (error) => {
           console.error('WebSocket error:', error);
           reject(error);
         };
-        
+
         this.socket.onmessage = (event) => {
-          this.handleMessage(event.data);
+          try {
+            const data = JSON.parse(event.data);
+            const { type } = data;
+            
+            console.log(`WebSocket received message of type: ${type}`, data);
+            
+            if (type && this.messageHandlers.has(type)) {
+              const handlers = this.messageHandlers.get(type) || [];
+              console.log(`Found ${handlers.length} handlers for message type: ${type}`);
+              handlers.forEach(handler => handler(data));
+            } else if (type === 'linguistic_suggestions') {
+              // Special handling for linguistic suggestions if no specific handler
+              if (this.messageHandlers.has('autocomplete_suggestions')) {
+                const handlers = this.messageHandlers.get('autocomplete_suggestions') || [];
+                console.log(`Using autocomplete handlers for linguistic suggestions`);
+                handlers.forEach(handler => handler({
+                  type: 'autocomplete_suggestions',
+                  suggestions: data.suggestions
+                }));
+              } else {
+                console.warn(`No handlers registered for linguistic suggestions`);
+              }
+            } else {
+              console.warn(`No handlers registered for message type: ${type}`);
+            }
+          } catch (error) {
+            console.error('Error parsing WebSocket message:', error);
+          }
         };
       } catch (error) {
-        this.connectionStatus = 'disconnected';
+        this.updateConnectionStatus(ConnectionStatus.FAILED);
         reject(error);
       }
     });
   }
-  
-  /**
-   * Send a message through the WebSocket
-   * @param type Message type
-   * @param content Message content
-   */
-  sendMessage(type: string, content: any): void {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      console.warn('WebSocket not connected, cannot send message');
-      return;
-    }
-    
-    const message = {
-      type,
-      content,
-      timestamp: new Date().toISOString()
-    };
-    
-    try {
-      this.socket.send(JSON.stringify(message));
-    } catch (error) {
-      console.error('Error sending WebSocket message:', error);
-    }
-  }
-  
-  /**
-   * Register a handler for a specific message type
-   * @param messageType The message type to handle
-   * @param handler The handler function
-   */
-  registerHandler(messageType: string, handler: Function): void {
-    if (!this.messageHandlers.has(messageType)) {
-      this.messageHandlers.set(messageType, []);
-    }
-    
-    const handlers = this.messageHandlers.get(messageType);
-    if (handlers && !handlers.includes(handler)) {
-      handlers.push(handler);
-    }
-  }
-  
-  /**
-   * Unregister a handler for a specific message type
-   * @param messageType The message type
-   * @param handler The handler function to remove
-   */
-  unregisterHandler(messageType: string, handler: Function): void {
-    if (!this.messageHandlers.has(messageType)) return;
-    
-    const handlers = this.messageHandlers.get(messageType) || [];
-    const index = handlers.indexOf(handler);
-    
-    if (index !== -1) {
-      handlers.splice(index, 1);
-    }
-  }
-  
-  /**
-   * Handle an incoming WebSocket message
-   * @param data The raw message data
-   */
-  private handleMessage(data: string): void {
-    try {
-      const message = JSON.parse(data);
-      const { type, content } = message;
-      
-      // Call all registered handlers for this message type
-      const handlers = this.messageHandlers.get(type) || [];
-      handlers.forEach(handler => {
-        try {
-          handler(content);
-        } catch (error) {
-          console.error(`Error in handler for message type '${type}':`, error);
-        }
-      });
-    } catch (error) {
-      console.error('Error parsing WebSocket message:', error);
-    }
-  }
-  
+
   /**
    * Disconnect from the WebSocket server
    */
-  disconnect(): void {
-    // Clear any reconnect attempts
-    if (this.reconnectTimeoutId) {
-      clearTimeout(this.reconnectTimeoutId);
-      this.reconnectTimeoutId = null;
-    }
-    
+  public disconnect(): void {
     if (this.socket) {
       this.socket.close();
       this.socket = null;
+      this.updateConnectionStatus(ConnectionStatus.DISCONNECTED);
     }
-    
-    this.connectionStatus = 'disconnected';
   }
-  
+
   /**
-   * Check if the WebSocket is connected
-   * @returns True if connected, false otherwise
+   * Send a message to the WebSocket server
+   * @param message The message to send
    */
-  isConnected(): boolean {
-    return this.connectionStatus === 'connected';
+  public send(message: any): void {
+    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+      console.log('Sending WebSocket message:', message);
+      this.socket.send(JSON.stringify(message));
+    } else {
+      console.error('WebSocket is not connected, cannot send message:', message);
+    }
   }
-  
+
+  /**
+   * Register a handler for a specific message type
+   * @param type The message type to handle
+   * @param handler The handler function
+   */
+  public registerHandler(type: string, handler: WebSocketMessageHandler): void {
+    if (!this.messageHandlers.has(type)) {
+      this.messageHandlers.set(type, []);
+    }
+    const handlers = this.messageHandlers.get(type) || [];
+    handlers.push(handler);
+    this.messageHandlers.set(type, handlers);
+  }
+
+  /**
+   * Unregister a handler for a specific message type
+   * @param type The message type
+   * @param handler The handler function to remove
+   */
+  public unregisterHandler(type: string, handler: WebSocketMessageHandler): void {
+    if (this.messageHandlers.has(type)) {
+      let handlers = this.messageHandlers.get(type) || [];
+      handlers = handlers.filter(h => h !== handler);
+      this.messageHandlers.set(type, handlers);
+    }
+  }
+
+  /**
+   * Register a handler for connection status changes
+   * @param handler The handler function
+   */
+  public onStatusChange(handler: (status: ConnectionStatus) => void): void {
+    this.statusChangeHandlers.push(handler);
+    // Immediately call with current status
+    handler(this.connectionStatus);
+  }
+
+  /**
+   * Unregister a status change handler
+   * @param handler The handler to remove
+   */
+  public offStatusChange(handler: (status: ConnectionStatus) => void): void {
+    this.statusChangeHandlers = this.statusChangeHandlers.filter(h => h !== handler);
+  }
+
   /**
    * Get the current connection status
-   * @returns The connection status
    */
-  getConnectionStatus(): ConnectionStatus {
+  public getStatus(): ConnectionStatus {
     return this.connectionStatus;
+  }
+
+  /**
+   * Check if the WebSocket is connected
+   */
+  public isConnected(): boolean {
+    return this.socket !== null && this.socket.readyState === WebSocket.OPEN;
+  }
+
+  /**
+   * Update the connection status and notify handlers
+   * @param status The new connection status
+   */
+  private updateConnectionStatus(status: ConnectionStatus): void {
+    this.connectionStatus = status;
+    this.statusChangeHandlers.forEach(handler => handler(status));
   }
 }

@@ -238,56 +238,60 @@ export function DatasetDetail({ dataset }: DatasetDetailProps) {
                   {Object.entries(dataset.column_metadata || {}).length > 0 ? (
                     Object.entries(dataset.column_metadata || {}).map(([col, colMeta]: [string, any], idx) => (
                       <Card key={idx} className="p-4">
-                        <div className="flex justify-between items-center mb-2">
+                        <div className="flex justify-between items-center mb-4">
                           <h4 className="font-medium text-lg">{col}</h4>
                           <span className="px-2 py-1 bg-slate-100 text-slate-700 rounded text-xs">{colMeta.type}</span>
                         </div>
                         
-                        <FormField
-                          control={form.control}
-                          name={`columnMetadata.${col}.description`}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Description</FormLabel>
-                              <FormControl>
-                                <Textarea 
-                                  placeholder={`Enter a description for ${col}...`}
-                                  className="resize-none h-20"
-                                  {...field}
-                                />
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
-                        
-                        <div className="mt-4 grid grid-cols-1 gap-3">
-                          <div className="bg-slate-50 p-3 rounded-md">
-                            <h5 className="text-sm font-medium mb-2">Statistics</h5>
-                            <div className="grid grid-cols-2 gap-2 text-sm">
-                              <div>
-                                <span className="text-muted-foreground">Missing Values:</span> 
-                                <span className="ml-1 font-medium">{colMeta.missing_count} ({colMeta.missing_percentage?.toFixed(2)}%)</span>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {/* Left side: Statistics */}
+                          <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-md">
+                            <h5 className="text-sm font-medium mb-3 border-b dark:border-slate-700 pb-2">Statistics</h5>
+                            <div className="space-y-2">
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground dark:text-slate-400">Missing Values:</span> 
+                                <span className="font-medium dark:text-slate-200">{colMeta.missing_count} ({colMeta.missing_percentage?.toFixed(2)}%)</span>
                               </div>
                               
                               {colMeta.stats && Object.entries(colMeta.stats).map(([statKey, statValue]: [string, any], i) => (
-                                <div key={i}>
-                                  <span className="text-muted-foreground">{statKey.replace(/_/g, ' ')}:</span> 
-                                  <span className="ml-1 font-medium">
+                                <div key={i} className="flex justify-between">
+                                  <span className="text-muted-foreground dark:text-slate-400">{statKey.replace(/_/g, ' ')}:</span> 
+                                  <span className="font-medium dark:text-slate-200">
                                     {typeof statValue === 'number' ? 
                                       Number(statValue).toLocaleString(undefined, {maximumFractionDigits: 2}) : 
                                       String(statValue)}
                                   </span>
                                 </div>
                               ))}
+                              
+                              {colMeta.sample_data && (
+                                <div className="mt-3 pt-2 border-t dark:border-slate-700">
+                                  <h6 className="text-xs font-medium mb-1 dark:text-slate-300">Sample Data</h6>
+                                  <p className="text-xs text-muted-foreground dark:text-slate-400 font-mono break-all">{colMeta.sample_data}</p>
+                                </div>
+                              )}
                             </div>
                           </div>
                           
-                          {colMeta.sample_data && (
-                            <div className="bg-slate-50 p-3 rounded-md">
-                              <h5 className="text-sm font-medium mb-1">Sample Data</h5>
-                              <p className="text-xs text-muted-foreground font-mono break-all">{colMeta.sample_data}</p>
-                            </div>
-                          )}
+                          {/* Right side: Description */}
+                          <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-md">
+                            <h5 className="text-sm font-medium mb-3 border-b dark:border-slate-700 pb-2">Description</h5>
+                            <FormField
+                              control={form.control}
+                              name={`columnMetadata.${col}.description`}
+                              render={({ field }) => (
+                                <FormItem className="space-y-1">
+                                  <FormControl>
+                                    <Textarea 
+                                      placeholder={`Enter a description for ${col}...`}
+                                      className="resize-none h-[calc(100%-24px)] min-h-[120px] bg-white dark:bg-slate-900 dark:text-slate-200 dark:border-slate-700"
+                                      {...field}
+                                    />
+                                  </FormControl>
+                                </FormItem>
+                              )}
+                            />
+                          </div>
                         </div>
                       </Card>
                     ))

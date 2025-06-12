@@ -5,8 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { ChevronLeft, ChevronRight, Loader2, Send, Trash2 } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
-import { useKGInsights } from "../use-kg-insights"
-import { AutocompleteSuggestion } from "../autocomplete-service"
+import { useKGInsights, AutocompleteSuggestion } from "../use-kg-insights"
 import {
   Tooltip,
   TooltipContent,
@@ -47,13 +46,10 @@ export function InsightsChatInput({
     connected,
     suggestions,
     autocompleteSuggestions,
-    getSuggestions,
     getAutocompleteSuggestions
   } = useKGInsights(sourceId, token, {
-    suggestionOptions: {
-      maxSuggestions: 5,
-      debounceTime: 300
-    },
+    baseUrl: window.location.origin,
+    autoReconnect: true,
     autocompleteOptions: {
       maxSuggestions: 5,
       debounceTime: 150
@@ -103,7 +99,6 @@ export function InsightsChatInput({
     
     // Get suggestions if the input is not empty
     if (value.trim()) {
-      getSuggestions(value, cursorPosition)
       getAutocompleteSuggestions(value, cursorPosition)
       setShowSuggestions(true)
       setShowAutocomplete(true)

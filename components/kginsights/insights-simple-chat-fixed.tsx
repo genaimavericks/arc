@@ -8,7 +8,8 @@ import { useToast } from "@/components/ui/use-toast"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { AutocompleteSuggestions, AutocompleteSuggestion } from "./autocomplete-suggestions"
+import { AutocompleteSuggestions } from "./autocomplete-suggestions"
+import { AutocompleteSuggestion } from "./autocomplete-service"
 
 // Add TypeScript declaration for window.autocompleteTimer
 declare global {
@@ -17,6 +18,8 @@ declare global {
     schemaIdMap: Record<string, number>;
   }
 }
+
+// Using the imported AutocompleteSuggestion interface
 
 // Simple message type for chat history
 interface ChatMessage {
@@ -632,12 +635,14 @@ export function InsightsSimpleChat() {
       {/* Input area */}
       <div className="p-4 border-t relative">
         {/* Autocomplete suggestions */}
-        <AutocompleteSuggestions
-          suggestions={autocompleteSuggestions}
-          visible={showAutocomplete}
-          onSelect={handleSelectSuggestion}
-          inputRef={inputRef}
-        />
+        {inputRef && (
+          <AutocompleteSuggestions
+            suggestions={autocompleteSuggestions}
+            visible={showAutocomplete}
+            onSelect={handleSelectSuggestion}
+            inputRef={inputRef}
+          />
+        )}
         
         {/* Validation errors */}
         {validationErrors.length > 0 && (

@@ -1,144 +1,176 @@
 /**
- * AutocompleteService - Service for handling autocomplete suggestions
- * Manages requesting and processing autocomplete suggestions from the WebSocket API
+ * Autocomplete Service for KG Insights
+ * Provides autocomplete suggestions for Neo4j database nodes and relationships
  */
 
-import { WebSocketService } from "./websocket-service";
+import { WebSocketService } from './websocket-service';
 
 export interface AutocompleteSuggestion {
   text: string;
   description?: string | null;
+  type?: string;
+  offset?: number;
+  errorLength?: number;
 }
 
-export interface AutocompleteOptions {
+export interface AutocompleteServiceOptions {
   debounceTime?: number;
   maxSuggestions?: number;
+  includeLinguistic?: boolean;
 }
 
+export type AutocompleteCallback = (suggestions: AutocompleteSuggestion[]) => void;
+
 export class AutocompleteService {
-  private debounceTimer: NodeJS.Timeout | null = null;
-  private options: AutocompleteOptions;
-  private autocompleteCallbacks: Map<string, (suggestions: AutocompleteSuggestion[]) => void> = new Map();
-  
-  constructor(
-    private webSocketService: WebSocketService,
-    options: AutocompleteOptions = {}
-  ) {
-    this.options = {
-      debounceTime: 150, // Shorter debounce time for autocomplete (more responsive)
-      maxSuggestions: 5,
-      ...options
-    };
+  private webSocketService: WebSocketService;
+  private debounceTime: number;
+  private maxSuggestions: number;
+  private includeLinguistic: boolean;
+  private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private linguisticDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private callbacks: AutocompleteCallback[] = [];
+  private currentSuggestions: AutocompleteSuggestion[] = [];
+
+  constructor(webSocketService: WebSocketService, options: AutocompleteServiceOptions = {}) {
+    this.webSocketService = webSocketService;
+    this.debounceTime = options.debounceTime || 300;
+    this.maxSuggestions = options.maxSuggestions || 5;
+    this.includeLinguistic = options.includeLinguistic !== undefined ? options.includeLinguistic : true;
+
+    // Register handler for autocomplete suggestions from WebSocket
+    this.webSocketService.registerHandler('autocomplete_suggestions', this.handleAutocompleteSuggestions);
     
-    // Register handlers for autocomplete responses
-    this.webSocketService.registerHandler('autocomplete_suggestions', this.handleAutocompleteSuggestions.bind(this));
-    this.webSocketService.registerHandler('autocomplete_error', this.handleAutocompleteError.bind(this));
+    // Register handler for linguistic suggestions from WebSocket
+    this.webSocketService.registerHandler('linguistic_suggestions', this.handleLinguisticSuggestions);
   }
-  
+
   /**
-   * Get autocomplete suggestions based on the current text and cursor position
-   * @param text The current input text
-   * @param cursorPosition The current cursor position
-   * @param callback Function to call with the suggestions
+   * Get autocomplete suggestions for the given query
+   * @param query The query text
+   * @param cursorPosition The cursor position in the query
    */
-  getAutocompleteSuggestions(
-    text: string,
-    cursorPosition: number,
-    callback: (suggestions: AutocompleteSuggestion[]) => void
-  ): void {
-    // Clear any existing timer
+  public getSuggestions(query: string, cursorPosition: number): void {
+    // Clear any pending debounce timer
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
     }
-    
-    // Set a new timer to debounce the request
+
+    // Debounce the request
     this.debounceTimer = setTimeout(() => {
-      if (!text.trim()) {
-        callback([]);
-        return;
-      }
-      
-      // Generate a unique request ID
-      const requestId = `autocomplete-${Date.now()}`;
-      
-      // Store the callback for later
-      this.autocompleteCallbacks.set(requestId, callback);
-      
-      // Send the autocomplete request
-      this.webSocketService.sendMessage('autocomplete', {
-        text,
-        cursor_position: cursorPosition,
-        request_id: requestId
-      });
-    }, this.options.debounceTime);
-  }
-  
-  /**
-   * Handle an autocomplete suggestions response from the WebSocket
-   * @param content The response content
-   */
-  private handleAutocompleteSuggestions(content: any): void {
-    const { request_id, suggestions } = content;
-    
-    if (request_id && this.autocompleteCallbacks.has(request_id)) {
-      const callback = this.autocompleteCallbacks.get(request_id);
-      if (callback) {
-        // Format suggestions if needed
-        const formattedSuggestions = (suggestions || []).map((suggestion: any) => {
-          if (typeof suggestion === 'string') {
-            return { text: suggestion, description: null };
-          } else if (suggestion && typeof suggestion === 'object' && 'text' in suggestion) {
-            return {
-              text: suggestion.text,
-              description: suggestion.description || null
-            };
-          }
-          return { text: String(suggestion), description: null };
+      // Only send request if WebSocket is connected
+      if (this.webSocketService.isConnected()) {
+        this.webSocketService.send({
+          type: 'get_autocomplete_suggestions',
+          query,
+          cursorPosition,
+          maxSuggestions: this.maxSuggestions,
+          includeLinguistic: this.includeLinguistic
         });
-        
-        // Limit the number of suggestions
-        const limitedSuggestions = formattedSuggestions.slice(0, this.options.maxSuggestions);
-        callback(limitedSuggestions);
+      } else {
+        console.warn('WebSocket is not connected, cannot get autocomplete suggestions');
+        this.notifyCallbacks([]);
       }
-      
-      // Clean up the callback
-      this.autocompleteCallbacks.delete(request_id);
-    }
+    }, this.debounceTime);
   }
-  
+
   /**
-   * Handle an autocomplete error from the WebSocket
-   * @param content The error content
+   * Register a callback for autocomplete suggestions
+   * @param callback The callback function
    */
-  private handleAutocompleteError(content: any): void {
-    const { request_id, error } = content;
-    
-    if (request_id && this.autocompleteCallbacks.has(request_id)) {
-      const callback = this.autocompleteCallbacks.get(request_id);
-      if (callback) {
-        console.error('Autocomplete error:', error);
-        callback([]);
+  public onSuggestions(callback: AutocompleteCallback): void {
+    this.callbacks.push(callback);
+    // Immediately call with current suggestions
+    callback(this.currentSuggestions);
+  }
+
+  /**
+   * Unregister a callback
+   * @param callback The callback to remove
+   */
+  public offSuggestions(callback: AutocompleteCallback): void {
+    this.callbacks = this.callbacks.filter(cb => cb !== callback);
+  }
+
+  /**
+   * Get the current suggestions
+   */
+  public getCurrentSuggestions(): AutocompleteSuggestion[] {
+    return this.currentSuggestions;
+  }
+
+  /**
+   * Handle autocomplete suggestions from WebSocket
+   */
+  private handleAutocompleteSuggestions = (data: any): void => {
+    console.log('Received autocomplete suggestions:', data);
+    if (data && Array.isArray(data.suggestions)) {
+      this.currentSuggestions = data.suggestions;
+      console.log('Setting current suggestions:', this.currentSuggestions);
+      this.notifyCallbacks(this.currentSuggestions);
+    } else {
+      console.warn('Received invalid autocomplete suggestions format:', data);
+    }
+  };
+
+  /**
+   * Notify all callbacks with the given suggestions
+   * @param suggestions The suggestions to send
+   */
+  private notifyCallbacks(suggestions: AutocompleteSuggestion[]): void {
+    this.callbacks.forEach(callback => callback(suggestions));
+  }
+
+  /**
+   * Request linguistic checks for the given text
+   * @param text The text to check for linguistic errors
+   */
+  public checkLinguistic(text: string): void {
+    // Clear any pending linguistic debounce timer
+    if (this.linguisticDebounceTimer) {
+      clearTimeout(this.linguisticDebounceTimer);
+    }
+
+    // Debounce the request with a longer delay for linguistic checks
+    this.linguisticDebounceTimer = setTimeout(() => {
+      // Only send request if WebSocket is connected
+      if (this.webSocketService.isConnected()) {
+        this.webSocketService.send({
+          type: 'check_linguistic',
+          text
+        });
       }
-      
-      // Clean up the callback
-      this.autocompleteCallbacks.delete(request_id);
-    }
+    }, this.debounceTime * 2); // Use longer debounce time for linguistic checks
   }
-  
+
   /**
-   * Clean up the service
+   * Handle linguistic suggestions from WebSocket
    */
-  destroy(): void {
-    // Unregister handlers
-    this.webSocketService.unregisterHandler('autocomplete_suggestions', this.handleAutocompleteSuggestions.bind(this));
-    this.webSocketService.unregisterHandler('autocomplete_error', this.handleAutocompleteError.bind(this));
-    
-    // Clear any pending timers
+  private handleLinguisticSuggestions = (data: any): void => {
+    console.log('Received linguistic suggestions:', data);
+    if (data && Array.isArray(data.suggestions)) {
+      // Merge with current suggestions or handle separately as needed
+      const linguisticSuggestions = data.suggestions;
+      this.notifyCallbacks(linguisticSuggestions);
+    }
+  };
+
+  /**
+   * Clean up resources
+   */
+  public destroy(): void {
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
     }
+
+    if (this.linguisticDebounceTimer) {
+      clearTimeout(this.linguisticDebounceTimer);
+    }
     
-    // Clear all callbacks
-    this.autocompleteCallbacks.clear();
+    // Unregister WebSocket handlers
+    this.webSocketService.unregisterHandler('autocomplete_suggestions', this.handleAutocompleteSuggestions);
+    this.webSocketService.unregisterHandler('linguistic_suggestions', this.handleLinguisticSuggestions);
+    
+    // Clear callbacks
+    this.callbacks = [];
   }
 }
