@@ -30,7 +30,7 @@ function KGInsightsContent() {
   }, []);
 
   return (
-    <div className="flex-1 p-6 overflow-hidden flex flex-col">
+    <div className="flex-1 p-6 overflow-hidden flex flex-col h-[calc(100vh-4rem)]">
       <div className="flex flex-col gap-4 mb-4">
         <h1 className="text-2xl font-bold tracking-tight">Knowledge Graph Insights</h1>
       </div>
@@ -39,7 +39,8 @@ function KGInsightsContent() {
         className="bg-card/40 backdrop-blur-sm rounded-xl border shadow-sm overflow-hidden flex flex-col flex-1"
         style={{ 
           position: 'relative',
-          display: isMounted ? 'flex' : 'none'
+          display: isMounted ? 'flex' : 'none',
+          height: 'calc(100% - 3rem)' // Ensure this takes remaining height minus header
         }}
       >
         {/* Custom styling to override the InsightsChat component layout */}

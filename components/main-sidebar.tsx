@@ -187,7 +187,7 @@ export function MainSidebar() {
     {
       label: "Conversations",
       icon: Clock,
-      href: "/conversations",
+      href: "",
       requiredPermission: "djinni:read"
     }
   ]
@@ -256,7 +256,7 @@ export function MainSidebar() {
     {
       label: "Recent Activity",
       icon: BarChart2,
-      href: "/activity",
+      href: "",
       requiredPermission: "dashboard:read"
     }
   ]
@@ -273,7 +273,7 @@ export function MainSidebar() {
       {
         label: "Help",
         icon: HelpCircle,
-        href: "/help",
+        href: "",
         key: "help"
       }
     ]
@@ -417,7 +417,7 @@ export function MainSidebar() {
                     href={section.href}
                     icon={section.icon}
                     label={section.label}
-                    isActive={section.href === "/" ? pathname === "/" : (pathname === section.href || pathname.startsWith(`${section.href}/`))}
+                    isActive={!section.href ? false : (section.href === "/" ? pathname === "/" : (pathname === section.href || pathname.startsWith(`${section.href}/`)))}
                     collapsed={collapsed}
                   />
                 )}
@@ -440,7 +440,7 @@ export function MainSidebar() {
                   href={section.href}
                   icon={section.icon}
                   label={section.label}
-                  isActive={section.href === "/" ? pathname === "/" : (pathname === section.href || pathname.startsWith(`${section.href}/`))}
+                  isActive={!section.href ? false : (section.href === "/" ? pathname === "/" : (pathname === section.href || pathname.startsWith(`${section.href}/`)))}
                   collapsed={collapsed}
                 />
               </div>
@@ -462,7 +462,7 @@ export function MainSidebar() {
                   href={section.href}
                   icon={section.icon}
                   label={section.label}
-                  isActive={section.href === "/" ? pathname === "/" : (pathname === section.href || pathname.startsWith(`${section.href}/`))}
+                  isActive={!section.href ? false : (section.href === "/" ? pathname === "/" : (pathname === section.href || pathname.startsWith(`${section.href}/`)))}
                   collapsed={collapsed}
                 />
               </div>
@@ -559,7 +559,7 @@ export function MainSidebar() {
                   href={section.href}
                   icon={section.icon}
                   label={section.label}
-                  isActive={section.href === "/" ? pathname === "/" : (pathname === section.href || pathname.startsWith(`${section.href}/`))}
+                  isActive={!section.href ? false : (section.href === "/" ? pathname === "/" : (pathname === section.href || pathname.startsWith(`${section.href}/`)))}
                   collapsed={collapsed}
                 />
               </div>

@@ -709,7 +709,7 @@ export default function InsightsChat() {
   }, [messages]);
 
   return (
-    <div className="flex h-full bg-gradient-to-b from-background to-background/95 insights-chat-container overflow-hidden" style={{ height: '100vh', maxHeight: '100vh' }}>
+    <div className="flex h-full bg-gradient-to-b from-background to-background/95 insights-chat-container overflow-hidden" style={{ height: '100%' }}>
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0 opacity-5 pointer-events-none">
         <SparklesCore
           id="insightsparkles"
@@ -748,7 +748,7 @@ export default function InsightsChat() {
             </TabsList>
             
             <TabsContent value="queries" className="mt-0 flex-1 overflow-hidden">
-              <div className="p-3 overflow-y-auto flex-1 flex flex-col" style={{ maxHeight: 'calc(100vh - 150px)' }}>
+              <div className="p-3 overflow-y-auto flex-1 flex flex-col" style={{ maxHeight: 'calc(100% - 50px)' }}>
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <div className="text-sm font-medium">Suggested Queries</div>
@@ -814,7 +814,7 @@ export default function InsightsChat() {
               value="history" 
               className="mt-0 flex-1 overflow-hidden"
             >
-              <div className="p-3 overflow-y-auto flex-1 flex flex-col" style={{ maxHeight: 'calc(100vh - 150px)' }}>
+              <div className="p-3 overflow-y-auto flex-1 flex flex-col" style={{ maxHeight: 'calc(100% - 50px)' }}>
                 <div className="flex justify-between items-center mb-3">
                 <div className="text-sm font-medium">Recent Conversations</div>
                 
@@ -859,7 +859,7 @@ export default function InsightsChat() {
               </div>
               
               <div className="flex-1 overflow-hidden flex flex-col">
-                <ScrollArea className="flex-1 overflow-auto relative" style={{ height: 'calc(100vh - 200px)' }}>
+                <ScrollArea className="flex-1 overflow-auto relative" style={{ height: 'calc(100% - 50px)' }}>
                   <div className="space-y-3 pr-2 flex-1">
                   {loadingHistory ? (
                     <div className="flex items-center justify-center p-4">
@@ -933,7 +933,7 @@ export default function InsightsChat() {
               value="settings" 
               className="mt-0 flex-1 overflow-hidden"
             >
-              <div className="p-3 overflow-y-auto flex-1 flex flex-col" style={{ maxHeight: 'calc(100vh - 150px)' }}>
+              <div className="p-3 overflow-y-auto flex-1 flex flex-col" style={{ maxHeight: 'calc(100% - 50px)' }}>
                 <div className="space-y-4">
                   {/* Settings content at the top */}
                   <div className="space-y-2">
@@ -973,9 +973,9 @@ export default function InsightsChat() {
       )}
       
       {/* Main chat area */}
-      <div className="flex-1 flex flex-col relative z-10 main-chat-area overflow-hidden" style={{ height: '100%', maxHeight: '100vh', display: 'flex', justifyContent: 'space-between' }}>
+      <div className="flex-1 flex flex-col relative z-10 main-chat-area overflow-hidden" style={{ height: '100%', display: 'flex', justifyContent: 'space-between' }}>
         {/* Chat messages */}
-        <div className="overflow-hidden relative" style={{ height: 'calc(100% - 100px)', maxHeight: 'calc(100vh - 150px)' }}>
+        <div className="overflow-hidden relative" style={{ height: 'calc(100% - 80px)' }}>
           <InsightsChatMessages 
             messages={sortedMessages} 
             loading={loading} 
