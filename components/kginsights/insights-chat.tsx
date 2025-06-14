@@ -724,6 +724,7 @@ export default function InsightsChat() {
       
 
 
+
       {/* Sidebar with predefined queries and history */}
       {sidebarOpen && (
         <div className="w-72 border-r bg-card/50 p-4 flex flex-col h-full sidebar overflow-hidden">

@@ -1,18 +1,57 @@
 "use client"
 
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { motion } from "framer-motion"
-import { MessageSquare, Database, BarChart2, Zap, ArrowRight, Brain, Bot, Search } from "lucide-react"
+import { MessageSquare, Database, BarChart2, Zap, ArrowRight, Brain, Bot, Search, History } from "lucide-react"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DjinniLayout } from "@/components/djinni/djinni-layout"
+import { useDjinniStore, DjinniModelType } from "@/lib/djinni/store"
+import { fetchActiveDjinniModel } from "@/lib/djinni/api"
 
 export default function DjinniPage() {
-  const [question, setQuestion] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
+  const { activeModel, setActiveModel } = useDjinniStore()
+  const [loading, setLoading] = useState(true)
+  
+  // Fetch the active model from the server on component mount only
+  useEffect(() => {
+    const getActiveModel = async () => {
+      try {
+        setLoading(true)
+        const serverModel = await fetchActiveDjinniModel()
+        
+        // Check if we have a stored model in localStorage
+        const storedModel = localStorage.getItem('djinni_active_model')
+        
+        if (storedModel && (storedModel === 'factory_astro' || storedModel === 'churn_astro')) {
+          // If we have a valid stored model, use it
+          if (storedModel !== activeModel) {
+            console.log(`Using stored Djinni model: ${storedModel} (server has: ${serverModel})`)
+            setActiveModel(storedModel as DjinniModelType)
+          }
+        } else {
+          // If no stored model, use the server model
+          if (serverModel !== activeModel) {
+            console.log(`Using server Djinni model: ${serverModel}`)
+            setActiveModel(serverModel)
+            // Store the model in localStorage
+            localStorage.setItem('djinni_active_model', serverModel)
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching active model:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    // Initial fetch only, no polling
+    getActiveModel()
+  }, [setActiveModel, activeModel])
   
   // Sample recent conversations
   const recentConversations = [
@@ -62,9 +101,17 @@ export default function DjinniPage() {
       <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
         {/* Header */}
         <div className="flex flex-col">
-          <div className="flex items-center gap-2">
-            <Bot className="h-6 w-6 text-primary" />
-            <h2 className="text-2xl font-bold tracking-tight">Djinni Assistant</h2>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Bot className="h-6 w-6 text-primary" />
+              <h2 className="text-2xl font-bold tracking-tight">Djinni Assistant</h2>
+            </div>
+            <Link href="/conversations">
+              <Button variant="outline" size="sm" className="flex items-center gap-1">
+                <History className="h-4 w-4" />
+                <span>Conversation History</span>
+              </Button>
+            </Link>
           </div>
           <p className="text-sm text-muted-foreground mt-1">Your AI-powered virtual assistant for sales insights and automation</p>
         </div>
@@ -159,39 +206,58 @@ export default function DjinniPage() {
           </CardContent>
         </Card>
         
-        {/* Ask me about section */}
+        {/* Ask me about section - Links to dedicated Astro pages */}
         <Card>
           <CardHeader>
-            <CardTitle>Ask Me About Your Sales Data</CardTitle>
-            <CardDescription>Type your question or select from examples below</CardDescription>
+            <CardTitle>
+              {loading ? (
+                <div className="h-6 w-48 bg-muted animate-pulse rounded"></div>
+              ) : (
+                "Specialized AI Assistants"
+              )}
+            </CardTitle>
+            <CardDescription>
+              {loading ? (
+                <div className="h-4 w-64 bg-muted animate-pulse rounded mt-2"></div>
+              ) : (
+                "Access our specialized AI assistants for your business needs"
+              )}
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex gap-2 mb-6">
-              <Input 
-                placeholder="Ask anything about your data..." 
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                className="flex-1"
-              />
-              <Button>
-                Ask
-              </Button>
-            </div>
-            
-            <div className="space-y-2">
-              {sampleQuestions.map((q, i) => (
-                <div 
-                  key={i} 
-                  className="flex items-center gap-2 p-2 hover:bg-accent rounded-md cursor-pointer"
-                  onClick={() => setQuestion(q)}
-                >
-                  <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full bg-primary/10 text-primary text-xs">
-                    Q
+            {loading ? (
+              <div className="space-y-4">
+                <div className="h-10 bg-muted animate-pulse rounded"></div>
+                <div className="h-20 bg-muted animate-pulse rounded"></div>
+                <div className="h-20 bg-muted animate-pulse rounded"></div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Link href="/djinni/factory-astro" className="block">
+                  <div className="border rounded-lg p-4 hover:border-primary hover:bg-primary/5 transition-colors">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="bg-primary/10 p-2 rounded-full">
+                        <BarChart2 className="h-5 w-5 text-primary" />
+                      </div>
+                      <h3 className="font-medium">Factory Astro</h3>
+                    </div>
+                    <p className="text-sm text-muted-foreground">Get insights and predictions about your factory performance</p>
                   </div>
-                  <p className="text-sm">{q}</p>
-                </div>
-              ))}
-            </div>
+                </Link>
+                
+                <Link href="/djinni/churn-astro" className="block">
+                  <div className="border rounded-lg p-4 hover:border-primary hover:bg-primary/5 transition-colors">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="bg-primary/10 p-2 rounded-full">
+                        <Bot className="h-5 w-5 text-primary" />
+                      </div>
+                      <h3 className="font-medium">Churn Astro</h3>
+                    </div>
+                    <p className="text-sm text-muted-foreground">Analyze customer churn risk and retention strategies</p>
+                  </div>
+                </Link>
+              </div>
+            )}
           </CardContent>
         </Card>
         

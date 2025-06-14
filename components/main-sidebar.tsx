@@ -27,6 +27,7 @@ import {
   Clock
 } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
+import { useDjinniStore } from "@/lib/djinni/store"
 import { motion } from "framer-motion"
 
 interface SidebarMenuItemProps {
@@ -107,9 +108,11 @@ export function MainSidebar() {
     "datapuur": pathname.startsWith("/datapuur"),
     "kginsights": pathname.startsWith("/kginsights"),
     "k-graff": pathname.startsWith("/kginsights"),
-    "sales-overview": pathname === "/" || pathname.startsWith("/sales-performance")
+    "sales-overview": pathname === "/" || pathname.startsWith("/sales-performance"),
+    "djinni-assistant": pathname.startsWith("/djinni")
   })
   const { user, logout } = useAuth()
+  const { activeModel } = useDjinniStore()
   
   // Initialize collapsed state from localStorage
   useEffect(() => {
@@ -136,7 +139,8 @@ export function MainSidebar() {
       "datapuur": pathname.startsWith("/datapuur"),
       "kginsights": pathname.startsWith("/kginsights"),
       "k-graff": pathname.startsWith("/kginsights"),
-      "sales-overview": pathname === "/" || pathname.startsWith("/sales-performance")
+      "sales-overview": pathname === "/" || pathname.startsWith("/sales-performance"),
+      "djinni-assistant": pathname.startsWith("/djinni")
     }))
   }, [pathname])
 
@@ -176,18 +180,91 @@ export function MainSidebar() {
     return user.permissions.includes(item.requiredPermission as string)
   })
   
+  // Track the active model from both Zustand store and localStorage
+  const djinniStore = useDjinniStore();
+  const [activeModelState, setActiveModelState] = useState<string>(() => {
+    // Initialize from localStorage if available, otherwise use store
+    if (typeof window !== 'undefined') {
+      const localModel = localStorage.getItem('djinni_active_model');
+      return localModel || djinniStore.activeModel;
+    }
+    return djinniStore.activeModel;
+  });
+  
+  // Get submenu items based on active model
+  const getActiveModelSubmenu = (model: string) => {
+    console.log(`Generating submenu for model: ${model}`);
+    if (model === "factory_astro") {
+      return [{ label: "Factory Astro", href: "/djinni/factory-astro", icon: Bot }];
+    } else if (model === "churn_astro") {
+      return [{ label: "Churn Astro", href: "/djinni/churn-astro", icon: Bot }];
+    } else {
+      // Default to empty if no active model (should not happen)
+      return [];
+    }
+  };
+  
+  // Check for changes in localStorage and Zustand store
+  useEffect(() => {
+    // Function to check and update the active model
+    const checkActiveModel = () => {
+      if (typeof window !== 'undefined') {
+        const localModel = localStorage.getItem('djinni_active_model');
+        const storeModel = djinniStore.activeModel;
+        
+        // Prioritize localStorage value as it's updated by the admin settings
+        const newModel = localModel || storeModel;
+        
+        if (newModel !== activeModelState) {
+          console.log(`Model changed: ${activeModelState} -> ${newModel}`);
+          setActiveModelState(newModel);
+          
+          // Also update the Zustand store to keep it in sync
+          if (localModel && localModel !== storeModel) {
+            djinniStore.setActiveModel(localModel as any);
+          }
+        }
+      }
+    };
+    
+    // Check immediately
+    checkActiveModel();
+    
+    // Set up an interval to check for changes
+    const intervalId = setInterval(checkActiveModel, 1000);
+    
+    // Set up storage event listener for immediate updates
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'djinni_active_model') {
+        checkActiveModel();
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [djinniStore, activeModelState]);
+  
+  // Generate submenu items based on active model
+  const submenuItems = getActiveModelSubmenu(activeModelState);
+
   const allDjinni: MenuSection[] = [
     {
       label: "Djinni Assistant",
       icon: Bot,
       href: "/djinni",
       key: "djinni-assistant",
-      requiredPermission: "djinni:read"
+      requiredPermission: "djinni:read",
+      subItems: submenuItems
     },
     {
       label: "Conversations",
       icon: Clock,
-      href: "",
+      href: "/conversations",
+      key: "conversations",
       requiredPermission: "djinni:read"
     }
   ]
@@ -458,13 +535,77 @@ export function MainSidebar() {
             )}
             {djinni.map((section) => (
               <div key={section.label} className={cn("py-1", collapsed && "w-full flex justify-center")}>
-                <SidebarMenuItem
-                  href={section.href}
-                  icon={section.icon}
-                  label={section.label}
-                  isActive={!section.href ? false : (section.href === "/" ? pathname === "/" : (pathname === section.href || pathname.startsWith(`${section.href}/`)))}
-                  collapsed={collapsed}
-                />
+                {section.subItems ? (
+                  <div className={cn("space-y-1", collapsed && "w-full flex flex-col items-center")}>
+                    <button
+                      onClick={() => {
+                        if (collapsed) {
+                          // If sidebar is collapsed, expand it first
+                          setCollapsed(false);
+                          localStorage.setItem('datapuur-sidebar-collapsed', 'false');
+                          window.dispatchEvent(new Event('sidebarStateChange'));
+                          
+                          // Then expand the section after a short delay to ensure the sidebar has expanded
+                          setTimeout(() => {
+                            const sectionKey = section.key || section.label.toLowerCase();
+                            setExpandedSections(prev => ({
+                              ...prev,
+                              [sectionKey]: true
+                            }));
+                          }, 100);
+                        } else {
+                          // If sidebar is already expanded, just toggle the section
+                          const sectionKey = section.key || section.label.toLowerCase();
+                          toggleSection(sectionKey);
+                        }
+                      }}
+                      className={cn(
+                        "flex items-center rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                        collapsed ? "justify-center" : "w-full justify-between",
+                        (section.href === "/" ? pathname === "/" : pathname.startsWith(section.href))
+                          ? "bg-accent text-accent-foreground"
+                          : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                      )}
+                      title={collapsed ? section.label : undefined}
+                    >
+                      <div className={cn("flex items-center", !collapsed && "gap-3")}>
+                        <section.icon className="h-4 w-4" />
+                        {!collapsed && <span>{section.label}</span>}
+                      </div>
+                      {!collapsed && (Boolean(expandedSections[section.key || section.label.toLowerCase()]) ? (
+                        <ChevronDown className="h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" />
+                      ))}
+                    </button>
+                    
+                    {Boolean(expandedSections[section.key || section.label.toLowerCase()]) && !collapsed && (
+                      <div className="ml-4 space-y-1 border-l border-border pl-3">
+                        {section.subItems?.map((item) => (
+                          <SidebarMenuItem
+                            key={item.href}
+                            href={item.href}
+                            icon={item.icon}
+                            label={item.label}
+                            isActive={
+                              pathname === item.href ||
+                              (item.href !== section.href && pathname.startsWith(item.href))
+                            }
+                            collapsed={collapsed}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <SidebarMenuItem
+                    href={section.href}
+                    icon={section.icon}
+                    label={section.label}
+                    isActive={section.href === "/" ? pathname === "/" : (!!section.href && (pathname === section.href || pathname.startsWith(`${section.href}/`)))}
+                    collapsed={collapsed}
+                  />
+                )}
               </div>
             ))}
           </div>
