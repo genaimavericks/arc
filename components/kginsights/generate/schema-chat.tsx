@@ -121,7 +121,8 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
   const handleSendMessage = async () => {
     console.log("handleSendMessage called with dataset type:", selectedDatasetType);
     
-    if (!message.trim() || loading) return
+    // Allow empty messages for schema generation
+    if (loading) return
     
     if (!selectedSource) {
       toast({
@@ -605,6 +606,8 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
             onChange={(e) => {
               console.log("Setting message to:", e.target.value);
               setMessage(e.target.value);
+              // Force update the message state immediately
+              e.target.dispatchEvent(new Event('input', { bubbles: true }));
             }}
             onKeyDown={handleKeyDown}
             placeholder="Ask about schema..."
@@ -627,7 +630,9 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
                 handleSendMessage();
               }
             }}
-            disabled={!message.trim() || loading || !selectedSource}
+            disabled={loading || !selectedSource}
+            // Remove the message.trim() check to allow the button to be enabled regardless of message content
+            // This fixes the issue where the button remains disabled even after typing
           >
             {loading ? (
               <Loader2 className="h-4 w-4 animate-spin" />

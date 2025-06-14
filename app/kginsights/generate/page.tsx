@@ -99,6 +99,8 @@ function GenerateGraphContent() {
   const [errorMessage, setErrorMessage] = useState('')
   const [showDomainError, setShowDomainError] = useState(false)
   const [aiAssistantCollapsed, setAiAssistantCollapsed] = useState(false)
+  const [showCustomDomainDialog, setShowCustomDomainDialog] = useState(false)
+  const [customDomain, setCustomDomain] = useState<string>("")
   const successMessageTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const chatRef = useRef<SchemaChatRef>(null)
   const { toast } = useToast()
@@ -240,6 +242,48 @@ function GenerateGraphContent() {
     if (value) {
       setShowDomainError(false)
     }
+    // Reset custom domain when selecting from dropdown
+    setCustomDomain("")
+  }
+
+  const handleCustomDomainClick = () => {
+    setShowCustomDomainDialog(true)
+  }
+  
+  const handleCustomDomainSubmit = () => {
+    if (customDomain) {
+      setDomain(customDomain)
+      setShowDomainError(false)
+    }
+    setShowCustomDomainDialog(false)
+    
+    // Focus on the chat input after closing the dialog
+    setTimeout(() => {
+      const chatInput = document.getElementById('schema-chat-input') as HTMLTextAreaElement
+      if (chatInput) {
+        chatInput.focus()
+        chatInput.disabled = false
+      }
+    }, 100)
+  }
+  
+  const handleCustomDomainCancel = () => {
+    setShowCustomDomainDialog(false)
+    setCustomDomain("")
+    
+    // Focus on the chat input after closing the dialog
+    setTimeout(() => {
+      const chatInput = document.getElementById('schema-chat-input') as HTMLTextAreaElement
+      if (chatInput) {
+        chatInput.focus()
+        chatInput.disabled = false
+      }
+    }, 100)
+  }
+
+  const handleCustomDomainChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value
+    setCustomDomain(value)
   }
 
   const generateSchema = async () => {
@@ -269,8 +313,8 @@ function GenerateGraphContent() {
     if (chatInput) {
       chatInput.focus()
       
-      // If there's text in the input, use the chat's handleSendMessage method
-      if (chatInput.value.trim() && chatRef.current) {
+      // Always call handleSendMessage regardless of input content
+      if (chatRef.current) {
         // Let the chat component handle the message
         await chatRef.current.handleSendMessage()
       }
@@ -570,7 +614,45 @@ function GenerateGraphContent() {
               </div>
             </div>
 
+            <Dialog open={showCustomDomainDialog} onOpenChange={setShowCustomDomainDialog}>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Custom Domain</DialogTitle>
+                  <DialogDescription>
+                    Enter a custom domain to use for schema generation
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                  <div className="grid grid-cols-1 gap-2">
+                    <Label htmlFor="custom-domain" className="text-left">
+                      Domain Details
+                    </Label>
+                    <Input
+                      id="custom-domain"
+                      value={customDomain}
+                      onChange={handleCustomDomainChange}
+                      placeholder="Enter custom domain"
+                      className="col-span-3"
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={handleCustomDomainCancel}>Cancel</Button>
+                  <Button onClick={handleCustomDomainSubmit}>Apply</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
             <div className="flex gap-3 self-end md:self-auto">
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.98 }}>
+                <Button
+                  className="bg-accent hover:bg-accent/90 text-accent-foreground flex items-center gap-2 shadow-md transition-all duration-300 hover:shadow-lg px-6 py-6 h-11 font-medium"
+                  onClick={handleCustomDomainClick}
+                  disabled={loading}
+                >
+                  Custom Domain
+                </Button>
+              </motion.div>
               <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.98 }}>
                 <Button
                   className="bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-2 shadow-md transition-all duration-300 hover:shadow-lg px-6 py-6 h-11 font-medium"
