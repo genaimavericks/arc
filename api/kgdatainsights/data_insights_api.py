@@ -245,7 +245,8 @@ async def process_query(
             
             # Get the answer from the schema-aware agent
             print('Calling query')
-            result = assistant.query(request.query, cypher_queries)
+            # Only pass the query parameter as that's all the method accepts
+            result = assistant.query(request.query)
             print('Returned query result' + str(result))
         else:
             # Initialize the graph if needed

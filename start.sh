@@ -37,16 +37,4 @@ fi
 
 # Start the FastAPI server
 echo "Starting combined server on ${HOST}:${PORT}..."
-
-# Determine the path to the virtual environment's Python interpreter
-if [ -d ".ubvenv" ]; then
-    PYTHON_PATH=".ubvenv/bin/python"
-elif [ -d "$HOME/.ubvenv" ]; then
-    PYTHON_PATH="$HOME/.ubvenv/bin/python"
-else
-    # Fall back to using the current Python in PATH
-    PYTHON_PATH="python"
-fi
-
-# Run the server with the appropriate Python interpreter
-HOST=${HOST} PORT=${PORT} $PYTHON_PATH -m api.run
+HOST=${HOST} PORT=${PORT} python -m api.run

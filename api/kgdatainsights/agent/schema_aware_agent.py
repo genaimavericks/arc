@@ -1293,12 +1293,28 @@ class SchemaAwareGraphAssistant:
         start_time = time.time()
         print(f"Processing query: {question}")
         
+        # Check if initialization is complete
+        if not self.initialization_complete:
+            # Wait for initialization to complete (with timeout)
+            max_wait_time = 10  # seconds
+            wait_start = time.time()
+            while not self.initialization_complete and time.time() - wait_start < max_wait_time:
+                print(f"Waiting for initialization to complete...")
+                time.sleep(0.5)  # Wait a bit and check again
+            
+            # Check if initialization completed or timed out
+            if not self.initialization_complete:
+                if self.initialization_error:
+                    return {"result": f"Error initializing the assistant: {self.initialization_error}"}
+                else:
+                    return {"result": "The assistant is still initializing. Please try again in a few moments."}
+        
         try:
             # Special handling for schema-related questions
             if any(keyword in question.lower() for keyword in ["schema", "structure", "model", "nodes", "relationships", "node types", "relationship types"]):
                 print("DEBUG: Schema-related question detected, using direct schema information")
                 return {"result": f"Here's the schema of the graph:\n\n{self.formatted_schema}"}
-                
+                    
             # Try the direct approach with our custom prompts
             try:
                 # Step 1: Generate Cypher query using the cypher_prompt
