@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from sqlalchemy.exc import SQLAlchemyError
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import logging
 import json
 import asyncio
@@ -1253,6 +1253,76 @@ async def get_transformation_plans_by_source_id(
         raise HTTPException(status_code=500, detail=f"Error getting transformation plans by source ID: {str(e)}")
 
 
+def extract_schema_from_file(file_path: str) -> Dict[str, Any]:
+    """Extract schema information from a data file when no profile session is available.
+    
+    Args:
+        file_path: Path to the data file (supports CSV, Parquet, Excel)
+        
+    Returns:
+        Dict with schema information in the format required by transformation_agent
+    """
+    schema_info = {}
+    
+    try:
+        import pandas as pd
+        import os
+        
+        # Check if file exists
+        if not os.path.exists(file_path):
+            logger.warning(f"File does not exist: {file_path}")
+            return schema_info
+        
+        # Determine file type based on extension
+        file_extension = os.path.splitext(file_path)[1].lower()
+        
+        # Read the first few rows to infer schema (limiting rows to optimize performance)
+        if file_extension == '.csv':
+            df = pd.read_csv(file_path, nrows=1000)
+        elif file_extension in ['.xls', '.xlsx']:
+            df = pd.read_excel(file_path, nrows=1000)
+        elif file_extension == '.parquet':
+            df = pd.read_parquet(file_path)
+        else:
+            logger.warning(f"Unsupported file type: {file_extension}")
+            return schema_info
+        
+        # Extract schema information for each column
+        for column in df.columns:
+            # Get column data type
+            pd_dtype = df[column].dtype
+            if pd.api.types.is_numeric_dtype(pd_dtype):
+                if pd.api.types.is_integer_dtype(pd_dtype):
+                    dtype = 'integer'
+                else:
+                    dtype = 'float'
+            elif pd.api.types.is_datetime64_dtype(pd_dtype):
+                dtype = 'datetime'
+            elif pd.api.types.is_bool_dtype(pd_dtype):
+                dtype = 'boolean'
+            else:
+                dtype = 'string'
+            
+            # Check nullability
+            nullable = df[column].isnull().any()
+            
+            # Add column schema info
+            schema_info[column] = {
+                'type': dtype,
+                'nullable': nullable,
+                'unique_count': df[column].nunique()
+            }
+        
+        logger.info(f"Successfully extracted schema from file: {file_path}")
+        return schema_info
+    
+    except Exception as e:
+        logger.error(f"Error extracting schema from file: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return schema_info
+
+
 @router.post("/transformations/draft", response_model=TransformationPlanResponse)
 async def create_draft_transformation_plan(
     request: TransformationPlanCreate,
@@ -1307,12 +1377,21 @@ async def create_draft_transformation_plan(
         if request.input_instructions:
             user_requirements = f"{user_requirements}\n\n{request.input_instructions}"
         
+        # Extract schema info from file if available and not already provided by profile session
+        schema_info = {}
+        if file_path and not schema_info:
+            print(f"[Transformation] Extracting schema info from file: {file_path}")
+            schema_info = extract_schema_from_file(file_path)
+            print(f"[Transformation] Schema info extracted with {len(schema_info)} columns")
+
+        print(f"[Transformation] Schema info: {schema_info}")
         # Generate the plan using the transformation agent
         plan_data = transformation_agent.create_transformation_plan(
             profile_summary=profile_summary,
             quality_issues=quality_issues,
             suggestions=suggestions,
-            user_requirements=user_requirements
+            user_requirements=user_requirements,
+            schema_info=schema_info
         )
         
         print(f"[Transformation] AI generated plan with {len(plan_data.get('steps', []))} steps")
@@ -1490,10 +1569,18 @@ async def create_draft_transformation_plan(
                         # Ensure the output directory exists
                         os.makedirs(os.path.dirname(output_file_path), exist_ok=True)
                         
+                        # Extract schema info from file if we don't have it from a profile
+                        schema_info = {}
+                        if session.file_path:
+                            print(f"[Transformation] Extracting schema info from session file: {session.file_path}")
+                            schema_info = extract_schema_from_file(session.file_path)
+                            print(f"[Transformation] Schema info extracted with {len(schema_info)} columns")
+
                         script = transformation_agent.generate_transformation_script(
                             input_file_path=session.file_path,
                             transformation_steps=plan.transformation_steps,
-                            output_file_path=output_file_path
+                            output_file_path=output_file_path,
+                            schema_info=schema_info
                         )
                         plan.transformation_script = script
                         print(f"[Transformation] Script generated successfully with output to {output_file_path} from session, length: {len(script)}")
@@ -1681,10 +1768,19 @@ async def create_transformation_plan(
                     import os
                     os.makedirs(os.path.dirname(generic_output), exist_ok=True)
                     
+                    # For generic scripts, we may not have a real input file to extract schema from
+                    # but we should still try if the generic_input exists
+                    schema_info = {}
+                    if os.path.exists(generic_input):
+                        print(f"[Transformation] Extracting schema info from generic input file: {generic_input}")
+                        schema_info = extract_schema_from_file(generic_input)
+                        print(f"[Transformation] Schema info extracted with {len(schema_info)} columns")
+
                     script = transformation_agent.generate_transformation_script(
                         input_file_path=generic_input,
                         transformation_steps=plan.transformation_steps,
-                        output_file_path=generic_output
+                        output_file_path=generic_output,
+                        schema_info=schema_info
                     )
                     plan.transformation_script = script
                     plan.output_file_path = generic_output
@@ -1856,10 +1952,18 @@ async def create_transformation_message(
             previous_steps = copy.deepcopy(plan.transformation_steps) or []
             
             try:
+                # Extract schema information if session has a file path
+                schema_info = {}
+                if session and hasattr(session, 'file_path') and session.file_path:
+                    print(f"[Transformation] Extracting schema for plan refinement from: {session.file_path}")
+                    schema_info = extract_schema_from_file(session.file_path)
+                    print(f"[Transformation] Schema extracted with {len(schema_info)} columns for plan refinement")
+                
                 # The refine_transformation_plan method takes current_plan (as a dict) and refinement_request
                 response_data = transformation_agent.refine_transformation_plan(
                     current_plan=current_plan,
-                    refinement_request=request.content
+                    refinement_request=request.content,
+                    schema_info=schema_info
                 )
             except Exception as e:
                 logger.error(f"Error in transformation agent: {str(e)}")

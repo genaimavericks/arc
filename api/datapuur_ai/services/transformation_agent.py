@@ -22,7 +22,8 @@ class TransformationAgent:
                                  profile_summary: Dict[str, Any],
                                  quality_issues: List[Dict[str, Any]],
                                  suggestions: List[Dict[str, Any]],
-                                 user_requirements: Optional[str] = None) -> Dict[str, Any]:
+                                 user_requirements: Optional[str] = None,
+                                 schema_info: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Create a transformation plan based on profile findings"""
         
         # Prepare context
@@ -30,11 +31,23 @@ class TransformationAgent:
             profile_summary, quality_issues, suggestions, user_requirements
         )
         
+        # Extract schema information if available
+        schema_description = ""
+        if schema_info:
+            columns_info = []
+            for col_name, col_details in schema_info.items():
+                data_type = col_details.get('type', 'unknown')
+                nullable = col_details.get('nullable', True)
+                columns_info.append(f"- {col_name}: {data_type}, {'nullable' if nullable else 'not nullable'}")
+            
+            schema_description = "\nData Schema:\n" + "\n".join(columns_info)
+        
         # Generate transformation plan
         prompt = f"""
 Based on this data profile analysis:
 
 {context}
+{schema_description if schema_info else ''}
 
 Create a comprehensive data transformation plan. Include:
 1. Transformation steps in order of priority
@@ -207,6 +220,8 @@ Example of a valid step:
             
             schema_description = "\nData Schema:\n" + "\n".join(columns_info)
         
+        print("AGENT SCHEMA - ", schema_description)
+        
         # Extract profile summary information if available
         profile_description = ""
         if profile_summary:
@@ -271,14 +286,26 @@ PROVIDE ONLY VALID PYTHON CODE WITH NO EXPLANATORY TEXT, MARKDOWN, OR ANYTHING E
     
     def refine_transformation_plan(self,
                                  current_plan: Dict[str, Any],
-                                 refinement_request: str) -> Dict[str, Any]:
+                                 refinement_request: str,
+                                 schema_info: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Refine transformation plan based on user feedback"""
+        
+        # Extract schema information if available
+        schema_description = ""
+        if schema_info:
+            columns_info = []
+            for col_name, col_details in schema_info.items():
+                data_type = col_details.get('type', 'unknown')
+                nullable = col_details.get('nullable', True)
+                columns_info.append(f"- {col_name}: {data_type}, {'nullable' if nullable else 'not nullable'}")        
+            schema_description = "\nData Schema:\n" + "\n".join(columns_info)
         
         prompt = f"""
 Current transformation plan:
 {json.dumps(current_plan, indent=2)}
 
 User refinement request: {refinement_request}
+{schema_description if schema_info else ''}
 
 Modify the transformation plan according to the request. You can:
 1. Add new transformation steps
