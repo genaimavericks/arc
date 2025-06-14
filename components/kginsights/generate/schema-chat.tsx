@@ -37,6 +37,7 @@ interface SchemaChatProps {
   selectedSourceName: string
   selectedDatasetType?: "source" | "transformed" | ""
   domain: string
+  customDomainFiles?: { [key: string]: string }
   onSchemaGenerated: (schema: any, cypher: string) => void
   loading: boolean
   setLoading: (loading: boolean) => void
@@ -47,6 +48,7 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
   selectedSourceName,
   selectedDatasetType = "source",
   domain,
+  customDomainFiles = {},
   onSchemaGenerated,
   loading,
   setLoading
@@ -121,7 +123,8 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
   const handleSendMessage = async () => {
     console.log("handleSendMessage called with dataset type:", selectedDatasetType);
     
-    if (!message.trim() || loading) return
+    // Allow empty messages for schema generation
+    if (loading) return
     
     if (!selectedSource) {
       toast({
@@ -245,7 +248,10 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
         file_path: filePath
       });
       
-      // Use the correct API route - the router is mounted at /api prefix in main.py
+      // Check if the domain is a custom domain with a file path
+      const customDomainFilePath = customDomainFiles[domain];
+      console.log("Custom domain check:", { domain, customDomainFilePath, customDomainFiles });
+      
       const response = await fetch("/api/graphschema/build-schema-from-source", {
         method: "POST",
         headers: {
@@ -256,8 +262,9 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
           source_id: selectedSource,
           metadata: JSON.stringify(enhancedMetadata),
           file_path: filePath,
-          dataset_type: selectedDatasetType, // Add dataset type to the payload
-          domain: domain
+          dataset_type: selectedDatasetType,
+          domain: domain,
+          custom_domain_file: customDomainFilePath // Add custom domain file path if available
         }),
       })
       
@@ -392,7 +399,8 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
           current_schema: currentSchema,
           feedback: message,
           file_path: filePath, // Reuse stored file path
-          domain: domain // Include domain information
+          domain: domain, // Include domain information
+          custom_domain_file: customDomainFiles?.[domain] // Include custom domain file if available
         }),
       })
       
@@ -605,6 +613,8 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
             onChange={(e) => {
               console.log("Setting message to:", e.target.value);
               setMessage(e.target.value);
+              // Force update the message state immediately
+              e.target.dispatchEvent(new Event('input', { bubbles: true }));
             }}
             onKeyDown={handleKeyDown}
             placeholder="Ask about schema..."
@@ -627,7 +637,9 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
                 handleSendMessage();
               }
             }}
-            disabled={!message.trim() || loading || !selectedSource}
+            disabled={loading || !selectedSource}
+            // Remove the message.trim() check to allow the button to be enabled regardless of message content
+            // This fixes the issue where the button remains disabled even after typing
           >
             {loading ? (
               <Loader2 className="h-4 w-4 animate-spin" />

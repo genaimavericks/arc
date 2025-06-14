@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from .agent.graph_schema_agent import GraphSchemaAgent
@@ -163,6 +163,11 @@ def reset_schemas_for_db_id(target_db_id, db=None):
         "errors": errors
     }
 
+# Custom domain upload response model
+class CustomDomainUploadResponse(BaseModel):
+    file_path: str
+    message: str
+
 # Models
 class SchemaResult(BaseModel):
     schema: dict
@@ -175,6 +180,7 @@ class SourceIdInput(BaseModel):
     source_id: str
     metadata: str = None  # Optional metadata about the data
     file_path: str = None  # Add file_path field to accept path from frontend
+    custom_domain_file: str = None  # Add custom_domain_file field
     domain: str = None  # Data domain (e.g., 'telecom_churn', 'foam_factory')
     dataset_type: str = "source"  # Can be 'source' or 'transformed'
 
@@ -194,6 +200,7 @@ class RefineSchemaInput(BaseModel):
     feedback: str
     file_path: str = None  # Optional file path, similar to SourceIdInput
     domain: str = None  # Data domain (e.g., 'telecom_churn', 'foam_factory')
+    custom_domain_file: str = None
 
 class ApplySchemaInput(BaseModel):
     schema_id: int
@@ -564,9 +571,24 @@ async def build_schema_from_source(
         
         # Read domain-specific data from text files
         domain_data = ""
-        if source_input.domain:
+        
+        # Check if a custom domain file was provided
+        if source_input.custom_domain_file and os.path.exists(source_input.custom_domain_file):
+            try:
+                print(f"DEBUG: Reading custom domain file: {source_input.custom_domain_file}")
+                with open(source_input.custom_domain_file, 'r', encoding='utf-8') as custom_file:
+                    domain_data = custom_file.read()
+                print(f"DEBUG: Custom domain file read successfully, length: {len(domain_data)} characters")
+            except Exception as e:
+                print(f"WARNING: Failed to read custom domain file: {str(e)}")
+                # Fall back to standard domain if custom file reading fails
+                if source_input.domain:
+                    domain_data = read_domain_data(source_input.domain)
+                    print(f"DEBUG: Falling back to standard domain data, length: {len(domain_data)} characters")
+        # If no custom domain file or reading failed, use standard domain
+        elif source_input.domain:
             domain_data = read_domain_data(source_input.domain)
-            print(f"DEBUG: Domain data length: {len(domain_data)} characters")
+            print(f"DEBUG: Using standard domain data, length: {len(domain_data)} characters")
         
         try:
             # Set up initial state with domain information
@@ -577,7 +599,8 @@ async def build_schema_from_source(
                 "schema": None,
                 "cypher": None,
                 "error": None,
-                "domain": source_input.domain  # Include domain information
+                "domain": source_input.domain,  # Include domain information
+                "custom_domain_file": source_input.custom_domain_file  # Include custom domain file path
             }
             
             agent_instance = GraphSchemaAgent(
@@ -791,9 +814,24 @@ async def refine_schema(
         
         # Read domain-specific data from text files
         domain_data = ""
-        if refine_input.domain:
+        
+        # Check if a custom domain file was provided
+        if refine_input.custom_domain_file and os.path.exists(refine_input.custom_domain_file):
+            try:
+                print(f"DEBUG: Reading custom domain file: {refine_input.custom_domain_file}")
+                with open(refine_input.custom_domain_file, 'r', encoding='utf-8') as custom_file:
+                    domain_data = custom_file.read()
+                print(f"DEBUG: Custom domain file read successfully, length: {len(domain_data)} characters")
+            except Exception as e:
+                print(f"WARNING: Failed to read custom domain file: {str(e)}")
+                # Fall back to standard domain if custom file reading fails
+                if refine_input.domain:
+                    domain_data = read_domain_data(refine_input.domain)
+                    print(f"DEBUG: Falling back to standard domain data, length: {len(domain_data)} characters")
+        # If no custom domain file or reading failed, use standard domain
+        elif refine_input.domain:
             domain_data = read_domain_data(refine_input.domain)
-            print(f"DEBUG: Domain data length: {len(domain_data)} characters")
+            print(f"DEBUG: Using standard domain data, length: {len(domain_data)} characters")
         
         # Initialize agent with the provided file path and current schema
         agent_instance = GraphSchemaAgent(
@@ -818,7 +856,8 @@ async def refine_schema(
             "cypher": None,
             "error": None,
             "current_schema": refine_input.current_schema,  # Explicitly include current schema in initial state
-            "domain": refine_input.domain  # Include domain information
+            "domain": refine_input.domain,  # Include domain information
+            "custom_domain_file": refine_input.custom_domain_file  # Include custom domain file path
         }
         
         print(f"DEBUG: Using domain: {refine_input.domain}")
@@ -1853,6 +1892,88 @@ async def load_data_to_neo4j(
         print(f"ERROR: Unhandled exception in load_data_to_neo4j: {str(e)}")
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Error loading data: {str(e)}")
+
+# Custom domain endpoints
+@router.post('/upload-custom-domain', response_model=CustomDomainUploadResponse)
+async def upload_custom_domain(
+    file: UploadFile = File(...),
+    current_user: User = Depends(has_any_permission(["kginsights:write"]))
+):
+    """
+    Upload a custom domain file and save it to the custom-domains directory.
+    
+    Args:
+        file: The uploaded text file
+        current_user: Current authenticated user
+        
+    Returns:
+        Dict with file path and success message
+    """
+    import os
+    from pathlib import Path
+    
+    try:
+        # Validate file type
+        if not file.filename.endswith('.txt'):
+            raise HTTPException(status_code=400, detail="Only text (.txt) files are allowed")
+        
+        # Create custom domains directory if it doesn't exist
+        custom_domains_dir = Path("runtime-data/output/custom-domains")
+        custom_domains_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate file path
+        file_path = os.path.join(custom_domains_dir, file.filename)
+        
+        # Save the file
+        contents = await file.read()
+        with open(file_path, "wb") as f:
+            f.write(contents)
+        
+        return {
+            "file_path": file_path,
+            "message": f"Custom domain file {file.filename} uploaded successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error uploading custom domain file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to upload file: {str(e)}")
+
+@router.get('/list-custom-domains', response_model=dict)
+async def list_custom_domains(
+    current_user: User = Depends(has_any_permission(["kginsights:read", "datapuur:read"]))
+):
+    """
+    List all available custom domain files in the custom-domains directory.
+    
+    Args:
+        current_user: Current authenticated user
+        
+    Returns:
+        Dict with list of custom domain files and their paths
+    """
+    import os
+    from pathlib import Path
+    
+    try:
+        # Get custom domains directory
+        custom_domains_dir = Path("runtime-data/output/custom-domains")
+        custom_domains_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Get all .txt files in the directory
+        custom_domain_files = {}
+        for file in custom_domains_dir.glob("*.txt"):
+            # Use the filename without extension as the domain name
+            domain_name = file.stem
+            custom_domain_files[domain_name] = str(file)
+        
+        return {
+            "domains": list(custom_domain_files.keys()),
+            "domain_files": custom_domain_files
+        }
+    except Exception as e:
+        print(f"Error listing custom domain files: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to list custom domain files: {str(e)}")
 
 # Neo4j graphs endpoint removed - now using database configuration directly in other endpoints
 

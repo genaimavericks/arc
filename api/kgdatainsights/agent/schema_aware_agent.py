@@ -8,14 +8,15 @@ import re
 import asyncio
 from pathlib import Path
 from uuid import uuid4
-from typing import Dict, Any
+from typing import Dict, Any, Optional, Callable
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from dotenv import load_dotenv
 from langchain.chains import GraphCypherQAChain
-from langchain.graphs import Neo4jGraph
 from langchain.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_neo4j import (
-    Neo4jChatMessageHistory
+    Neo4jChatMessageHistory,
+    Neo4jGraph
 )
 
 from .cache import Cache
@@ -126,13 +127,17 @@ class SchemaAwareGraphAssistant:
                 provider_name=LLMConstants.Providers.OPENAI, 
                 model_name=LLMConstants.OpenAIModels.DEFAULT, 
                 temperature=0.0
+                # Note: request_timeout is handled separately in _invoke_llm_with_retry
             )
             
             # Load the custom prompts for this source
             self._load_prompts()
             
             # Initialize Neo4j Graph connection
-            self.graph = Neo4jGraph(
+            # Import the correct GraphStore implementation
+            from langchain_community.graphs import Neo4jGraph as CommunityNeo4jGraph
+            
+            self.graph = CommunityNeo4jGraph(
                 url=self.connection_params.get("uri"),
                 username=self.connection_params.get("username"),
                 password=self.connection_params.get("password"),
@@ -151,7 +156,10 @@ class SchemaAwareGraphAssistant:
             )
             
             # Initialize QA chain with Neo4j optimizations using modular LangChain pattern
-            print(f"DEBUG: Initializing GraphCypherQAChain using langchain_neo4j pattern")
+            print(f"DEBUG: Initializing GraphCypherQAChain using langchain_community pattern")
+            
+            # Import the correct GraphCypherQAChain implementation
+            from langchain_community.chains.graph_qa.cypher import GraphCypherQAChain as CommunityGraphCypherQAChain
             
             # Create a structured chain configuration dictionary
             chain_config = {
@@ -193,8 +201,8 @@ class SchemaAwareGraphAssistant:
                     print(f"DEBUG: Using original QA prompt - may cause errors")
                     chain_config["qa_prompt"] = self.qa_prompt
             
-            # Initialize with the validated configuration
-            self.chain = GraphCypherQAChain.from_llm(**chain_config)
+            # Initialize with the validated configuration using the community implementation
+            self.chain = CommunityGraphCypherQAChain.from_llm(**chain_config)
             print(f"DEBUG: Successfully initialized GraphCypherQAChain")
             
             # Mark initialization as complete
@@ -562,7 +570,7 @@ class SchemaAwareGraphAssistant:
         """
         
         try:
-            # Generate Cypher prompt template
+            # Generate Cypher prompt template with retry
             print(f"Generating Cypher prompt template for {self.db_id}...")
             cypher_messages = [
                 {"role": "system", "content": cypher_system_prompt},
@@ -570,8 +578,8 @@ class SchemaAwareGraphAssistant:
             ]
             llm_local = LLMProvider.get_llm(provider_name=LLMConstants.Providers.GOOGLE, model_name=LLMConstants.GoogleModels.DEFAULT, temperature=0.0)
             
-            cypher_response = llm_local.invoke(cypher_messages)
-            cypher_prompt_template = cypher_response.content.strip()
+            # Use retry mechanism for Cypher prompt generation
+            cypher_prompt_template = self._generate_prompt_with_retry(llm_local, cypher_messages, "Cypher prompt")
             
             import pandas as pd
             import tempfile
@@ -631,14 +639,14 @@ class SchemaAwareGraphAssistant:
             cypher_prompt_template = cypher_prompt_template.replace("{context}", "")
 
             
-            # Generate QA prompt template
+            # Generate QA prompt template with retry
             print(f"Generating QA prompt template for {self.db_id}...")
             qa_messages = [
                 {"role": "system", "content": qa_system_prompt},
                 {"role": "user", "content": f"Use this Neo4j schema: {self.formatted_schema} for generating QA prompt as per following instructions:\n\n{qa_prompt_instruction}"}
             ]
-            qa_response = llm_local.invoke(qa_messages)
-            qa_prompt_template = qa_response.content.strip()
+            # Use retry mechanism for QA prompt generation
+            qa_prompt_template = self._generate_prompt_with_retry(llm_local, qa_messages, "QA prompt")
             
             # Apply Neo4j property syntax escaping to prevent template variable confusion
             qa_prompt_template = self._escape_neo4j_properties(qa_prompt_template)
@@ -649,39 +657,14 @@ class SchemaAwareGraphAssistant:
             # Generate sample data JSON
             sample_data = self._generate_sample_data_json()
             print(f"Sample data JSON for Queries!!!: {sample_data}")
-            # Generate sample queries
+            # Generate sample queries with retry
             sample_queries_messages = [
                 {"role": "system", "content": sample_queries_system_prompt},
                 {"role": "user", "content": f"Use this Neo4j schema: {self.formatted_schema} and the data to use: {sample_data} for generating sample questions prompt as per following instruction: \n\n{sample_queries_instruction}"}
             ]
-            sample_queries_response = llm_local.invoke(sample_queries_messages)
             
-            # Extract JSON array from response
-            try:
-                # Attempt to parse the response as JSON
-                sample_queries_text = sample_queries_response.content.strip()
-                # Extract JSON array if it's wrapped in markdown code blocks or additional text
-                if "```json" in sample_queries_text and "```" in sample_queries_text:
-                    # Extract content between ```json and ```
-                    json_content = sample_queries_text.split("```json")[1].split("```")[0].strip()
-                    sample_queries = json.loads(json_content)
-                elif "[" in sample_queries_text and "]" in sample_queries_text:
-                    # Find the first [ and last ] in the text
-                    start_idx = sample_queries_text.find("[")
-                    end_idx = sample_queries_text.rfind("]")+1
-                    json_content = sample_queries_text[start_idx:end_idx]
-                    sample_queries = json.loads(json_content)
-                else:
-                    # Try parsing the whole response
-                    sample_queries = json.loads(sample_queries_text)
-            except Exception as e:
-                print(f"Error parsing sample queries JSON: {e}")
-                # Fallback to default sample queries
-                sample_queries = [
-                    "What are the main entities in this knowledge graph?",
-                    "How many nodes and relationships are in the graph?",
-                    "What is the overall structure of this knowledge graph?"
-                ]
+            # Use retry mechanism for sample queries generation and parsing
+            sample_queries = self._generate_sample_queries_with_retry(llm_local, sample_queries_messages, sample_data)
                             
             # Create prompts dictionary
             prompts = {
@@ -1060,8 +1043,192 @@ class SchemaAwareGraphAssistant:
             for msg in self.history.messages[-5:] if msg.type == "ai"
         )
 
-    @cacheable()
-    def _extract_valid_cypher_query(self, llm_output: str) -> str:
+    @retry(stop=stop_after_attempt(3),
+           wait=wait_exponential(multiplier=1, min=2, max=10),
+           retry=retry_if_exception_type((TimeoutError, ConnectionError, Exception)))
+    def _invoke_llm_with_retry(self, llm, prompt_formatted, timeout=30) -> str:
+        """Invoke LLM with retry logic for timeouts and connection errors"""
+        try:
+            # Safely get attempt number with a default value of 1
+            attempt = 1
+            if hasattr(self._invoke_llm_with_retry, 'retry') and hasattr(self._invoke_llm_with_retry.retry, 'statistics'):
+                attempt = self._invoke_llm_with_retry.retry.statistics.get('attempt_number', 1)
+            print(f"Invoking LLM (attempt {attempt})")
+            
+            # Use asyncio to implement timeout
+            async def invoke_with_timeout():
+                loop = asyncio.get_event_loop()
+                return await loop.run_in_executor(None, lambda: llm.invoke(prompt_formatted))
+            
+            # Run with timeout
+            result = asyncio.run(asyncio.wait_for(invoke_with_timeout(), timeout))
+            return result
+        except Exception as e:
+            print(f"Error invoking LLM: {str(e)}")
+            # If this is the final retry attempt, return None
+            attempt = 1
+            if hasattr(self._invoke_llm_with_retry, 'retry') and hasattr(self._invoke_llm_with_retry.retry, 'statistics'):
+                attempt = self._invoke_llm_with_retry.retry.statistics.get('attempt_number', 1)
+            if attempt >= 3:
+                return None
+            raise
+
+    @retry(stop=stop_after_attempt(3),
+           wait=wait_exponential(multiplier=1, min=2, max=10),
+           retry=retry_if_exception_type((TimeoutError, ConnectionError, Exception)))
+    def _extract_valid_cypher_with_retry(self, llm_output: str):
+        """Extract a valid Cypher query with retry logic for parsing failures"""
+        try:
+            # Safely get attempt number with a default value of 1
+            attempt = 1
+            if hasattr(self._extract_valid_cypher_with_retry, 'retry') and hasattr(self._extract_valid_cypher_with_retry.retry, 'statistics'):
+                attempt = self._extract_valid_cypher_with_retry.retry.statistics.get('attempt_number', 1)
+            print(f"Extracting Cypher query (attempt {attempt})")
+            
+            result = self._extract_valid_cypher_query(llm_output)
+            if result is None:
+                raise ValueError("Failed to extract valid Cypher query")
+            return result
+        except Exception as e:
+            print(f"Error extracting Cypher query: {str(e)}")
+            # If this is the final retry attempt, return None
+            attempt = 1
+            if hasattr(self._extract_valid_cypher_with_retry, 'retry') and hasattr(self._extract_valid_cypher_with_retry.retry, 'statistics'):
+                attempt = self._extract_valid_cypher_with_retry.retry.statistics.get('attempt_number', 1)
+            if attempt >= 3:
+                return None
+            raise
+            
+    @retry(stop=stop_after_attempt(3),
+           wait=wait_exponential(multiplier=1, min=2, max=10),
+           retry=retry_if_exception_type((TimeoutError, ConnectionError, Exception)))
+    def _generate_prompt_with_retry(self, llm, messages, prompt_type="prompt"):
+        """Generate a prompt template with retry logic for LLM failures"""
+        try:
+            # Safely get attempt number with a default value of 1
+            attempt = 1
+            if hasattr(self._generate_prompt_with_retry, 'retry') and hasattr(self._generate_prompt_with_retry.retry, 'statistics'):
+                attempt = self._generate_prompt_with_retry.retry.statistics.get('attempt_number', 1)
+            print(f"Generating {prompt_type} (attempt {attempt})")
+            
+            # Convert messages to the format expected by the LLM
+            from langchain_core.messages import SystemMessage, HumanMessage
+            lc_messages = []
+            for msg in messages:
+                if msg.get('role') == 'system':
+                    lc_messages.append(SystemMessage(content=msg['content']))
+                elif msg.get('role') == 'user':
+                    lc_messages.append(HumanMessage(content=msg['content']))
+            
+            # Use the correct API for the LLM
+            result = llm.invoke(lc_messages).content.strip()
+            
+            # Validate the response - ensure it's not empty and has reasonable length
+            if not result or len(result) < 20:
+                raise ValueError(f"Generated {prompt_type} is too short or empty")
+                
+            return result
+        except Exception as e:
+            print(f"Error generating {prompt_type}: {str(e)}")
+            # If this is the final retry attempt, raise the exception to fail explicitly
+            attempt = 1
+            if hasattr(self._generate_prompt_with_retry, 'retry') and hasattr(self._generate_prompt_with_retry.retry, 'statistics'):
+                attempt = self._generate_prompt_with_retry.retry.statistics.get('attempt_number', 1)
+            if attempt >= 3:
+                raise RuntimeError(f"Failed to generate {prompt_type} after multiple retries: {str(e)}")
+            raise
+    
+    @retry(stop=stop_after_attempt(3),
+           wait=wait_exponential(multiplier=1, min=2, max=10),
+           retry=retry_if_exception_type((TimeoutError, ConnectionError, Exception)))
+    def _generate_sample_queries_with_retry(self, llm, messages, sample_data):
+        """Generate sample queries with retry logic for LLM failures and JSON parsing"""
+        try:
+            # Safely get attempt number with a default value of 1
+            attempt = 1
+            if hasattr(self._generate_sample_queries_with_retry, 'retry') and hasattr(self._generate_sample_queries_with_retry.retry, 'statistics'):
+                attempt = self._generate_sample_queries_with_retry.retry.statistics.get('attempt_number', 1)
+            print(f"Generating sample queries (attempt {attempt})")
+            
+            # Convert messages to the format expected by the LLM
+            from langchain_core.messages import SystemMessage, HumanMessage
+            lc_messages = []
+            for msg in messages:
+                if msg.get('role') == 'system':
+                    lc_messages.append(SystemMessage(content=msg['content']))
+                elif msg.get('role') == 'user':
+                    lc_messages.append(HumanMessage(content=msg['content']))
+            
+            # Use the correct API for the LLM
+            result = llm.invoke(lc_messages).content.strip()
+            
+            # Validate the response - ensure it's not empty
+            if not result:
+                raise ValueError("Generated sample queries response is empty")
+            
+            # Try to parse as JSON
+            try:
+                import json
+                import re
+                
+                # First, try to extract JSON array if embedded in other text
+                json_match = re.search(r'\[\s*".*"\s*\]', result, re.DOTALL)
+                if json_match:
+                    result = json_match.group(0)
+                
+                # Parse the JSON
+                queries = json.loads(result)
+                
+                # Validate the parsed result is a list with at least a few items
+                if not isinstance(queries, list) or len(queries) < 3:
+                    raise ValueError(f"Invalid sample queries format or too few queries: {result}")
+                    
+                return queries
+            except json.JSONDecodeError as json_err:
+                print(f"JSON parsing error for sample queries: {str(json_err)}")
+                raise ValueError(f"Failed to parse sample queries as JSON: {str(json_err)}")
+                
+        except Exception as e:
+            print(f"Error generating sample queries: {str(e)}")
+            # If this is the final retry attempt, return a minimal set of generic queries
+            attempt = 1
+            if hasattr(self._generate_sample_queries_with_retry, 'retry') and hasattr(self._generate_sample_queries_with_retry.retry, 'statistics'):
+                attempt = self._generate_sample_queries_with_retry.retry.statistics.get('attempt_number', 1)
+            if attempt >= 3:
+                print("Falling back to generic sample queries after multiple retry failures")
+                return ["What data is available in the graph?", "Show me the schema of this graph", "What are the main node types?"]
+            raise
+            
+    @retry(stop=stop_after_attempt(3),
+           wait=wait_exponential(multiplier=1, min=2, max=10),
+           retry=retry_if_exception_type((TimeoutError, ConnectionError, Exception)))
+    def _generate_qa_response_with_retry(self, llm, prompt_formatted, timeout=30):
+        """Generate QA response with retry logic for parsing failures"""
+        try:
+            # Safely get attempt number with a default value of 1
+            attempt = 1
+            if hasattr(self._generate_qa_response_with_retry, 'retry') and hasattr(self._generate_qa_response_with_retry.retry, 'statistics'):
+                attempt = self._generate_qa_response_with_retry.retry.statistics.get('attempt_number', 1)
+            print(f"Generating QA response (attempt {attempt})")
+            
+            result = self._invoke_llm_with_retry(llm, prompt_formatted, timeout=timeout)
+            
+            # Validate the response - ensure it's not empty and has reasonable length
+            if not result or len(result.strip()) < 10:
+                raise ValueError("Generated QA response is too short or empty")
+                
+            return result
+        except Exception as e:
+            print(f"Error generating QA response: {str(e)}")
+            # If this is the final retry attempt, return a user-friendly message
+            attempt = 1
+            if hasattr(self._generate_qa_response_with_retry, 'retry') and hasattr(self._generate_qa_response_with_retry.retry, 'statistics'):
+                attempt = self._generate_qa_response_with_retry.retry.statistics.get('attempt_number', 1)
+            if attempt >= 3:
+                return "I found some information but couldn't generate a complete response. Please try rephrasing your question."
+            raise
+
+    def _extract_valid_cypher_query(self, llm_output: str):
         """
         Extract a valid Cypher query from the LLM's output.
         
@@ -1071,170 +1238,127 @@ class SchemaAwareGraphAssistant:
         Returns:
             str: A clean, executable Cypher query
         """
-        print(f"DEBUG: Extracting valid Cypher query from LLM output")
-        print(f"DEBUG: Raw LLM output:\n{llm_output}")
-        
-        # List of valid Cypher keywords to check for
-        valid_keywords = ["MATCH", "RETURN", "CREATE", "MERGE", "WITH", "CALL", "OPTIONAL", "UNWIND"]
-        
-        # Check if the output contains 'cypher query:' pattern
-        try:
-            match = re.search(r'cypher query:\s*(.+?)(?:\n|$)', llm_output, re.IGNORECASE)
-            if match:
-                query = match.group(1).strip()
-                print(f"DEBUG: Found query using 'cypher query:' pattern: {query}")
-                return query
-        except Exception as e:
-            print(f"WARNING: Error in 'cypher query:' pattern matching: {str(e)}")
-        
-        # Look for numbered queries in the output (e.g., "1. MATCH (n) RETURN n")
-        try:
-            # First, remove sections like "Simple Query:" or "Medium Query:" or "Complex Query:"
-            # by splitting the text into sections and processing each section
-            sections = re.split(r'(Simple|Medium|Complex)\s+Query:', llm_output)
+        if not llm_output:
+            return None
             
-            for i in range(1, len(sections), 2):  # Process each section after a header
-                if i+1 < len(sections):
-                    section_text = sections[i+1]
-                    # Look for numbered queries in this section
-                    numbered_matches = re.findall(r'\d+\.\s*(`?)([^`\n]+)(`?)', section_text)
-                    for match in numbered_matches:
-                        query_text = match[1].strip()
-                        # Check if it starts with a valid Cypher keyword
-                        if any(query_text.upper().startswith(keyword) for keyword in valid_keywords):
-                            print(f"DEBUG: Found numbered query: {query_text}")
-                            return query_text
-        except Exception as e:
-            print(f"WARNING: Error in numbered query extraction: {str(e)}")
+        # First, try to extract code blocks with ```cypher ... ``` format
+        if "```cypher" in llm_output and "```" in llm_output:
+            # Extract content between ```cypher and ```
+            parts = llm_output.split("```cypher")
+            if len(parts) > 1:
+                code_part = parts[1].split("```")[0].strip()
+                if code_part:
+                    return code_part
         
-        # Look for content within backticks
-        try:
-            matches = re.findall(r'`([^`]+)`', llm_output)
-            if matches:
-                # Find the first match that starts with a valid Cypher keyword
-                for match in matches:
-                    cleaned = match.strip()
-                    if any(cleaned.upper().startswith(keyword) for keyword in valid_keywords):
-                        print(f"DEBUG: Found query in backticks: {cleaned}")
-                        return cleaned
-        except Exception as e:
-            print(f"WARNING: Error in backtick pattern matching: {str(e)}")
+        # Next, try to extract code blocks with just ``` ... ``` format
+        if "```" in llm_output:
+            # Extract content between ``` and ```
+            parts = llm_output.split("```")
+            if len(parts) > 1:
+                code_part = parts[1].strip()
+                if code_part.lower().startswith("cypher"):
+                    code_part = code_part[len("cypher"):].strip()
+                if code_part:
+                    return code_part
         
-        # If we can't find a pattern, try to extract a valid Cypher query based on keywords
-        try:
-            lines = llm_output.split('\n')
-            for line in lines:
-                cleaned = line.strip()
-                if any(cleaned.upper().startswith(keyword) for keyword in valid_keywords):
-                    print(f"DEBUG: Found query by keyword: {cleaned}")
-                    return cleaned
-        except Exception as e:
-            print(f"WARNING: Error in keyword extraction: {str(e)}")
+        # Try to extract based on keywords like "MATCH", "RETURN", etc.
+        cypher_keywords = ["MATCH", "RETURN", "WHERE", "WITH", "CALL"]
+        for keyword in cypher_keywords:
+            if keyword in llm_output.upper():
+                # Find the position of the keyword
+                pos = llm_output.upper().find(keyword)
+                # Extract from the keyword to the end of the text
+                query = llm_output[pos:].strip()
+                # Clean up any trailing text
+                for line in query.split("\n"):
+                    if line.strip() and not any(k in line.upper() for k in cypher_keywords + ["LIMIT", "ORDER BY", "SKIP", "CREATE", "MERGE"]):
+                        query = query.split(line)[0].strip()
+                        break
+                if query:
+                    return query
         
-        # If all else fails, return a simple query
-        print(f"WARNING: Could not extract a valid Cypher query from LLM output. Using fallback query.")
-        return "MATCH (n) RETURN labels(n) as labels, count(n) as count LIMIT 10"
-
-    def _safe_execute_query(self, graph, query):
-        """Safely execute a Neo4j query without risking recursion"""
+        # If all else fails, return None instead of a hardcoded query
+        print(f"WARNING: Could not extract a valid Cypher query from LLM output.")
+        return None
+        
+    def query(self, question: str) -> Dict[str, Any]:
+        """Process a natural language question and return an answer based on the graph data.
+        
+        Args:
+            question: The natural language question to answer
+            
+        Returns:
+            Dict with the result key containing the answer
+        """
+        start_time = time.time()
+        print(f"Processing query: {question}")
+        
+        # Check if initialization is complete
+        if not self.initialization_complete:
+            # Wait for initialization to complete (with timeout)
+            max_wait_time = 10  # seconds
+            wait_start = time.time()
+            while not self.initialization_complete and time.time() - wait_start < max_wait_time:
+                print(f"Waiting for initialization to complete...")
+                time.sleep(0.5)  # Wait a bit and check again
+            
+            # Check if initialization completed or timed out
+            if not self.initialization_complete:
+                if self.initialization_error:
+                    return {"result": f"Error initializing the assistant: {self.initialization_error}"}
+                else:
+                    return {"result": "The assistant is still initializing. Please try again in a few moments."}
+        
         try:
-            # Use the original query method directly
-            original_query = graph.__class__.query
-            return original_query(graph, query)
-        except Exception as e:
-            print(f"ERROR: Query execution failed: {str(e)}")
-            return [{"error": f"Query failed: {str(e)}"}]
-
-    def query(self, question: str, cypher_queries: str) -> Dict[str, Any]:
-        """Process user queries against the knowledge graph"""
-        try:
-            print(f"\n===== DEBUG: PROCESSING QUERY: '{question}' =====")
-            
-            # Check if async initialization is complete
-            if not hasattr(self, 'initialization_complete') or not self.initialization_complete:
-                # Check if there was an error during initialization
-                if hasattr(self, 'initialization_error') and self.initialization_error:
-                    return {"result": f"Error initializing the system: {self.initialization_error}. Please try again later."}
-                
-                # If initialization is still in progress
-                return {"result": "The system is still initializing. Please try again in a few moments."}
-            
-            # Add detailed diagnostic info about prompts
-            self._debug_print_prompts()
-            
-            # Execute chain with context
-            hist = self._format_history()
-            print(f"HISTORY TO BE USED: {hist}")
-            
-            # Add schema awareness to the query
-            start_time = time.time()
-            
-            # Handle schema-related queries directly
-            if any(keyword in question.lower() for keyword in ['schema', 'structure', 'entities', 'nodes', 'relationships']):
-                try:
-                    # Get node information
-                    node_query = """
-                    MATCH (n)
-                    WITH DISTINCT labels(n) as labels, count(n) as count
-                    RETURN {labels: labels, count: count} as nodeInfo
-                    """
-                    node_info = self._safe_execute_query(self.chain.graph, node_query)
+            # Special handling for schema-related questions
+            if any(keyword in question.lower() for keyword in ["schema", "structure", "model", "nodes", "relationships", "node types", "relationship types"]):
+                print("DEBUG: Schema-related question detected, using direct schema information")
+                return {"result": f"Here's the schema of the graph:\n\n{self.formatted_schema}"}
                     
-                    # Get relationship information
-                    rel_query = """
-                    MATCH ()-[r]->() 
-                    WITH DISTINCT type(r) as type, count(r) as count
-                    RETURN {type: type, count: count} as relInfo
-                    """
-                    rel_info = self._safe_execute_query(self.chain.graph, rel_query)
-                    
-                    # Format results nicely
-                    nodes_str = "\nNodes:\n" + "\n".join([f"- {info['nodeInfo']['labels']}: {info['nodeInfo']['count']} instances" for info in node_info])
-                    rels_str = "\nRelationships:\n" + "\n".join([f"- {info['relInfo']['type']}: {info['relInfo']['count']} instances" for info in rel_info])
-                    
-                    return {"result": f"Here's the graph structure:{nodes_str}{rels_str}"}
-
-                except Exception as schema_e:
-                    print(f"ERROR: Schema query failed: {str(schema_e)}")
-                    # Fall through to regular processing
-            
-            # Use a direct approach to generate and execute Cypher
+            # Try the direct approach with our custom prompts
             try:
-                # Step 1: Generate Cypher using the cypher_prompt
-                cypher_gen_inputs = {"query": question}
-                if hasattr(self.chain, "cypher_llm") and hasattr(self.chain, "cypher_prompt"):
-                    print("DEBUG: Directly generating Cypher using the cypher prompt")
-                    generated_cypher = self.chain.cypher_llm.invoke(
-                        self.chain.cypher_prompt.format(**cypher_gen_inputs)
-                    ).content
-                    print(f"DEBUG: Generated Cypher:\n{generated_cypher}")
-                    # Check if the Cypher query is None or empty
-                    if generated_cypher is None or generated_cypher.strip() == "":
-                        print("DEBUG: Generated Cypher query is None or empty")
-                        return {"result": "Not able to prepare valid queries. Update your queries with appropriate data attributes"}
-
-                    # Step 2: Extract valid Cypher query
-                    clean_cypher = self._extract_valid_cypher_query(generated_cypher)
-
-
-                    try:
-                        print(f"DEBUG: Executing extracted Cypher: {generated_cypher}")
-                        context = self._safe_execute_query(self.chain.graph, clean_cypher)
-                    except Exception as exec_error:
-                        print(f"DEBUG: Error executing extracted query: {str(exec_error)}")
-                        # Try to extract a different query if the first one fails
-                        fallback_cypher = "MATCH (n) RETURN labels(n) as labels, count(n) as count LIMIT 10"
-                        print(f"DEBUG: Falling back to simple query: {fallback_cypher}")
-                        context = self._safe_execute_query(self.chain.graph, fallback_cypher)
+                # Step 1: Generate Cypher query using the cypher_prompt
+                print("DEBUG: Generating Cypher query")
+                cypher_inputs = {"query": question}
+                
+                if hasattr(self.chain, "llm") and hasattr(self.chain, "cypher_prompt"):
+                    # Use the retry-enabled LLM invocation
+                    generated_cypher = self._invoke_llm_with_retry(
+                        self.chain.llm,
+                        self.chain.cypher_prompt.format(**cypher_inputs),
+                        timeout=30  # Standard timeout for Cypher generation
+                    )
+                    print(f"DEBUG: Generated Cypher: {generated_cypher}")
+                    
+                    # Step 2: Extract valid Cypher query with retry
+                    clean_cypher = self._extract_valid_cypher_with_retry(generated_cypher)
+                    
+                    if clean_cypher is None:
+                        print("DEBUG: Failed to extract a valid Cypher query after multiple retries")
+                        return {"result": "I couldn't generate a valid query for your question. Could you please rephrase or provide more specific details?"}
+                    
+                    print(f"DEBUG: Clean Cypher: {clean_cypher}")
+                    
+                    # Step 3: Execute the Cypher query
+                    print("DEBUG: Executing Cypher query")
+                    context = self.graph.query(clean_cypher)
+                    print(f"DEBUG: Query result: {context}")
                     
                     # Step 4: Generate the final answer using the qa_prompt
                     qa_inputs = {"query": question, "context": context}
                     if hasattr(self.chain, "qa_llm") and hasattr(self.chain, "qa_prompt"):
                         print("DEBUG: Generating answer using QA prompt")
-                        answer = self.chain.qa_llm.invoke(
-                            self.chain.qa_prompt.format(**qa_inputs)
-                        ).content
-                        result = {"result": answer}
+                        # Use the retry-enabled QA response generation with validation
+                        try:
+                            answer = self._generate_qa_response_with_retry(
+                                self.chain.qa_llm,
+                                self.chain.qa_prompt.format(**qa_inputs),
+                                timeout=30  # Standard timeout for QA generation
+                            )
+                            result = {"result": answer}
+                        except (TimeoutError, ConnectionError, Exception) as e:
+                            print(f"Failed to generate answer after retries: {str(e)}")
+                            return {"result": f"I retrieved data from the database but had trouble generating a response. Here's the raw data: {str(context)}"}
                     else:
                         result = {"result": f"Query results: {context}"}
                 else:
@@ -1252,20 +1376,10 @@ class SchemaAwareGraphAssistant:
             except Exception as e:
                 print(f"ERROR: Direct approach failed: {str(e)}")
                 print(f"DEBUG: {traceback.format_exc()}")
-                
-                # Fallback to a simple query if everything else fails
-                try:
-                    print("DEBUG: Falling back to simple query")
-                    fallback_query = "MATCH (n) RETURN labels(n) as labels, count(n) as count LIMIT 10"
-                    context = self._safe_execute_query(self.chain.graph, fallback_query)
-                    result = {
-                        "result": f"I encountered an error processing your query. \n\nHere's some basic information about the graph: {context}"
-                    }
-                except Exception as e2:
-                    print(f"ERROR: Even simple fallback failed: {str(e2)}")
-                    result = {
-                        "result": f"I encountered multiple errors processing your query. The database might be unavailable or the query was malformed."
-                    }
+                # Return an informative error message instead of using hardcoded fallback queries
+                result = {
+                    "result": "I encountered an error processing your query. The database might be unavailable or your question might be too complex. Could you please try a simpler question or check if the database is accessible?"
+                }
             
             query_time = time.time() - start_time
             print(f"Query completed in {query_time:.2f} seconds")

@@ -60,6 +60,7 @@ runtime-data/
 api/kginsights/saved_schemas/
 api/samples/TelecomChurn_Large_300.csv
 .ubuntuenv/
+.ubenv/
 testdata/
 api/samples/*.csv
 app/.DS_Store
@@ -67,3 +68,4 @@ app/.DS_Store
 components/.DS_Store
 lib/.DS_Store
 app/.DS_Store
+.ubvenv/*

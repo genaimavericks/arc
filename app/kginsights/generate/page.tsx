@@ -99,6 +99,10 @@ function GenerateGraphContent() {
   const [errorMessage, setErrorMessage] = useState('')
   const [showDomainError, setShowDomainError] = useState(false)
   const [aiAssistantCollapsed, setAiAssistantCollapsed] = useState(false)
+  const [showCustomDomainDialog, setShowCustomDomainDialog] = useState(false)
+  const [customDomain, setCustomDomain] = useState<string>("")
+  const [customDomains, setCustomDomains] = useState<string[]>([]);
+  const [customDomainFiles, setCustomDomainFiles] = useState<{[key: string]: string}>({});
   const successMessageTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const chatRef = useRef<SchemaChatRef>(null)
   const { toast } = useToast()
@@ -228,6 +232,38 @@ function GenerateGraphContent() {
     }, 1500)
   }, [searchParams, toast, domain])
 
+  // Fetch custom domain files on component mount
+  useEffect(() => {
+    const fetchCustomDomains = async () => {
+      try {
+        const response = await fetch("/api/graphschema/list-custom-domains", {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        })
+
+        if (!response.ok) {
+          throw new Error(`Failed to fetch custom domains: ${response.status}`)
+        }
+
+        const data = await response.json()
+        
+        // Update state with custom domains and their file paths
+        setCustomDomains(data.domains || [])
+        setCustomDomainFiles(data.domain_files || {})
+        
+        console.log("Loaded custom domains:", data.domains)
+        console.log("Custom domain files:", data.domain_files)
+      } catch (error) {
+        console.error("Error fetching custom domains:", error)
+      }
+    }
+
+    fetchCustomDomains()
+  }, [])
+
   const handleSourceChange = (value: string) => {
     setSelectedSource(value)
     const selected = sources.find(s => s.id === value)
@@ -239,6 +275,80 @@ function GenerateGraphContent() {
     setDomain(value)
     if (value) {
       setShowDomainError(false)
+    }
+    // Reset custom domain when selecting from dropdown
+    setCustomDomain("")
+  }
+
+  const handleUploadCustomDomain = () => {
+    // Trigger the hidden file input
+    const fileInput = document.getElementById('custom-domain-upload') as HTMLInputElement;
+    if (fileInput) {
+      fileInput.click();
+    }
+  }
+
+  const handleCustomDomainFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type (only accept text files)
+    if (!file.name.endsWith('.txt')) {
+      toast({
+        title: "Invalid File Type",
+        description: "Please upload a text (.txt) file.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      // Create FormData to send the file
+      const formData = new FormData();
+      formData.append('file', file);
+
+      // Upload the file to the server
+      const response = await fetch('/api/graphschema/upload-custom-domain', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Upload failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const filePath = data.file_path;
+      const fileName = file.name.replace('.txt', '');
+
+      // Add the custom domain to the list and store the file path
+      setCustomDomains(prev => [...prev, fileName]);
+      setCustomDomainFiles(prev => ({ ...prev, [fileName]: filePath }));
+
+      // Set the domain to the newly uploaded file
+      setDomain(fileName);
+      setShowDomainError(false);
+
+      toast({
+        title: "Custom Domain Uploaded",
+        description: `${fileName} has been added to the domain list.`,
+      });
+    } catch (error) {
+      console.error("Error uploading custom domain:", error);
+      toast({
+        title: "Upload Failed",
+        description: error instanceof Error ? error.message : "Failed to upload custom domain file.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+      // Reset the file input
+      e.target.value = '';
     }
   }
 
@@ -269,8 +379,8 @@ function GenerateGraphContent() {
     if (chatInput) {
       chatInput.focus()
       
-      // If there's text in the input, use the chat's handleSendMessage method
-      if (chatInput.value.trim() && chatRef.current) {
+      // Always call handleSendMessage regardless of input content
+      if (chatRef.current) {
         // Let the chat component handle the message
         await chatRef.current.handleSendMessage()
       }
@@ -562,6 +672,9 @@ function GenerateGraphContent() {
                   <SelectContent className="bg-card/95 backdrop-blur-md border-primary/20">
                     <SelectItem value="telecom_churn">Telecom Churn</SelectItem>
                     <SelectItem value="foam_factory">Foam Factory</SelectItem>
+                    {customDomains.map((domainName) => (
+                      <SelectItem key={domainName} value={domainName}>{domainName}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 {showDomainError && !domain && (
@@ -570,7 +683,25 @@ function GenerateGraphContent() {
               </div>
             </div>
 
+            {/* Custom domain dialog removed - replaced with file upload functionality */}
+
             <div className="flex gap-3 self-end md:self-auto">
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.98 }}>
+                <Button
+                  className="bg-accent hover:bg-accent/90 text-accent-foreground flex items-center gap-2 shadow-md transition-all duration-300 hover:shadow-lg px-6 py-6 h-11 font-medium"
+                  onClick={handleUploadCustomDomain}
+                  disabled={loading}
+                >
+                  Upload Custom Domain
+                </Button>
+                <input
+                  type="file"
+                  id="custom-domain-upload"
+                  accept=".txt"
+                  onChange={handleCustomDomainFileUpload}
+                  className="hidden"
+                />
+              </motion.div>
               <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.98 }}>
                 <Button
                   className="bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-2 shadow-md transition-all duration-300 hover:shadow-lg px-6 py-6 h-11 font-medium"
@@ -674,6 +805,7 @@ function GenerateGraphContent() {
                     selectedSourceName={selectedSourceName}
                     selectedDatasetType={selectedDatasetType}
                     domain={domain}
+                    customDomainFiles={customDomainFiles}
                     onSchemaGenerated={handleSchemaGenerated}
                     loading={loading}
                     setLoading={setLoading}
