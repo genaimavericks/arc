@@ -2722,10 +2722,6 @@ async def get_ingestion_preview(
     except Exception as e:
         # Log the specific parquet reading error
         print(f"Error reading parquet file: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error reading ingestion data: {str(e)}"
-        )
 
 @router.get("/ingestion-schema/{ingestion_id}", response_model=SchemaResponse)
 async def get_ingestion_schema(
@@ -2733,24 +2729,33 @@ async def get_ingestion_schema(
     current_user: User = Depends(has_permission("datapuur:read")),  # Updated permission
     db: Session = Depends(get_db)
 ):
-    """Get schema for an ingestion"""
-    job = get_ingestion_job(db, ingestion_id)
-    if not job:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Ingestion not found"
-        )
+    """Get schema for an ingestion or uploaded file"""
+    # First, try to find an UploadedFile with the given ID
+    file_info = get_uploaded_file(db, ingestion_id)
+    file_id = None
+    job = None
     
-    # Check if job is completed
-    if job.status != "completed":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot get schema for ingestion with status: {job.status}"
-        )
-    
-    try:
+    if file_info:
+        # If we found an UploadedFile, use its ID as the file_id
+        file_id = file_info.id
+        logger.info(f"Found UploadedFile with ID {file_id}")
+    else:
+        # If not found, try to find an IngestionJob with the given ID
+        job = get_ingestion_job(db, ingestion_id)
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Neither uploaded file nor ingestion job found with the provided ID"
+            )
+        
+        # Check if job is completed
+        if job.status != "completed":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot get schema for ingestion with status: {job.status}"
+            )
+        
         # Extract file_id from job config if available
-        file_id = None
         if job.config:
             try:
                 config = json.loads(job.config)
@@ -2760,6 +2765,8 @@ async def get_ingestion_schema(
             except json.JSONDecodeError:
                 logger.warning(f"Could not parse config JSON for ingestion {ingestion_id}")
         
+    # Try to determine the appropriate parquet file path
+    try:
         # Get the parquet file path using file_id if available
         if file_id:
             parquet_path = DATA_DIR / f"{file_id}.parquet"
@@ -2869,16 +2876,30 @@ async def debug_schema(
 ):
     """Debug endpoint to check schema data directly"""
     try:
-        # Extract file_id from job config if available
+        # First, try to find an UploadedFile with the given ID
+        file_info = get_uploaded_file(db, ingestion_id)
         file_id = None
-        if job.config:
-            try:
-                config = json.loads(job.config)
-                file_id = config.get("file_id")
-                if file_id:
-                    logger.info(f"Found file_id {file_id} in job config for ingestion {ingestion_id}")
-            except json.JSONDecodeError:
-                logger.warning(f"Could not parse config JSON for ingestion {ingestion_id}")
+        job = None
+        
+        if file_info:
+            # If we found an UploadedFile, use its ID as the file_id
+            file_id = file_info.id
+            logger.info(f"Found UploadedFile with ID {file_id}")
+        else:
+            # If not found, try to find an IngestionJob with the given ID
+            job = get_ingestion_job(db, ingestion_id)
+            if not job:
+                return {"error": "Neither uploaded file nor ingestion job found with the provided ID"}
+            
+            # Extract file_id from job config if available
+            if job.config:
+                try:
+                    config = json.loads(job.config)
+                    file_id = config.get("file_id")
+                    if file_id:
+                        logger.info(f"Found file_id {file_id} in job config for ingestion {ingestion_id}")
+                except json.JSONDecodeError:
+                    logger.warning(f"Could not parse config JSON for ingestion {ingestion_id}")
         
         # Get the parquet file path using file_id if available
         if file_id:
