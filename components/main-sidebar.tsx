@@ -98,6 +98,7 @@ interface MenuSection {
     label: string
     href: string
     icon: React.ElementType
+    requiredPermission?: string
   }[]
 }
 
@@ -194,14 +195,20 @@ export function MainSidebar() {
   // Get submenu items based on active model
   const getActiveModelSubmenu = (model: string) => {
     console.log(`Generating submenu for model: ${model}`);
+    let submenuItems = [
+      { 
+        label: "KGraph Insights", 
+        href: "/kginsights/insights", 
+        icon: NetworkIcon,
+        requiredPermission: "kginsights:read" 
+      }
+    ]
     if (model === "factory_astro") {
-      return [{ label: "Factory Astro", href: "/djinni/factory-astro", icon: Bot }];
+      submenuItems.push({ label: "Factory Astro", href: "/djinni/factory-astro", icon: Bot, requiredPermission: "djinni:read" });
     } else if (model === "churn_astro") {
-      return [{ label: "Churn Astro", href: "/djinni/churn-astro", icon: Bot }];
-    } else {
-      // Default to empty if no active model (should not happen)
-      return [];
-    }
+      submenuItems.push({ label: "Churn Astro", href: "/djinni/churn-astro", icon: Bot, requiredPermission: "djinni:read" });
+    } 
+    return submenuItems;
   };
   
   // Check for changes in localStorage and Zustand store
@@ -581,7 +588,12 @@ export function MainSidebar() {
                     
                     {Boolean(expandedSections[section.key || section.label.toLowerCase()]) && !collapsed && (
                       <div className="ml-4 space-y-1 border-l border-border pl-3">
-                        {section.subItems?.map((item) => (
+                        {section.subItems?.filter(item => {
+                          // Filter sub-items based on permissions if they have requiredPermission
+                          if (!item.requiredPermission) return true;
+                          if (!user || !user.permissions) return false;
+                          return user.permissions.includes(item.requiredPermission);
+                        }).map((item) => (
                           <SidebarMenuItem
                             key={item.href}
                             href={item.href}
@@ -602,7 +614,7 @@ export function MainSidebar() {
                     href={section.href}
                     icon={section.icon}
                     label={section.label}
-                    isActive={section.href === "/" ? pathname === "/" : (!!section.href && (pathname === section.href || pathname.startsWith(`${section.href}/`)))}
+                    isActive={section.href === "/" ? pathname === "/" : (pathname === section.href || pathname.startsWith(`${section.href}/`))}
                     collapsed={collapsed}
                   />
                 )}

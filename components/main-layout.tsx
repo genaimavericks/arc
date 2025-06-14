@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react"
 import { MainSidebar } from "@/components/main-sidebar"
 import Navbar from "@/components/navbar"
-import { DjinniChatColumn } from "@/components/djinni/djinni-chat-column"
+
 import { DjinniProvider, useDjinni } from "@/lib/djinni-context"
 
 interface MainLayoutProps {
@@ -49,23 +49,20 @@ function MainLayoutContent({ children }: MainLayoutProps) {
     }
   }, [])
 
-  // Calculate right padding based on Djinni chat state
-  const djinniWidth = (!isCollapsed && isOpen) ? 'md:pr-80' : ''
+
 
   return (
     <div className="flex min-h-screen bg-background">
       <div className={`hidden md:flex flex-col fixed inset-y-0 z-30 transition-all duration-300 ${sidebarCollapsed ? 'w-16' : 'w-64'}`}>
         <MainSidebar />
       </div>
-      <div className={`flex flex-col flex-1 transition-all duration-300 ${sidebarCollapsed ? 'md:pl-16' : 'md:pl-64'} ${djinniWidth}`}>
+      <div className={`flex flex-col flex-1 transition-all duration-300 ${sidebarCollapsed ? 'md:pl-16' : 'md:pl-64'}`}>
         <Navbar />
         <main className="flex-1 overflow-y-auto">
           {children}
         </main>
       </div>
-      
-      {/* Djinni Chat Column */}
-      <DjinniChatColumn />
+
     </div>
   )
 }

@@ -181,5 +181,16 @@ class DatabaseConnection(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+class GraphSchema(Base):
+    """Graph schema model for KG Data Insights"""
+    __tablename__ = "graph_schemas"
+    
+    id = Column(String, primary_key=True, index=True)
+    name = Column(String, nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    content = Column(Text, nullable=False)  # Store schema as JSON string
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 # Create tables
 Base.metadata.create_all(bind=engine)
