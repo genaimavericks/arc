@@ -180,7 +180,7 @@ class TransformedDatasetCreate(BaseModel):
     source_file_path: str
     source_file_id: Optional[str] = None
     transformed_file_path: str
-    transformation_plan_id: str
+    transformation_plan_id: Optional[str] = None
     job_id: Optional[str] = None
     description: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
@@ -193,7 +193,7 @@ class TransformedDatasetResponse(BaseModel):
     source_file_path: str
     source_file_id: Optional[str] = None
     transformed_file_path: str
-    transformation_plan_id: str
+    transformation_plan_id: Optional[str] = None
     job_id: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
     column_metadata: Dict[str, Any] = Field(default_factory=dict)
