@@ -19,7 +19,6 @@ import threading
 import time
 import logging
 import traceback
-import logging
 import pandas as pd
 import numpy as np
 from pydantic import BaseModel, Field
@@ -3606,7 +3605,35 @@ async def preview_file(
     db: Session = Depends(get_db)
 ):
     """Preview a file"""
+    # First try to find the file directly using the file_id as an UploadedFile.id
+    print(file_id)
     file_info = get_uploaded_file(db, file_id)
+    
+    # Only print file_info details if it exists
+    if file_info:
+        logger.debug(f"Found file_info: {file_info.id}")
+        logger.debug(f"filename: {file_info.filename}")
+        logger.debug(f"path: {file_info.path}")
+        logger.debug(f"type: {file_info.type}")
+    else:
+        logger.debug(f"No file found with ID: {file_id}, will try to find ingestion job")
+
+    # If not found, check if the file_id is an IngestionJob.id
+    if not file_info:
+        # Try to find the ingestion job
+        job = db.query(IngestionJob).filter(IngestionJob.id == file_id).first()
+        
+        if job and job.config:
+            try:
+                # Extract file_id from job config
+                config_data = json.loads(job.config)
+                if "file_id" in config_data:
+                    # Get the file using the file_id from the job config
+                    file_info = get_uploaded_file(db, config_data["file_id"])
+            except json.JSONDecodeError:
+                logger.warning(f"Could not parse job config for job {file_id}")
+    
+    # If still not found, return 404
     if not file_info:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -3622,8 +3649,51 @@ async def preview_file(
         )
     
     try:
+        # For parquet files
+        if file_info.type == "parquet" or file_path.endswith(".parquet"):
+            try:
+                # Use pandas to efficiently read only the first 100 rows
+                df = pd.read_parquet(file_path, engine="pyarrow")
+                df = df.head(100)  # Limit to first 100 rows
+                
+                # Convert to list format for response
+                headers = df.columns.tolist()
+                # Convert NumPy types to Python native types
+                rows = []
+                for row in df.values:
+                    python_row = []
+                    for item in row:
+                        if pd.isna(item):
+                            python_row.append(None)
+                        elif isinstance(item, (np.integer, np.floating)):
+                            python_row.append(item.item())
+                        else:
+                            python_row.append(item)
+                    rows.append(python_row)
+                
+                # Log activity
+                log_activity(
+                    db=db,
+                    username=current_user.username,
+                    action="File preview",
+                    details=f"Previewed parquet file: {file_info.filename}"
+                )
+                
+                return {
+                    "data": rows,
+                    "headers": headers,
+                    "filename": file_info.filename,
+                    "type": "parquet"
+                }
+            except Exception as e:
+                logger.error(f"Error previewing parquet file: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Error previewing parquet file: {str(e)}"
+                )
+        
         # For CSV files
-        if file_info.type == "csv":
+        elif file_info.type == "csv":
             try:
                 # Use pandas to efficiently read only the first 100 rows
                 # This is much more memory-efficient for large files
@@ -3667,6 +3737,7 @@ async def preview_file(
                     "type": "csv"
                 }
             except Exception as e:
+                print("Exception", e)
                 # If pandas fails (which is unlikely), fall back to a more robust method
                 # for extremely large files using csv module with iteration
                 logger.warning(f"Pandas CSV preview failed, falling back to csv module: {str(e)}")
@@ -3778,6 +3849,11 @@ async def preview_file(
             )
     
     except Exception as e:
+        print(f"Error previewing file: {str(e)}")
+        print(f"File info: {file_info}")
+        print(f"File path: {file_path}")
+        print(f"Exception details: {traceback.format_exc()}")
+        
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error previewing file: {str(e)}"
@@ -3790,7 +3866,25 @@ async def download_file(
     db: Session = Depends(get_db)
 ):
     """Download a file"""
+    # First try to find the file directly using the file_id as an UploadedFile.id
     file_info = get_uploaded_file(db, file_id)
+    
+    # If not found, check if the file_id is an IngestionJob.id
+    if not file_info:
+        # Try to find the ingestion job
+        job = db.query(IngestionJob).filter(IngestionJob.id == file_id).first()
+        
+        if job and job.config:
+            try:
+                # Extract file_id from job config
+                config_data = json.loads(job.config)
+                if "file_id" in config_data:
+                    # Get the file using the file_id from the job config
+                    file_info = get_uploaded_file(db, config_data["file_id"])
+            except json.JSONDecodeError:
+                logger.warning(f"Could not parse job config for job {file_id}")
+    
+    # If still not found, return 404
     if not file_info:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
