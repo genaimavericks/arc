@@ -25,7 +25,8 @@ echo "Updating HTML files to include runtime configuration..."
 for htmlfile in api/static/*.html; do
   if [ -f "$htmlfile" ]; then
     # Insert the script tag before the first existing script tag
-    sed -i '' 's/<script/<script src="\/config.js"><\/script>\n<script/' "$htmlfile"
+    # Linux/WSL version of sed doesn't need the empty string argument
+    sed -i 's/<script/<script src="\/config.js"><\/script>\n<script/' "$htmlfile"
   fi
 done
 
