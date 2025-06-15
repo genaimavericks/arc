@@ -1433,8 +1433,23 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
 def process_db_ingestion_with_db(job_id, db_type, db_config, chunk_size, db):
     """Process database ingestion in a background thread with database access"""
     try:
-        # Get a new database session
+        # Create a new database session
         db_session = SessionLocal()
+        
+        # Define temp_dir at the beginning to ensure it's available in all scopes
+        temp_dir = DATA_DIR / f"temp_{job_id}"
+        
+        # Ensure the temp directory exists
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Define output_file at the beginning to ensure it's available in all scopes
+        output_file = DATA_DIR / f"{job_id}.parquet"
+        
+        # Define file_id for ProfileResult - use job_id as file_id for database ingestion
+        file_id = job_id
+        
+        # Create a connection string display for the profile name
+        connection_string_display = f"{db_config.get('database', 'db')}.{db_config.get('table', 'table')}"
         
         # Update job status
         job = get_ingestion_job(db_session, job_id)
@@ -1639,8 +1654,8 @@ def process_db_ingestion_with_db(job_id, db_type, db_config, chunk_size, db):
                 # Save first chunk schema for consistency (but don't depend on it)
                 if chunk_number == 0:
                     try:
-                        # This might fail depending on pandas version - use simpler approach
-                        schema = str(chunk.dtypes[0])
+                        # Use iloc to avoid FutureWarning about Series.__getitem__
+                        schema = str(chunk.dtypes.iloc[0]) if len(chunk.dtypes) > 0 else None
                     except Exception as schema_error:
                         logger.warning(f"Non-critical schema detection error: {str(schema_error)}")
                         schema = None
@@ -1701,19 +1716,166 @@ def process_db_ingestion_with_db(job_id, db_type, db_config, chunk_size, db):
             job.progress = 100
             job.end_time = datetime.now()
             job.details = f"Completed. Extracted {processed_rows} rows in {processing_time:.2f} seconds."
-            
-            db_session.commit()
-            
             logger.info(f"Database ingestion completed for job {job_id}. Processed {processed_rows} rows.")
+            
+            # Automatically generate profiling data after ingestion is completed
+            try:
+                print(f"Generating automatic profiling data for job {job_id}")
+                
+                # Read the parquet file for profiling
+                df = pd.read_parquet(output_file)
+                print(df)
+                # 1. Generate schema information
+                columns_info = []
+                for column in df.columns:
+                    dtype = df[column].dtype
+                    # Convert nullable from NumPy bool_ to Python bool
+                    nullable = bool(df[column].isna().any())
+                    
+                    # Get a sample value (safely handling empty dataframes)
+                    sample_value = None
+                    sample = None
+                    
+                    if len(df) > 0:
+                        non_null_values = df[column].dropna()
+                        if len(non_null_values) > 0:
+                            sample_value = non_null_values.iloc[0]
+                            
+                            # Convert NumPy types to native Python types for JSON serialization
+                            if isinstance(sample_value, (np.integer, np.floating)):
+                                sample = sample_value.item()
+                            elif isinstance(sample_value, np.bool_):  # Handle NumPy boolean type
+                                sample = bool(sample_value)
+                            elif pd.api.types.is_datetime64_dtype(dtype):
+                                sample = str(sample_value)
+                            elif isinstance(sample_value, np.ndarray):
+                                sample = sample_value.tolist()  # Convert NumPy array to list
+                            elif isinstance(sample_value, pd.Timestamp):
+                                sample = str(sample_value)
+                            else:
+                                sample = sample_value
+                    
+                    columns_info.append({
+                        "name": column,
+                        "dtype": str(dtype),
+                        "nullable": nullable,
+                        "sample": sample,
+                        "sample_type": type(sample).__name__ if sample is not None else None
+                    })
+                
+                schema_data = {
+                    "columns_count": len(df.columns),
+                    "rows_count": len(df),
+                    "columns": columns_info
+                }
+                
+                # 2. Generate statistics
+                row_count = len(df)
+                column_count = len(df.columns)
+                
+                # Calculate null percentage
+                total_cells = row_count * column_count
+                null_count = df.isna().sum().sum()
+                null_percentage = (null_count / total_cells) * 100 if total_cells > 0 else 0
+                
+                # Convert null_percentage from NumPy type to Python native type if needed
+                if isinstance(null_percentage, (np.integer, np.floating)):
+                    null_percentage = null_percentage.item()
+                
+                # Calculate memory usage
+                memory_usage_bytes = df.memory_usage(deep=True).sum()
+                if isinstance(memory_usage_bytes, (np.integer, np.floating)):
+                    memory_usage_bytes = memory_usage_bytes.item()
+                    
+                if memory_usage_bytes < 1024:
+                    memory_usage = f"{memory_usage_bytes} B"
+                elif memory_usage_bytes < 1024 * 1024:
+                    memory_usage = f"{memory_usage_bytes / 1024:.1f} KB"
+                else:
+                    memory_usage = f"{memory_usage_bytes / (1024 * 1024):.1f} MB"
+                
+                # Calculate data density (rows per KB)
+                data_density = (row_count / (memory_usage_bytes / 1024)) if memory_usage_bytes > 0 else 0
+                if isinstance(data_density, (np.integer, np.floating)):
+                    data_density = data_density.item()
+                    
+                completion_rate = 100 - null_percentage
+                if isinstance(completion_rate, (np.integer, np.floating)):
+                    completion_rate = completion_rate.item()
+                
+                stats_data = {
+                    "row_count": row_count,
+                    "column_count": column_count,
+                    "null_percentage": null_percentage,
+                    "memory_usage": memory_usage,
+                    "processing_time": f"{processing_time:.2f}s",
+                    "data_density": data_density,
+                    "completion_rate": completion_rate,
+                    "error_rate": 0  # Placeholder, could be calculated from data quality checks
+                }
+                
+                # 3. Store profiling data in job metadata
+                if job.config:
+                    try:
+                        config_data = json.loads(job.config)
+                        config_data["schema"] = schema_data
+                        config_data["statistics"] = stats_data
+                        job.config = json.dumps(config_data)
+                        
+                        # 4. Also create a ProfileResult record so it shows up in the profiles API
+                        from .profiler.models import ProfileResult
+                        import uuid
+                        
+                        # Create a profile ID
+                        profile_id = str(uuid.uuid4())
+                        
+                        # Create column profiles in the format expected by ProfileResult
+                        column_profiles_data = {}
+                        for col_info in columns_info:
+                            column_profiles_data[col_info["name"]] = {
+                                "name": col_info["name"],
+                                "type": col_info["dtype"],
+                                "nullable": col_info["nullable"],
+                                "sample": col_info["sample"],
+                                "stats": {}
+                            }
+                        
+                        # Create the ProfileResult record
+                        profile_result = ProfileResult(
+                            id=profile_id,
+                            file_id=file_id,  # Use the file_id created for this database ingestion
+                            file_name=connection_string_display,  # Use the connection string as the file name
+                            parquet_file_path=str(output_file),
+                            total_rows=row_count,
+                            total_columns=column_count,
+                            data_quality_score=completion_rate / 100 if completion_rate is not None else 0.0,
+                            column_profiles=column_profiles_data,
+                            exact_duplicates_count=0,  # We don't calculate duplicates for DB ingestion
+                            fuzzy_duplicates_count=0,
+                            duplicate_groups={"exact": [], "fuzzy": []}
+                            # Removed status parameter as it doesn't exist in the model
+                        )
+                        db_session.add(profile_result)
+                        db_session.commit()
+                        print(f"Successfully stored profiling data for job {job_id} and created ProfileResult record {profile_id}")
+                    except json.JSONDecodeError:
+                        print(f"Could not update job config with profiling data for job {job_id}")
+                    except Exception as profile_record_error:
+                        print(f"Error creating ProfileResult record: {str(profile_record_error)}")
+                        # Don't fail the job if creating the ProfileResult fails
+                
+            except Exception as profiling_error:
+                print(f"Error generating profiling data for job {job_id}: {str(profiling_error)}")
+                # Don't raise the exception - we don't want to fail the job if profiling fails
         
         finally:
             engine.dispose()
     
     except Exception as e:
-        logger.error(f"Error processing database ingestion: {str(e)}")
+        print(f"Error processing database ingestion: {str(e)}")
         
         # Clean up temporary directory if it exists
-        temp_dir = DATA_DIR / f"temp_{job_id}"
+        # temp_dir is already defined at the beginning of the function
         if temp_dir.exists():
             try:
                 shutil.rmtree(temp_dir)
