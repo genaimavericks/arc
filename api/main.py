@@ -107,10 +107,18 @@ app.include_router(gen_ai_router)
 # Include the Factory Astro router
 try:
     from api.factory_astro import router as factory_astro_router
-    app.include_router(factory_astro_router)
-    print("Factory Astro router included successfully")
-except ImportError as e:
-    print(f"Could not import Factory Astro router: {e}")
+    app.include_router(factory_astro_router, prefix="/api")
+    print("Included factory_astro_router")
+except ImportError:
+    print("factory_astro_router not available")
+
+# Include the Factory Dashboard router
+try:
+    from api.static_dashboards.factory_dashboard.api import router as factory_dashboard_router
+    app.include_router(factory_dashboard_router, prefix="/api/static_dashboards/factory_dashboard")
+    print("Included factory_dashboard_router")
+except ImportError:
+    print("factory_dashboard_router not available")
 
 # Include the Churn Astro router
 try:

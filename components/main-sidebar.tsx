@@ -24,7 +24,8 @@ import {
   Bot,
   Brain,
   Zap,
-  Clock
+  Clock,
+  Factory
 } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
 import { useDjinniStore } from "@/lib/djinni/store"
@@ -172,6 +173,33 @@ export function MainSidebar() {
       icon: BarChart2,
       href: "/financial",
       requiredPermission: "command:read"
+    },
+    {
+      label: "Factory Dashboard",
+      icon: Factory,
+      href: "/factory_dashboard",
+      key: "factory-dashboard",
+      requiredPermission: "command:read",
+      subItems: [
+        {
+          label: "Performance Overview",
+          icon: BarChart2,
+          href: "/factory_dashboard",
+          requiredPermission: "command:read"
+        },
+        {
+          label: "Operations & Maintenance",
+          icon: Settings,
+          href: "/factory_dashboard?tab=operations",
+          requiredPermission: "command:read"
+        },
+        {
+          label: "Workforce & Resources",
+          icon: User,
+          href: "/factory_dashboard?tab=workforce",
+          requiredPermission: "command:read"
+        }
+      ]
     }
   ]
   

@@ -50,6 +50,8 @@
     "cmdk": "1.0.4",
     "cytoscape": "^3.31.1",
     "date-fns": "^3.0.0",
+    "echarts": "^5.6.0",
+    "echarts-for-react": "^3.0.2",
     "embla-carousel-react": "8.5.1",
     "framer-motion": "^12.6.2",
     "fs": "latest",
