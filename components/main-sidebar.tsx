@@ -148,32 +148,32 @@ export function MainSidebar() {
 
   // Group menu sections by category
   const allCommandCenters: MenuSection[] = [
-    {
-      label: "Sales Overview",
-      icon: LayoutDashboard,
-      href: "/",
-      key: "sales-overview",
-      requiredPermission: "command:read",
-      subItems: [
-        {
-          label: "Sales Performance",
-          icon: BarChart2,
-          href: "/sales-performance",
-        }
-      ]
-    },
-    {
-      label: "Inventory Overview",
-      icon: Database,
-      href: "/inventory",
-      requiredPermission: "command:read"
-    },
-    {
-      label: "Financial Overview",
-      icon: BarChart2,
-      href: "/financial",
-      requiredPermission: "command:read"
-    },
+    // {
+    //   label: "Sales Overview",
+    //   icon: LayoutDashboard,
+    //   href: "/",
+    //   key: "sales-overview",
+    //   requiredPermission: "command:read",
+    //   subItems: [
+    //     {
+    //       label: "Sales Performance",
+    //       icon: BarChart2,
+    //       href: "/sales-performance",
+    //     }
+    //   ]
+    // },
+    // {
+    //   label: "Inventory Overview",
+    //   icon: Database,
+    //   href: "/inventory",
+    //   requiredPermission: "command:read"
+    // },
+    // {
+    //   label: "Financial Overview",
+    //   icon: BarChart2,
+    //   href: "/financial",
+    //   requiredPermission: "command:read"
+    // },
     {
       label: "Factory Dashboard",
       icon: Factory,
@@ -197,6 +197,33 @@ export function MainSidebar() {
           label: "Workforce & Resources",
           icon: User,
           href: "/factory_dashboard?tab=workforce",
+          requiredPermission: "command:read"
+        }
+      ]
+    },
+    {
+      label: "Telecom Churn Dashboard",
+      icon: BarChart2,
+      href: "/churn_dashboard",
+      key: "churn-dashboard",
+      requiredPermission: "command:read",
+      subItems: [
+        {
+          label: "Summary",
+          icon: LayoutDashboard,
+          href: "/churn_dashboard",
+          requiredPermission: "command:read"
+        },
+        {
+          label: "Customer Profile",
+          icon: BarChart2,
+          href: "/churn_dashboard?tab=customer",
+          requiredPermission: "command:read"
+        },
+        {
+          label: "Churner Profile",
+          icon: BarChart2,
+          href: "/churn_dashboard?tab=churner",
           requiredPermission: "command:read"
         }
       ]

@@ -44,6 +44,7 @@ from api.datapuur_ai import router as datapuur_ai_router
 from api.admin import router as admin_router
 from api.gen_ai_layer.router import router as gen_ai_router
 from api.export_router import router as export_router
+from api.static_dashboards.churn_dashboard.api import router as churn_dashboard_router
 from api.middleware import ActivityLoggerMiddleware
 from api.log_filter_middleware import LogFilterMiddleware
 
@@ -107,6 +108,17 @@ app.include_router(gen_ai_router)
 # Include the Factory Astro router
 try:
     from api.factory_astro import router as factory_astro_router
+    app.include_router(factory_astro_router)
+    print("Included Factory Astro router")
+except ImportError:
+    print("Factory Astro module not available")
+
+# Include the Churn Dashboard router
+try:
+    app.include_router(churn_dashboard_router)
+    print("Included Churn Dashboard router")
+except Exception as e:
+    print(f"Error including Churn Dashboard router: {str(e)}")
     app.include_router(factory_astro_router, prefix="/api")
     print("Included factory_astro_router")
 except ImportError:
