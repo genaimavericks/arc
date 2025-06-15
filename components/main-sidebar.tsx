@@ -110,7 +110,7 @@ export function MainSidebar() {
     "datapuur": pathname.startsWith("/datapuur"),
     "kginsights": pathname.startsWith("/kginsights"),
     "k-graff": pathname.startsWith("/kginsights"),
-    "sales-overview": pathname === "/" || pathname.startsWith("/sales-performance"),
+    "factory-dashboard": pathname === "/" || pathname.includes("?tab=") || pathname.startsWith("/factory_dashboard"),
     "djinni-assistant": pathname.startsWith("/djinni")
   })
   const { user, logout } = useAuth()
@@ -177,26 +177,26 @@ export function MainSidebar() {
     {
       label: "Factory Dashboard",
       icon: Factory,
-      href: "/factory_dashboard",
+      href: "/",
       key: "factory-dashboard",
       requiredPermission: "command:read",
       subItems: [
-        {
-          label: "Performance Overview",
-          icon: BarChart2,
-          href: "/factory_dashboard",
-          requiredPermission: "command:read"
+        { 
+          label: "Performance Overview", 
+          href: "/", 
+          icon: LayoutDashboard,
+          requiredPermission: "command:read" 
         },
         {
           label: "Operations & Maintenance",
-          icon: Settings,
-          href: "/factory_dashboard?tab=operations",
+          icon: BarChart2,
+          href: "/?tab=operations",
           requiredPermission: "command:read"
         },
         {
           label: "Workforce & Resources",
-          icon: User,
-          href: "/factory_dashboard?tab=workforce",
+          icon: BarChart2,
+          href: "/?tab=workforce",
           requiredPermission: "command:read"
         }
       ]
