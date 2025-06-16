@@ -26,7 +26,7 @@ import gc
 from concurrent.futures import ThreadPoolExecutor
 from starlette.concurrency import run_in_threadpool
 
-from ..models import User, get_db
+from ..models import User, get_db, IngestionJob
 from ..auth import has_permission, log_activity, has_any_permission
 from .models import ProfileResult, ColumnProfile
 from .schemas.profile import ProfileRequest, ProfileResponse, ProfileListResponse, ProfileSummaryResponse
@@ -105,8 +105,40 @@ async def profile_data(
     logger.info(f"[{request_id}] Profile request received for file_id: {request.file_id}, file_name: {request.file_name}")
     
     try:
-        # Check if the file exists
-        parquet_path = DATA_DIR / f"{request.file_path}"
+        # Get the ingestion job ID from the database using the file ID
+        ingestion_job = None
+        
+        # First, check if the file_id is actually an ingestion job ID
+        if request.file_id:
+            direct_job = db.query(IngestionJob).filter(IngestionJob.id == request.file_id).first()
+            if direct_job:
+                ingestion_job = direct_job
+                logger.info(f"[{request_id}] File ID is already an ingestion job ID: {request.file_id}")
+        
+        # If not found directly, look for a job with this file_id in its config
+        if not ingestion_job and request.file_id:
+            for job in db.query(IngestionJob).all():
+                if job.config:
+                    try:
+                        config = json.loads(job.config)
+                        if config.get("file_id") == request.file_id:
+                            ingestion_job = job
+                            logger.info(f"[{request_id}] Found ingestion job {job.id} for file_id {request.file_id}")
+                            break
+                    except json.JSONDecodeError:
+                        logger.warning(f"[{request_id}] Could not parse config JSON for job {job.id}")
+        
+        # Construct the file path using the ingestion job ID if found, otherwise use the provided file_path
+        if ingestion_job:
+            # Use the ingestion job ID as the parquet file name
+            file_path = f"{ingestion_job.id}.parquet"
+            logger.info(f"[{request_id}] Using ingestion job ID for file path: {file_path}")
+        else:
+            # Fall back to the provided file_path if no ingestion job is found
+            file_path = request.file_path if request.file_path.endswith('.parquet') else f"{request.file_path}.parquet"
+            logger.info(f"[{request_id}] No ingestion job found, using provided file path: {file_path}")
+            
+        parquet_path = DATA_DIR / file_path
         logger.debug(f"[{request_id}] Looking for parquet file at: {parquet_path}")
         
         # Check if this file is from a cancelled upload

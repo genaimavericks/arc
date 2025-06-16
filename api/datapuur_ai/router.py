@@ -11,9 +11,11 @@ import logging
 import json
 import asyncio
 from pathlib import Path
-import traceback
-import copy
 import uuid
+import json
+import logging
+import os
+import traceback
 from datetime import datetime, timedelta
 from pydantic import BaseModel, Field, validator, root_validator, create_model
 
@@ -2408,17 +2410,44 @@ async def execute_script_background(job_id: str, script: str, file_path: str, jo
         db.commit()
         
         # Execute script
-        if job_type == "transformation":
-            result = await script_executor.execute_transformation(
-                script=script,
-                input_file=file_path,
-                job_id=job_id
-            )
-        else:
-            result = await script_executor.execute_script(
-                script=script,
-                input_file_path=file_path
-            )
+        logger.info(f"Starting script execution for job {job_id} of type {job_type}")
+        logger.info(f"Input file path: {file_path}")
+        
+        try:
+            if job_type == "transformation":
+                logger.info(f"Executing transformation for job {job_id}")
+                # Verify input file exists before executing
+                input_file_path = Path(script_executor.data_dir) / file_path
+                if not input_file_path.exists() and not Path(file_path).exists():
+                    logger.error(f"Input file not found for job {job_id}. Checked paths: {input_file_path}, {file_path}")
+                    # List files in data directory to help with debugging
+                    try:
+                        files_in_data_dir = os.listdir(script_executor.data_dir)
+                        logger.debug(f"Files in data directory: {files_in_data_dir}")
+                    except Exception as e:
+                        logger.error(f"Error listing files in data directory: {str(e)}")
+                
+                result = await script_executor.execute_transformation(
+                    script=script,
+                    input_file=file_path,
+                    job_id=job_id
+                )
+            else:
+                logger.info(f"Executing script for job {job_id}")
+                result = await script_executor.execute_script(
+                    script=script,
+                    input_file_path=file_path
+                )
+            
+            logger.info(f"Script execution completed for job {job_id} with success={result.get('success', False)}")
+        except Exception as e:
+            logger.error(f"Unhandled exception in script execution for job {job_id}: {str(e)}")
+            logger.error(f"Exception traceback: {traceback.format_exc()}")
+            result = {
+                "success": False,
+                "error": f"Unhandled exception: {str(e)}",
+                "traceback": traceback.format_exc()
+            }
         
         # Update job with results
         job.status = "completed" if result.get("success") else "failed"

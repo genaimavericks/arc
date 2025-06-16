@@ -157,25 +157,36 @@ print("===RESULT_END===")
         logger.info(f"Running script: {script_path} with Python: {sys.executable}")
         
         try:
-            # Run subprocess
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+            # Use a platform-independent approach for running subprocesses
+            # This works on both Windows and Unix-like systems
+            process = None
+            stdout_data = ""
+            stderr_data = ""
+            
+            # Run the subprocess using ThreadPoolExecutor to avoid asyncio subprocess limitations on Windows
+            def run_process():
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    encoding='utf-8'
+                )
+                stdout, stderr = proc.communicate(timeout=timeout)
+                return proc.returncode, stdout, stderr
+            
+            # Run the process in a thread pool
+            loop = asyncio.get_event_loop()
+            returncode, stdout_data, stderr_data = await loop.run_in_executor(
+                self.executor, run_process
             )
             
-            # Wait for completion with timeout
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(),
-                timeout=timeout
-            )
-            
-            # Parse output
-            output = stdout.decode('utf-8')
-            stderr_output = stderr.decode('utf-8') if stderr else ""
+            # Parse output (already in text format from Popen)
+            output = stdout_data
+            stderr_output = stderr_data if stderr_data else ""
             
             # Log process return code and any stderr output
-            logger.info(f"Script process completed with return code: {process.returncode}")
+            logger.info(f"Script process completed with return code: {returncode}")
             if stderr_output:
                 logger.warning(f"Script stderr output:\n{stderr_output}")
             
@@ -209,7 +220,7 @@ print("===RESULT_END===")
                 # Fallback if no structured output
                 logger.warning("Script output doesn't contain result markers")
                 result = {
-                    "success": process.returncode == 0,
+                    "success": returncode == 0,
                     "output": output,
                     "error": stderr_output if stderr_output else None,
                     "messages": [{
@@ -421,13 +432,28 @@ print("===RESULT_END===")
         logger.info(f"Input file: {input_file}")
         logger.info(f"Output will be saved as: {output_filename}")
         
+        # Log script details for debugging
+        logger.debug(f"Transformation script for job {job_id}:\n{script[:500]}...")
+        logger.debug(f"Input file path: {input_file}")
+        logger.debug(f"Output file path: {output_filename}")
+        
         # Execute script
-        result = await self.execute_script(
-            script=script,
-            input_file_path=input_file,
-            output_file_path=output_filename,
-            timeout=600  # 10 minutes for transformations
-        )
+        try:
+            result = await self.execute_script(
+                script=script,
+                input_file_path=input_file,
+                output_file_path=output_filename,
+                timeout=600  # 10 minutes for transformations
+            )
+            logger.debug(f"Raw execution result for job {job_id}: {json.dumps(result, default=str)[:1000]}...")
+        except Exception as e:
+            logger.error(f"Exception during script execution for job {job_id}: {str(e)}")
+            logger.error(f"Exception traceback: {traceback.format_exc()}")
+            result = {
+                "success": False,
+                "error": f"Exception during script execution: {str(e)}",
+                "traceback": traceback.format_exc()
+            }
         
         # Add output file info if successful
         if result.get("success"):
@@ -453,9 +479,56 @@ print("===RESULT_END===")
             else:
                 logger.info(f"Transformation output saved to: {full_output_path}")
         else:
-            logger.error(f"Transformation failed for job {job_id}: {result.get('error', 'Unknown error')}")
+            error_msg = result.get('error', 'Unknown error')
+            logger.error(f"Transformation failed for job {job_id}: {error_msg}")
+            
+            # Log detailed error information
+            if result.get('traceback'):
+                logger.error(f"Traceback for job {job_id}:\n{result.get('traceback')}")
+                
+            # Check for specific error types to provide more context
+            if "FileNotFoundError" in error_msg:
+                logger.error(f"File not found error for job {job_id}. Input file path: {input_file}, Data directory: {self.data_dir}")
+                # List files in data directory to help with debugging
+                try:
+                    files_in_data_dir = os.listdir(self.data_dir)
+                    logger.debug(f"Files in data directory for job {job_id}: {files_in_data_dir}")
+                except Exception as e:
+                    logger.error(f"Error listing files in data directory: {str(e)}")
+            
+            # Log any execution messages
             if result.get("messages"):
-                logger.info(f"Execution messages: {result.get('messages')}")
+                logger.info(f"Execution messages for job {job_id}: {json.dumps(result.get('messages'), indent=2)}")
+                
+            # Log raw output if available
+            if result.get("output"):
+                logger.debug(f"Raw output for failed job {job_id}:\n{result.get('output')[:1000]}...")
+                
+            # Check script syntax
+            try:
+                compile(script, '<string>', 'exec')
+                logger.debug(f"Script syntax is valid for job {job_id}")
+            except SyntaxError as e:
+                logger.error(f"Script syntax error for job {job_id}: {str(e)}")
+                logger.error(f"Error on line {e.lineno}, column {e.offset}: {e.text}")
+                
+            # Log environment information
+            logger.debug(f"Python version: {sys.version}")
+            logger.debug(f"Working directory: {os.getcwd()}")
+            logger.debug(f"Data directory exists: {os.path.exists(str(self.data_dir))}")
+            logger.debug(f"Temp directory exists: {os.path.exists(str(self.temp_dir))}")
+            
+            # Add error details to result if not already present
+            if not result.get('detailed_error') and result.get('error'):
+                result['detailed_error'] = {
+                    'message': result.get('error'),
+                    'traceback': result.get('traceback'),
+                    'context': {
+                        'job_id': job_id,
+                        'input_file': input_file,
+                        'output_file': output_filename
+                    }
+                }
         
         return result
     
