@@ -42,6 +42,9 @@ interface Dataset {
   row_count?: number
 }
 
+// Constant for maximum preview rows
+const MAX_PREVIEW_ROWS = 2000;
+
 export default function ExportPage() {
   // Helper function to strip file extensions
   const stripFileExtension = (filename: string): string => {
@@ -205,11 +208,11 @@ export default function ExportPage() {
       const currentPage = previewPage[id] || 1
       
       // Apply filters if they exist
-      let endpoint = `/api/export/datasets/${id}/preview?page=${currentPage}&page_size=${previewPageSize}`
+      let endpoint = `/api/export/datasets/${id}/preview?page=${currentPage}&page_size=${previewPageSize}&max_rows=${MAX_PREVIEW_ROWS}`
       
       if (activeFilters[id]) {
         const { column, operator, value } = activeFilters[id]
-        endpoint = `/api/export/datasets/${id}/filter?column=${column}&operator=${operator}&value=${encodeURIComponent(value)}&page=${currentPage}&page_size=${previewPageSize}`
+        endpoint = `/api/export/datasets/${id}/filter?column=${column}&operator=${operator}&value=${encodeURIComponent(value)}&page=${currentPage}&page_size=${previewPageSize}&max_rows=${MAX_PREVIEW_ROWS}`
       }
       
       // Use fetchWithAuth for authenticated requests
@@ -288,7 +291,7 @@ export default function ExportPage() {
       }))
       
       // Construct URL with the new filter values directly (not from state)
-      const url = `${apiBaseUrl}/api/export/datasets/${id}/filter?column=${column}&operator=${operator}&value=${encodeURIComponent(value)}&page=${currentPage}&page_size=${previewPageSize}`
+      const url = `${apiBaseUrl}/api/export/datasets/${id}/filter?column=${column}&operator=${operator}&value=${encodeURIComponent(value)}&page=${currentPage}&page_size=${previewPageSize}&max_rows=${MAX_PREVIEW_ROWS}`
       
       fetch(url, {
         headers: {
@@ -383,7 +386,7 @@ export default function ExportPage() {
       }))
       
       // Use the unfiltered endpoint directly
-      const url = `${apiBaseUrl}/api/export/datasets/${id}/preview?page=${currentPage}&page_size=${previewPageSize}`
+      const url = `${apiBaseUrl}/api/export/datasets/${id}/preview?page=${currentPage}&page_size=${previewPageSize}&max_rows=${MAX_PREVIEW_ROWS}`
       
       fetch(url, {
         headers: {
@@ -674,7 +677,9 @@ export default function ExportPage() {
       )
     }
 
-    const totalPages = previewData.total_pages || 1
+    // Calculate total pages based on the maximum preview rows limit
+    const effectiveRowCount = Math.min(previewData.total_rows || 0, MAX_PREVIEW_ROWS);
+    const totalPages = Math.max(1, Math.ceil(effectiveRowCount / previewPageSize));
 
     return (
       <div className="space-y-4">
@@ -718,7 +723,11 @@ export default function ExportPage() {
         <div className="flex justify-between items-center text-sm text-muted-foreground">
           <div>
             Showing {(currentPage - 1) * previewPageSize + 1} to{" "}
-            {Math.min(currentPage * previewPageSize, previewData.total_rows)} of {previewData.total_rows} rows
+            {Math.min(currentPage * previewPageSize, Math.min(MAX_PREVIEW_ROWS, previewData.total_rows))}{" "}
+            of {Math.min(MAX_PREVIEW_ROWS, previewData.total_rows)} rows available for preview
+            {previewData.total_rows > MAX_PREVIEW_ROWS && (
+              <span> (Total Rows - {previewData.total_rows})</span>
+            )}
           </div>
           <div className="flex items-center space-x-2">
             <Button
@@ -1028,7 +1037,7 @@ export default function ExportPage() {
                     <span className="text-xs">Clear</span>
                   </Button>
                 </div>
-                <p className="text-xs text-red-500 font-medium">
+                <p className="text-xs font-medium" style={{ color: "#0569d9" }}>
                   Your download will include only the rows that match this filter*
                 </p>
               </div>
@@ -1051,7 +1060,7 @@ export default function ExportPage() {
                   }}
                   className="h-10 bg-background border-border"
                 />
-                <p className="text-xs text-red-500 font-medium mt-1">
+                <p className="text-xs font-medium mt-1" style={{ color: "#0569d9" }}>
                   {rowLimits[id] ? `Will download first ${rowLimits[id]} rows` : 'Leave empty to download all rows'}
                   {hasActiveFilter && ' matching your filter'}{hasActiveFilter ? '*' : '*'}
                 </p>
