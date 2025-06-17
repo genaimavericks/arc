@@ -27,7 +27,8 @@ import {
   Clock,
   Play,
   FileJson,
-  RefreshCw
+  RefreshCw,
+  BarChart2
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { ProfileSession } from '@/components/DataPuurAI/ProfileSession'
@@ -41,6 +42,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Progress } from '@/components/ui/progress'
+import dynamic from "next/dynamic"
+
+// Use dynamic imports to avoid SSR issues
+const ProfileList = dynamic(() => import("@/components/datapuur/profile/profile-list"), { ssr: false })
+const ProfileDetails = dynamic(() => import("@/components/datapuur/profile/profile-details"), { ssr: false })
 
 interface DataSource {
   id: string
@@ -118,7 +124,9 @@ export default function AIProfilePage() {
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null)
   const [creatingProfile, setCreatingProfile] = useState(false)
   const [profileProgress, setProfileProgress] = useState(0)
-  const [profileStatus, setProfileStatus] = useState<string>('')
+  const [profileStatus, setProfileStatus] = useState<string>('')  
+  // For Profile List and Details tabs
+  const [profileListSelectedId, setProfileListSelectedId] = useState<string | null>(null)
   const { toast } = useToast()
 
   // Fetch data sources on mount
@@ -514,23 +522,29 @@ export default function AIProfilePage() {
 
   return (
     <DataPuurLayout>
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold flex items-center gap-2">
-            <Brain className="h-8 w-8" />
-            AI Profile Analysis
-          </h1>
-          <p className="text-muted-foreground mt-2">
-            Use AI to analyze your data profiles and get intelligent insights
-          </p>
+      <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-bold tracking-tight">AI Profile Analysis</h2>
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList>
-            <TabsTrigger value="new">New Session</TabsTrigger>
-            <TabsTrigger value="history">Session History</TabsTrigger>
-            {activeSessionId && <TabsTrigger value="session">Active Session</TabsTrigger>}
-            {activePlanId && <TabsTrigger value="plan">Transformation Plan</TabsTrigger>}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="new">
+              <Brain className="mr-2 h-4 w-4" />
+              New Analysis
+            </TabsTrigger>
+            <TabsTrigger value="history">
+              <History className="mr-2 h-4 w-4" />
+              AI Sessions 
+            </TabsTrigger>
+            <TabsTrigger value="profile-list">
+              <BarChart2 className="mr-2 h-4 w-4" />
+              Profile List
+            </TabsTrigger>
+            <TabsTrigger value="profile-details" disabled={!profileListSelectedId}>
+              <FileText className="mr-2 h-4 w-4" />
+              Profile Details
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="new" className="space-y-6">
@@ -859,6 +873,96 @@ export default function AIProfilePage() {
             </Card>
           </TabsContent>
 
+          {/* Profile List Tab */}
+          <TabsContent value="profile-list" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Profile List</CardTitle>
+                <CardDescription>
+                  View and manage data profiles for your datasets.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center space-x-2">
+                    <div className="flex items-center">
+                      <Search className="h-4 w-4 text-muted-foreground absolute ml-2" />
+                      <Input
+                        type="text"
+                        placeholder="Search profiles..."
+                        className="max-w-sm pl-8"
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                          // Pass the search query to the ProfileList component
+                          const profileListComponent = document.getElementById('profile-list-component') as any;
+                          if (profileListComponent && profileListComponent.setSearchQuery) {
+                            profileListComponent.setSearchQuery(e.target.value);
+                          }
+                        }}
+                      />
+                    </div>
+                    <Button 
+                      type="submit" 
+                      variant="outline" 
+                      size="icon"
+                      onClick={() => {
+                        // Trigger search in the ProfileList component
+                        const profileListComponent = document.getElementById('profile-list-component') as any;
+                        if (profileListComponent && profileListComponent.handleSearch) {
+                          profileListComponent.handleSearch();
+                        }
+                      }}
+                      title="Search profiles"
+                    >
+                      <Search className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <Button 
+                    variant="outline" 
+                    size="icon"
+                    onClick={() => {
+                      // Trigger refresh in the ProfileList component
+                      const profileListComponent = document.getElementById('profile-list-component') as any;
+                      if (profileListComponent && profileListComponent.fetchProfiles) {
+                        profileListComponent.fetchProfiles(true);
+                      }
+                    }}
+                    title="Refresh profiles"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
+                </div>
+                <ProfileList 
+                  onProfileSelect={(profileId) => {
+                    setProfileListSelectedId(profileId);
+                    setActiveTab("profile-details");
+                  }} 
+                  selectedProfileId={profileListSelectedId}
+                />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Profile Details Tab */}
+          <TabsContent value="profile-details" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Profile Details</CardTitle>
+                <CardDescription>
+                  Detailed information about the selected profile.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {profileListSelectedId ? (
+                  <ProfileDetails profileId={profileListSelectedId} />
+                ) : (
+                  <div className="flex justify-center items-center h-64 text-muted-foreground">
+                    Select a profile from the list to view details
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           <TabsContent value="session" className="h-[calc(100vh-16rem)]">
             {activeSessionId && (
               <ProfileSession 
@@ -883,27 +987,27 @@ export default function AIProfilePage() {
             )}
           </TabsContent>
         </Tabs>
-      </div>
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Session</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete this session? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={deleteSession}>
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        {/* Delete Session Dialog */}
+        <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete Session</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete this session? This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={deleteSession}>
+                Delete
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
     </DataPuurLayout>
   )
 }

@@ -310,7 +310,7 @@ export default function OperationsDashboard() {
   return (
     <>
       {/* Key Metrics Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
@@ -392,7 +392,7 @@ export default function OperationsDashboard() {
       </div>
       
       {/* Machine Performance & Downtime Analysis */}
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2 mb-6">
         <Card className="col-span-1">
           <CardHeader>
             <CardTitle>Machine Performance</CardTitle>
@@ -423,7 +423,7 @@ export default function OperationsDashboard() {
       </div>
       
       {/* Maintenance History & Cycle Time */}
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2 mb-6">
         <Card className="col-span-1">
           <CardHeader>
             <CardTitle>Maintenance Costs</CardTitle>

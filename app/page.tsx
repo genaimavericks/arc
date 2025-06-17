@@ -1,19 +1,14 @@
 "use client"
 
 import { useAuth } from "@/lib/auth-context"
-import { useRouter, useSearchParams } from "next/navigation"
-import { useEffect, Suspense, useState } from "react"
+import { useRouter } from "next/navigation"
+import { useEffect, Suspense } from "react"
 import { Card, CardContent, CardHeader, CardDescription, CardTitle } from "@/components/ui/card"
 import { MainLayout } from "@/components/main-layout"
 import ProtectedRoute from "@/components/protected-route"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Button } from "@/components/ui/button"
-import { BarChart2, Settings, User, Download, Zap } from "lucide-react"
 
-// Import dashboard components
+// Import dashboard component
 import DashboardSummary from "@/app/factory_dashboard/components/dashboard-summary"
-import OperationsDashboard from "@/app/factory_dashboard/components/operations-dashboard"
-import WorkforceResourceDashboard from "@/app/factory_dashboard/components/workforce-resource-dashboard"
 
 export default function HomePage() {
   const { user, isLoading } = useAuth()
@@ -70,63 +65,15 @@ export default function HomePage() {
             <h1 className="text-3xl font-bold">Factory Dashboard</h1>
             <p className="text-muted-foreground">Foam Factory performance metrics and analytics</p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm">
-              <Download className="h-4 w-4 mr-2" />
-              Export Data
-            </Button>
-            <Button variant="outline" size="sm">
-              <Zap className="h-4 w-4 mr-2" />
-              Live Monitor
-            </Button>
-          </div>
+          {/* Buttons removed as requested */}
         </header>
 
         <Suspense fallback={<div className="p-4 text-center">Loading dashboard...</div>}>
-          <DashboardTabs />
+          <DashboardSummary />
         </Suspense>
       </MainLayout>
     </ProtectedRoute>
   )
 }
 
-// Client component for tab handling
-function DashboardTabs() {
-  const searchParams = useSearchParams()
-  const tabParam = searchParams.get('tab')
-  const initialTab = tabParam === 'operations' ? 'operations' : 
-                    tabParam === 'workforce' ? 'workforce' : 'summary'
-  
-  const [activeTab, setActiveTab] = useState(initialTab)
-
-  return (
-    <Tabs defaultValue={activeTab} onValueChange={setActiveTab} className="w-full">
-      <TabsList className="bg-card border mb-8">
-        <TabsTrigger value="summary" className="data-[state=active]:bg-muted">
-          <BarChart2 className="h-4 w-4 mr-2" />
-          Performance Overview
-        </TabsTrigger>
-        <TabsTrigger value="operations" className="data-[state=active]:bg-muted">
-          <Settings className="h-4 w-4 mr-2" />
-          Operations & Maintenance
-        </TabsTrigger>
-        <TabsTrigger value="workforce" className="data-[state=active]:bg-muted">
-          <User className="h-4 w-4 mr-2" />
-          Workforce & Resources
-        </TabsTrigger>
-      </TabsList>
-      
-      <div className="space-y-6">
-        <TabsContent value="summary">
-          <DashboardSummary />
-        </TabsContent>
-        <TabsContent value="operations">
-          <OperationsDashboard />
-        </TabsContent>
-        <TabsContent value="workforce">
-          <WorkforceResourceDashboard />
-        </TabsContent>
-      </div>
-    </Tabs>
-  )
-}
+// Dashboard component removed

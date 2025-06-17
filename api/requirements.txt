@@ -104,4 +104,8 @@ websockets
 language-tool-python
 ijson
 cryptography
-
+faiss-cpu
+sentence-transformers
+langchain-huggingface
+jsonschema
+scikit-learn

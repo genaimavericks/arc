@@ -168,9 +168,27 @@ export default function WorkforceResourceDashboard() {
         borderRadius: 3
       },
       itemWidth: 12,
-      itemHeight: 12
+      itemHeight: 12,
+      // Adjust legend position to prevent overflow
+      padding: [5, 10],
+      left: 'center'
     },
     radar: {
+      // Center the radar chart and reduce its size to fit within container
+      center: ['50%', '50%'],
+      radius: '65%',
+      splitNumber: 4,
+      shape: 'polygon',
+      axisName: {
+        color: 'rgb(238, 238, 238)',
+        fontSize: 12
+      },
+      splitArea: {
+        show: true,
+        areaStyle: {
+          color: ['rgba(255, 255, 255, 0.05)', 'rgba(255, 255, 255, 0.1)']
+        }
+      },
       indicator: [
         { name: 'Production Volume', max: 40000 },
         { name: 'Quality Score', max: 100 },
@@ -318,7 +336,7 @@ export default function WorkforceResourceDashboard() {
   return (
     <>
       {/* Key Metrics Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
@@ -402,7 +420,7 @@ export default function WorkforceResourceDashboard() {
       </div>
       
       {/* Workforce Performance & Shift Comparison */}
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2 mb-6">
         <Card className="col-span-1">
           <CardHeader>
             <CardTitle>Workforce Performance Matrix</CardTitle>
@@ -427,13 +445,14 @@ export default function WorkforceResourceDashboard() {
               option={shiftComparisonOptions} 
               style={{ height: '100%', width: '100%' }}
               opts={{ renderer: 'canvas' }}
+              notMerge={true}
             />
           </CardContent>
         </Card>
       </div>
       
       {/* Resource Efficiency & Environmental Impact */}
-      <div className="grid gap-4">
+      <div className="grid gap-4 mb-6">
         <Card>
           <CardHeader>
             <CardTitle>Resource Efficiency</CardTitle>

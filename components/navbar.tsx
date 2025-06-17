@@ -79,8 +79,8 @@ export default function Navbar() {
       return 'Inventory Overview'
     } else if (pathname === '/financial') {
       return 'Financial Overview'
-    } else if (pathname === '/') {
-      return 'Sales Overview Dashboard'
+    } else if (pathname === '/' || pathname === '/factory_dashboard') {
+      return 'Factory Dashboard'
     } else {
       // Default fallback - extract the last part of the path and capitalize it
       const lastSegment = pathname.split('/').filter(Boolean).pop() || 'Dashboard'

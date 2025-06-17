@@ -300,20 +300,20 @@ export default function DashboardSummary() {
   return (
     <>
       {/* KPI Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardHeader className="flex flex-col items-center text-center space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
               Total Production
             </CardTitle>
-            <Factory className="h-4 w-4 text-muted-foreground" />
+            <Factory className="h-4 w-4 text-muted-foreground mt-1" />
           </CardHeader>
-          <CardContent>
+          <CardContent className="text-center">
             <div className="text-2xl font-bold">
-              {summaryData.key_metrics.total_production.toLocaleString()} units
+              {(summaryData.key_metrics.total_production/1000000).toFixed(2)}M units
             </div>
             <p className="text-xs text-muted-foreground">
-              <span className="text-emerald-500 font-medium flex items-center">
+              <span className="text-emerald-500 font-medium flex items-center justify-center">
                 <ArrowUp className="h-3 w-3 mr-1" />
                 12.2%
               </span>{" "}
@@ -323,18 +323,18 @@ export default function DashboardSummary() {
         </Card>
         
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardHeader className="flex flex-col items-center text-center space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
               Total Revenue
             </CardTitle>
-            <BarChart2 className="h-4 w-4 text-muted-foreground" />
+            <BarChart2 className="h-4 w-4 text-muted-foreground mt-1" />
           </CardHeader>
-          <CardContent>
+          <CardContent className="text-center">
             <div className="text-2xl font-bold">
               ${(summaryData.key_metrics.total_revenue/1000000).toFixed(2)}M
             </div>
             <p className="text-xs text-muted-foreground">
-              <span className="text-emerald-500 font-medium flex items-center">
+              <span className="text-emerald-500 font-medium flex items-center justify-center">
                 <ArrowUp className="h-3 w-3 mr-1" />
                 8.7%
               </span>{" "}
@@ -344,18 +344,18 @@ export default function DashboardSummary() {
         </Card>
         
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardHeader className="flex flex-col items-center text-center space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
               Average Quality
             </CardTitle>
-            <Activity className="h-4 w-4 text-muted-foreground" />
+            <Activity className="h-4 w-4 text-muted-foreground mt-1" />
           </CardHeader>
-          <CardContent>
+          <CardContent className="text-center">
             <div className="text-2xl font-bold">
               {summaryData.key_metrics.avg_quality.toFixed(1)}%
             </div>
             <p className="text-xs text-muted-foreground">
-              <span className="text-emerald-500 font-medium flex items-center">
+              <span className="text-emerald-500 font-medium flex items-center justify-center">
                 <ArrowUp className="h-3 w-3 mr-1" />
                 1.5%
               </span>{" "}
@@ -365,18 +365,18 @@ export default function DashboardSummary() {
         </Card>
         
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardHeader className="flex flex-col items-center text-center space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
               Downtime Loss
             </CardTitle>
-            <Badge variant="destructive" className="text-xs">Alert</Badge>
+            <Badge variant="destructive" className="text-xs mt-1">Alert</Badge>
           </CardHeader>
-          <CardContent>
+          <CardContent className="text-center">
             <div className="text-2xl font-bold">
               ${(summaryData.key_metrics.downtime_cost/1000).toFixed(1)}K
             </div>
             <p className="text-xs text-muted-foreground">
-              <span className="text-rose-500 font-medium flex items-center">
+              <span className="text-rose-500 font-medium flex items-center justify-center">
                 <ArrowUp className="h-3 w-3 mr-1" />
                 3.2%
               </span>{" "}
@@ -387,7 +387,7 @@ export default function DashboardSummary() {
       </div>
       
       {/* Production Trend & Machine Utilization */}
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2 mb-6">
         <Card className="col-span-1">
           <CardHeader>
             <CardTitle>Production Volume Trend</CardTitle>
@@ -418,7 +418,7 @@ export default function DashboardSummary() {
       </div>
       
       {/* Machine Utilization & Environmental Impact */}
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2 mb-6">
         <Card className="col-span-1">
           <CardHeader>
             <CardTitle>Machine Utilization</CardTitle>

@@ -62,12 +62,66 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({ href, icon: Icon, lab
     )
   }
   
-  // Regular menu item
+  // Check if this is a tab navigation link (contains query parameters)
+  const hasQueryParams = href.includes('?')
+  
+  // For items with query parameters, use a custom handler to ensure navigation works correctly
+  if (hasQueryParams) {
+    // Determine if this item is active based on the URL and query parameters
+    const basePath = href.split('?')[0]
+    const queryParam = href.split('?')[1]
+    
+    // Check if we're on the correct page and have the correct query parameter
+    const isItemActive = typeof window !== 'undefined' && 
+      window.location.pathname === basePath && 
+      window.location.search.includes(queryParam)
+    
+    // Special case for Telecom Churn Dashboard to reduce spacing
+    const isChurnDashboard = label === "Churn Dashboard"
+    
+    return (
+      <a
+        href={href}
+        onClick={(e) => {
+          // Force a full navigation to ensure the page reloads with the new query parameters
+          // This is necessary for tab switching within the same base URL
+          window.location.href = href
+          e.preventDefault()
+        }}
+        className={cn(
+          "flex items-center rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200",
+          isChurnDashboard ? "gap-1" : "gap-3", // Reduced gap for Telecom Churn Dashboard
+          isItemActive 
+            ? "bg-accent text-accent-foreground" 
+            : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+        )}
+        title={collapsed ? label : undefined}
+      >
+        <Icon className="h-4 w-4" />
+        {!collapsed && <span>{label}</span>}
+        {isItemActive && (
+          <motion.div
+            layoutId="sidebar-indicator"
+            className="absolute left-0 w-1 h-8 bg-primary rounded-r-full"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.2 }}
+          />
+        )}
+      </a>
+    )
+  }
+  
+  // Regular menu item (no query parameters)
+  // Special case for Telecom Churn Dashboard to reduce spacing
+  const isChurnDashboard = label === "Churn Dashboard"
+  
   return (
     <Link
       href={href}
       className={cn(
-        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200",
+        "flex items-center rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200",
+        isChurnDashboard ? "gap-1" : "gap-3", // Reduced gap for Telecom Churn Dashboard
         isActive 
           ? "bg-accent text-accent-foreground" 
           : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
@@ -141,6 +195,8 @@ export function MainSidebar() {
       "datapuur": pathname.startsWith("/datapuur"),
       "kginsights": pathname.startsWith("/kginsights"),
       "k-graff": pathname.startsWith("/kginsights"),
+      "factory-dashboard": pathname === "/" || pathname.startsWith("/factory_dashboard"),
+      "churn-dashboard": pathname.startsWith("/churn_dashboard"),
       "sales-overview": pathname === "/" || pathname.startsWith("/sales-performance"),
       "djinni-assistant": pathname.startsWith("/djinni")
     }))
@@ -190,19 +246,19 @@ export function MainSidebar() {
         {
           label: "Operations & Maintenance",
           icon: BarChart2,
-          href: "/?tab=operations",
+          href: "/factory_dashboard/operations",
           requiredPermission: "command:read"
         },
         {
           label: "Workforce & Resources",
           icon: BarChart2,
-          href: "/?tab=workforce",
+          href: "/factory_dashboard/workforce",
           requiredPermission: "command:read"
         }
       ]
     },
     {
-      label: "Telecom Churn Dashboard",
+      label: "Churn Dashboard",
       icon: BarChart2,
       href: "/churn_dashboard",
       key: "churn-dashboard",
@@ -217,13 +273,13 @@ export function MainSidebar() {
         {
           label: "Customer Profile",
           icon: BarChart2,
-          href: "/churn_dashboard?tab=customer",
+          href: "/churn_dashboard/customer",
           requiredPermission: "command:read"
         },
         {
           label: "Churner Profile",
           icon: BarChart2,
-          href: "/churn_dashboard?tab=churner",
+          href: "/churn_dashboard/churner",
           requiredPermission: "command:read"
         }
       ]
@@ -348,7 +404,6 @@ export function MainSidebar() {
       subItems: [
         { label: "Dashboard", href: "/datapuur", icon: LayoutDashboard },
         { label: "Ingestion", href: "/datapuur/ingestion", icon: FileInput },
-        { label: "Profiles", href: "/datapuur/profile", icon: BarChart2 },
         { label: "AI Profile", href: "/datapuur/ai-profile", icon: Brain },
         { label: "AI Transformation", href: "/datapuur/ai-transformation", icon: Zap },
         { label: "Data Catalog", href: "/datapuur/data-catalog", icon: Database },
@@ -363,9 +418,9 @@ export function MainSidebar() {
       key: "k-graff", // Add a key property for consistent identification
       subItems: [
         { label: "KGraph Dashboard", href: "/kginsights/dashboard", icon: LayoutDashboard },
-        { label: "KGraph Insights", href: "/kginsights/insights", icon: MessageSquare },
         { label: "Generate Graph", href: "/kginsights/generate", icon: GitBranch },
-        { label: "Manage KGraph", href: "/kginsights/manage", icon: Settings }
+        { label: "Manage KGraph", href: "/kginsights/manage", icon: Settings },
+        { label: "KGraph Insights", href: "/kginsights/insights", icon: MessageSquare }
       ]
     }
   ]
@@ -543,7 +598,12 @@ export function MainSidebar() {
                             label={item.label}
                             isActive={
                               pathname === item.href ||
-                              (item.href !== section.href && pathname.startsWith(item.href))
+                              (item.href !== section.href && 
+                               (item.href.includes('?') ? 
+                                 (pathname === item.href.split('?')[0] && 
+                                  typeof window !== 'undefined' && 
+                                  window.location.search.includes(item.href.split('?')[1])) : 
+                                 pathname.startsWith(item.href)))
                             }
                             collapsed={collapsed}
                           />
@@ -656,7 +716,12 @@ export function MainSidebar() {
                             label={item.label}
                             isActive={
                               pathname === item.href ||
-                              (item.href !== section.href && pathname.startsWith(item.href))
+                              (item.href !== section.href && 
+                               (item.href.includes('?') ? 
+                                 (pathname === item.href.split('?')[0] && 
+                                  typeof window !== 'undefined' && 
+                                  window.location.search.includes(item.href.split('?')[1])) : 
+                                 pathname.startsWith(item.href)))
                             }
                             collapsed={collapsed}
                           />

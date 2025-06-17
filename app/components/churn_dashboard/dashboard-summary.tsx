@@ -342,13 +342,13 @@ export default function ChurnSummary() {
         <h2 className="text-2xl font-bold mb-4">Customer Profile Overview</h2>
         <div className="grid gap-4 md:grid-cols-3">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardHeader className="flex flex-col items-center text-center space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
                 Total Customers
               </CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
+              <Users className="h-4 w-4 text-muted-foreground mt-1" />
             </CardHeader>
-            <CardContent>
+            <CardContent className="text-center">
               <div className="text-2xl font-bold">
                 {summaryData.customer_profile.total_customers.toLocaleString()}
               </div>
@@ -359,13 +359,13 @@ export default function ChurnSummary() {
           </Card>
           
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardHeader className="flex flex-col items-center text-center space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
                 Avg Monthly Charges
               </CardTitle>
-              <Wallet className="h-4 w-4 text-muted-foreground" />
+              <Wallet className="h-4 w-4 text-muted-foreground mt-1" />
             </CardHeader>
-            <CardContent>
+            <CardContent className="text-center">
               <div className="text-2xl font-bold">
                 ${summaryData.customer_profile.avg_monthly_charges.toFixed(2)}
               </div>
@@ -376,13 +376,13 @@ export default function ChurnSummary() {
           </Card>
           
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardHeader className="flex flex-col items-center text-center space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
                 Total Charges
               </CardTitle>
-              <Wallet className="h-4 w-4 text-muted-foreground" />
+              <Wallet className="h-4 w-4 text-muted-foreground mt-1" />
             </CardHeader>
-            <CardContent>
+            <CardContent className="text-center">
               <div className="text-2xl font-bold">
                 ${(summaryData.customer_profile.total_charges / 1000000).toFixed(2)}M
               </div>
@@ -399,13 +399,13 @@ export default function ChurnSummary() {
         <h2 className="text-2xl font-bold mb-4">Churn Profile Overview</h2>
         <div className="grid gap-4 md:grid-cols-3">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardHeader className="flex flex-col items-center text-center space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
                 Total Churners
               </CardTitle>
-              <Users className="h-4 w-4 text-rose-500" />
+              <Users className="h-4 w-4 text-rose-500 mt-1" />
             </CardHeader>
-            <CardContent>
+            <CardContent className="text-center">
               <div className="text-2xl font-bold">
                 {summaryData.churn_profile.total_churners.toLocaleString()}
               </div>
@@ -414,13 +414,13 @@ export default function ChurnSummary() {
           </Card>
           
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardHeader className="flex flex-col items-center text-center space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
                 Avg Monthly Charges
               </CardTitle>
-              <Wallet className="h-4 w-4 text-muted-foreground" />
+              <Wallet className="h-4 w-4 text-muted-foreground mt-1" />
             </CardHeader>
-            <CardContent>
+            <CardContent className="text-center">
               <div className="text-2xl font-bold">
                 ${summaryData.churn_profile.avg_monthly_charges.toFixed(2)}
               </div>
@@ -431,13 +431,13 @@ export default function ChurnSummary() {
           </Card>
           
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardHeader className="flex flex-col items-center text-center space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
                 Avg Total Charges
               </CardTitle>
-              <Wallet className="h-4 w-4 text-muted-foreground" />
+              <Wallet className="h-4 w-4 text-muted-foreground mt-1" />
             </CardHeader>
-            <CardContent>
+            <CardContent className="text-center">
               <div className="text-2xl font-bold">
                 ${summaryData.churn_profile.avg_total_charges.toFixed(2)}
               </div>
