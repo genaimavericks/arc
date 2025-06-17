@@ -43,7 +43,11 @@ interface Dataset {
 }
 
 // Constant for maximum preview rows
+<<<<<<< HEAD
 const MAX_PREVIEW_ROWS = 500;
+=======
+const MAX_PREVIEW_ROWS = 2000;
+>>>>>>> 7f05c0c (Update Datapuur Export page: Add 2000 row preview limit, update pagination display text, and change filter message styling to blue (#0569d9))
 
 export default function ExportPage() {
   // Helper function to strip file extensions
