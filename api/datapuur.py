@@ -1841,11 +1841,14 @@ def process_db_ingestion_with_db(job_id, db_type, db_config, chunk_size, db):
                             }
                         
                         # Create the ProfileResult record
+                        # Store just the filename part as parquet_file_path to match what the profiler expects
+                        relative_path = f"{job_id}.parquet"  # Just the filename, not the full path
+                        
                         profile_result = ProfileResult(
                             id=profile_id,
                             file_id=file_id,  # Use the file_id created for this database ingestion
                             file_name=connection_string_display,  # Use the connection string as the file name
-                            parquet_file_path=str(output_file),
+                            parquet_file_path=relative_path,  # Store just the filename, not the full path
                             total_rows=row_count,
                             total_columns=column_count,
                             data_quality_score=completion_rate / 100 if completion_rate is not None else 0.0,
@@ -1853,7 +1856,6 @@ def process_db_ingestion_with_db(job_id, db_type, db_config, chunk_size, db):
                             exact_duplicates_count=0,  # We don't calculate duplicates for DB ingestion
                             fuzzy_duplicates_count=0,
                             duplicate_groups={"exact": [], "fuzzy": []}
-                            # Removed status parameter as it doesn't exist in the model
                         )
                         db_session.add(profile_result)
                         db_session.commit()

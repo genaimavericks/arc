@@ -420,11 +420,10 @@ export function FileUpload({
                     Authorization: `Bearer ${localStorage.getItem("token")}`,
                   },
                   body: JSON.stringify({
-                    file_id: ingestData.file_id,
+                    file_id: data.file_id,
                     file_name: file.name,
-                    // The key fix: use the ingestion job id to create the correct file path
-                    // The backend stores the processed data as a parquet file with the job_id as the filename
-                    file_path: `${ingestData.job_id}.parquet`,
+                    // Use the original file_id from the upload, not the ingestion job ID
+                    file_path: `${data.file_id}.parquet`,
                   }),
                 });
                 
@@ -653,11 +652,10 @@ export function FileUpload({
                     Authorization: `Bearer ${localStorage.getItem("token")}`,
                   },
                   body: JSON.stringify({
-                    file_id: fileDetails.id,
+                    file_id: data.file_id,
                     file_name: file.name,
-                    // The key fix: use the ingestion job id to create the correct file path
-                    // The backend stores the processed data as a parquet file with the job_id as the filename
-                    file_path: `${ingestData.job_id}.parquet`,
+                    // Use the original file_id from the upload, not the ingestion job ID
+                    file_path: `${data.file_id}.parquet`,
                   }),
                 });
                 
