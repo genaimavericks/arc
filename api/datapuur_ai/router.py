@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import traceback
+import copy
 from datetime import datetime, timedelta
 from pydantic import BaseModel, Field, validator, root_validator, create_model
 
@@ -1336,6 +1337,12 @@ async def create_draft_transformation_plan(
     print(f"Request received from user: {current_user.username}")
     print(f"Request data: {request.model_dump()}")
     
+    # Always create a new plan by adding timestamp to name
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if not request.name.endswith(f" - {timestamp}"):
+        request.name = f"{request.name} - {timestamp}"
+    
     try:
         print(f"[Transformation] Creating draft plan using AI agent")
         
@@ -1407,7 +1414,7 @@ async def create_draft_transformation_plan(
                 step["parameters"] = {}  # Set default empty dict if missing or None
                 
         plan_kwargs = {
-            "name": request.name,
+            "name": request.name,  # Name already has timestamp added
             "description": request.description or plan_data.get("description", "Data transformation plan"),
             "transformation_steps": steps,
             "expected_improvements": plan_data.get("expected_improvements", {})
@@ -1612,6 +1619,18 @@ async def create_draft_transformation_plan(
         db.add(plan)
         db.commit()
         
+        print(plan.name)
+        print(plan.description)
+        print(plan.profile_session_id)
+        print(plan.transformation_steps)
+        print(plan.expected_improvements)
+        print(plan.transformation_script)
+        print(plan.status)
+        print(plan.created_at)
+        print(plan.updated_at)
+        print(plan.output_file_path)
+        print(plan.id)
+        
         return TransformationPlanResponse(
             id=plan.id,
             name=plan.name,
@@ -1656,9 +1675,15 @@ async def create_transformation_plan(
     
     try:
         print(f"[Transformation] Starting plan creation for user: {current_user.username}")
-        print(f"[Transformation] Plan name: {request.name}")
-        print(f"[Transformation] Profile session ID: {request.profile_session_id or 'None'}")
         
+        # Always create a new plan by adding timestamp to name
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if not request.name.endswith(f" - {timestamp}"):
+            request.name = f"{request.name} - {timestamp}"
+            
+        print(f"[Transformation] Plan name with timestamp: {request.name}")
+        print(f"[Transformation] Profile session ID: {request.profile_session_id or 'None'}")        
         # Combine user description and chat instructions if provided
         user_requirements = request.description or ""
         if request.input_instructions:

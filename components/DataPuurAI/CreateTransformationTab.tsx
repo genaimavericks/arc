@@ -42,7 +42,8 @@ export function CreateTransformationTab({ initialPlanId, dataSourceId, dataSourc
   const form = useForm<z.infer<typeof transformationFormSchema>>({
     resolver: zodResolver(transformationFormSchema),
     defaultValues: {
-      name: dataSourceName ? `${dataSourceName} - Transformation` : "",
+      // Initialize with empty name - we'll get the actual name from the API
+      name: "",
       description: "AI-powered data transformation plan"
     }
   })
@@ -53,7 +54,64 @@ export function CreateTransformationTab({ initialPlanId, dataSourceId, dataSourc
       fetchDataSourceDetails(dataSourceId)
     }
   }, [dataSourceId])
+  
+  // Fetch plan details if initialPlanId is provided
+  useEffect(() => {
+    if (initialPlanId) {
+      fetchPlanDetails(initialPlanId)
+    }
+  }, [initialPlanId])
 
+  // Fetch plan details from API
+  const fetchPlanDetails = async (id: string) => {
+    try {
+      console.log(`[Transform] Fetching plan details for ID: ${id}`)
+      const token = localStorage.getItem('token')
+      if (!token) {
+        throw new Error('Authentication token not found')
+      }
+      
+      const response = await fetch(`/api/datapuur-ai/transformations/${id}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch plan details: ${response.statusText}`)
+      }
+      
+      const planData = await response.json()
+      console.log(`[Transform] Fetched plan details:`, planData)
+      
+      // Log the plan name to verify it contains the timestamp
+      console.log(`[Transform] Plan name from API: "${planData.name}"`)
+      
+      // Update form with plan details - ensure we use the exact name from the API
+      form.reset({
+        name: planData.name || '',
+        description: planData.description || ''
+      })
+      
+      // Force the form to update with the correct name
+      setTimeout(() => {
+        const formValues = form.getValues();
+        console.log(`[Transform] Form values after reset:`, formValues);
+      }, 100)
+      
+      // Set plan ID
+      setPlanId(planData.id)
+      
+    } catch (error) {
+      console.error('Error fetching plan details:', error)
+      toast({
+        title: "Error",
+        description: "Failed to load transformation plan details",
+        variant: "destructive"
+      })
+    }
+  }
+  
   // Fetch data source details from API
   const fetchDataSourceDetails = async (id: string) => {
     try {
@@ -128,12 +186,15 @@ export function CreateTransformationTab({ initialPlanId, dataSourceId, dataSourc
         input_instructions: string;
         id?: string;
       } = {
+        // Preserve the exact name from the form (which should include the timestamp)
         name: values.name,
         description: values.description || "",
         is_draft: !planId, // true if no planId exists (new plan), false if editing
         profile_session_id: dataSource?.id,
         input_instructions: finalInstructions || ""
       };
+      
+      console.log(`[Transform] Submitting plan with name: "${payload.name}"`);
       
       // Add ID only if it exists to maintain backward compatibility
       if (planId) {

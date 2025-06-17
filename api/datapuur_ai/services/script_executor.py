@@ -83,7 +83,7 @@ from pathlib import Path
 from datetime import datetime
 
 # Set up paths
-DATA_DIR = Path("{self.data_dir}")
+DATA_DIR = Path(r"{self.data_dir}")
 INPUT_FILE = DATA_DIR / "{input_file_path}"
 
 # Ensure data directory exists

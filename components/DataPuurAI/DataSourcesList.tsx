@@ -109,44 +109,10 @@ export function DataSourcesList() {
         description: "Please wait while we prepare your transformation plan..."
       })
       
-      // First, check if transformation plans exist for this source
-      let existingPlanId = undefined
+      // Always create a new transformation plan
+      console.log("Creating a new transformation plan")
       
-      try {
-        // Get the filename without extension to match source_id format
-        const filenameNoExt = dataSource.id;
-        
-        // Use the dedicated endpoint to find transformation plans directly by source_id
-        const plansResponse = await fetch(`/api/datapuur-ai/transformations/by-source/${filenameNoExt}`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        })
-        
-        if (plansResponse.ok) {
-          const plansData = await plansResponse.json()
-          
-          // Check if response contains transformation plans
-          if (plansData.transformation_plans && plansData.transformation_plans.length > 0) {
-            // Use the ID of the first plan associated with this source
-            existingPlanId = plansData.transformation_plans[0].id
-            console.log(`Found existing plan ID: ${existingPlanId} for source ${filenameNoExt}`)
-          } else {
-            console.log(`No existing transformation plans found for source ${filenameNoExt}`)
-          }
-        }
-      } catch (error) {
-        console.error('Error checking for existing plans:', error)
-        // Continue with creating a new plan if the check fails
-      }
-      
-      let planId = existingPlanId;
-      
-      // Only create a new draft plan if we didn't find an existing one
-      if (!existingPlanId) {
-        console.log("No existing plan found, creating a new draft plan")
-        
+      let planId = undefined;
         // Create a draft transformation plan using the dedicated draft endpoint
         const response = await fetch('/api/datapuur-ai/transformations/draft', {
           method: 'POST',
@@ -155,7 +121,7 @@ export function DataSourcesList() {
             'Authorization': `Bearer ${token}`
           },
           body: JSON.stringify({
-            name: `${dataSource.name} - Transformation`,
+            name: `${dataSource.name} - Transformation`,  // The backend will add the timestamp
             description: "AI-powered data transformation plan",
             source_id: dataSource.id,  // Use source_id for data source reference
             profile_session_id: dataSource.has_profile ? dataSource.id : undefined,
@@ -175,19 +141,17 @@ export function DataSourcesList() {
           title: "Success",
           description: "Created new transformation plan. Redirecting..."
         })
-      } else {
-        toast({
-          title: "Success",
-          description: "Using existing transformation plan. Redirecting..."
-        })
-      }
 
+      // Wait a moment to ensure the plan is fully created before redirecting
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Now redirect to the transformation page with the draft plan ID
       router.push(`/datapuur/ai-transformation?tab=create&file_id=${dataSource.id}&file_name=${encodeURIComponent(dataSource.name)}&file_path=${encodeURIComponent(dataSource.file_path)}&draft_plan_id=${planId}`)
       
       // After navigation, wait a moment and force page reload to ensure tab changes
       setTimeout(() => {
         window.location.reload()
-      }, 100)
+      }, 500)
       
     } catch (error: any) {
       console.error('Error creating transformation draft:', error)
