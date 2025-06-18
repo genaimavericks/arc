@@ -27,8 +27,18 @@ export default function ProtectedRoute({ children, requiredPermission }: Protect
     } else if (!isLoading && user) {
       // Check permission-based access if a specific permission is required
       if (requiredPermission && user.permissions) {
+        // Special case for KGraph Insights - allow access with either kginsights:read OR djinni:read
+        const isKGraphInsightsPage = pathname.startsWith('/kginsights');
+        const hasKGraphPermission = user.permissions.includes('kginsights:read');
+        const hasDjinniPermission = user.permissions.includes('djinni:read');
+        
+        // Allow access to KGraph pages if user has either permission
+        const hasRequiredPermission = requiredPermission === 'kginsights:read' && isKGraphInsightsPage
+          ? (hasKGraphPermission || hasDjinniPermission)
+          : user.permissions.includes(requiredPermission);
+        
         // If the user doesn't have the required permission, redirect to an appropriate page
-        if (!user.permissions.includes(requiredPermission)) {
+        if (!hasRequiredPermission) {
           // Instead of redirecting to home, redirect to the appropriate page based on permissions
           if (user.permissions.includes('datapuur:read')) {
             router.push('/datapuur')
@@ -63,7 +73,17 @@ export default function ProtectedRoute({ children, requiredPermission }: Protect
 
   // Check permission-based access
   if (requiredPermission && user.permissions) {
-    if (!user.permissions.includes(requiredPermission)) {
+    // Special case for KGraph Insights - allow access with either kginsights:read OR djinni:read
+    const isKGraphInsightsPage = pathname.startsWith('/kginsights');
+    const hasKGraphPermission = user.permissions.includes('kginsights:read');
+    const hasDjinniPermission = user.permissions.includes('djinni:read');
+    
+    // Check if user has required permission, with special handling for KGraph pages
+    const hasRequiredPermission = requiredPermission === 'kginsights:read' && isKGraphInsightsPage
+      ? (hasKGraphPermission || hasDjinniPermission)
+      : user.permissions.includes(requiredPermission);
+      
+    if (!hasRequiredPermission) {
       return null
     }
   }

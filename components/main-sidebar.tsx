@@ -311,7 +311,8 @@ export function MainSidebar() {
         label: "KGraph Insights", 
         href: "/kginsights/insights", 
         icon: NetworkIcon,
-        requiredPermission: "kginsights:read" 
+        // Using djinni:read instead of kginsights:read so it's always visible in Djinni menu
+        requiredPermission: "djinni:read" 
       }
     ]
     if (model === "factory_astro") {
@@ -427,6 +428,12 @@ export function MainSidebar() {
   
   // Filter tools based on user permissions
   const tools = allTools.filter(tool => {
+    // Special case for K-Graff menu - only show if user explicitly has kginsights:read permission
+    // This ensures users with only djinni:read don't see the K-Graff menu
+    if (tool.key === "k-graff") {
+      return user?.permissions?.includes("kginsights:read");
+    }
+    
     if (!user || !user.permissions || !tool.requiredPermission) return false
     
     // Check if user has the required permission for this tool
@@ -704,7 +711,12 @@ export function MainSidebar() {
                     {Boolean(expandedSections[section.key || section.label.toLowerCase()]) && !collapsed && (
                       <div className="ml-4 space-y-1 border-l border-border pl-3">
                         {section.subItems?.filter(item => {
-                          // Filter sub-items based on permissions if they have requiredPermission
+                          // Special case for KGraph Insights in the Djinni menu - always show to users with djinni:read
+                          if (item.label === "KGraph Insights" && user?.permissions?.includes("djinni:read")) {
+                            return true;
+                          }
+                          
+                          // Standard permission filtering for other items
                           if (!item.requiredPermission) return true;
                           if (!user || !user.permissions) return false;
                           return user.permissions.includes(item.requiredPermission);
