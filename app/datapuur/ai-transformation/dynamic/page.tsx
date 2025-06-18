@@ -7,14 +7,16 @@ import { Button } from '@/components/ui/button';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { TransformationPlan } from '@/components/DataPuurAI/TransformationPlan';
+import ProtectedRoute from '@/components/protected-route';
 
 // Simple client component that handles transformation plans with localStorage
-export default function DynamicTransformationPage() {
+function DynamicTransformationPageContent() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [planData, setPlanData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [transformationId, setTransformationId] = useState<string | null>(null);
+  const [originPath, setOriginPath] = useState<string>('/datapuur/ai-profile'); // Default fallback
   
   useEffect(() => {
     console.log('[Transform] Dynamic page mounted, checking for transformation plan ID');
@@ -22,6 +24,20 @@ export default function DynamicTransformationPage() {
     // Get the transformation ID from localStorage
     const storedId = localStorage.getItem('current_transformation_id');
     console.log(`[Transform] Retrieved ID from localStorage: ${storedId || 'NOT FOUND'}`);
+    
+    // Extract origin path from URL query parameters
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      const fromParam = searchParams.get('from');
+      if (fromParam) {
+        console.log(`[Transform] Origin path found in URL: ${fromParam}`);
+        setOriginPath(fromParam);
+      } else {
+        console.log('[Transform] No origin path in URL, using default: /datapuur/ai-profile');
+      }
+    } catch (err) {
+      console.error('[Transform] Error parsing URL parameters:', err);
+    }
     
     if (!storedId) {
       console.error('[Transform] No transformation plan ID in localStorage');
@@ -105,10 +121,10 @@ export default function DynamicTransformationPage() {
             <Button
               className="mt-4"
               variant="outline"
-              onClick={() => router.push('/datapuur/ai-profile')}
+              onClick={() => router.push(originPath)}
             >
               <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to AI Profile
+              Back
             </Button>
           </CardContent>
         </Card>
@@ -121,10 +137,10 @@ export default function DynamicTransformationPage() {
       <div className="mb-6">
         <Button
           variant="ghost"
-          onClick={() => router.push('/datapuur/ai-profile')}
+          onClick={() => router.push(originPath)}
         >
           <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to AI Profile
+          Back
         </Button>
       </div>
       
@@ -142,5 +158,14 @@ export default function DynamicTransformationPage() {
         />
       </div>
     </div>
+  );
+}
+
+// Wrap the component with ProtectedRoute to ensure proper permission protection
+export default function DynamicTransformationPage() {
+  return (
+    <ProtectedRoute requiredPermission="datapuur:read">
+      <DynamicTransformationPageContent />
+    </ProtectedRoute>
   );
 }

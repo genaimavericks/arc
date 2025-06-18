@@ -24,6 +24,19 @@ export default function AITransformationContent() {
   const dataSourceId = searchParams.get('file_id')
   const dataSourceName = searchParams.get('file_name')
   const draftPlanId = searchParams.get('draft_plan_id')
+  
+  // Check if we're editing an existing plan
+  const [isEditingExistingPlan, setIsEditingExistingPlan] = useState<boolean>(false)
+  
+  useEffect(() => {
+    // Check if there's a plan ID in localStorage or URL params
+    const storedPlanId = localStorage.getItem('current_transformation_id')
+    if (draftPlanId || storedPlanId) {
+      setIsEditingExistingPlan(true)
+    } else {
+      setIsEditingExistingPlan(false)
+    }
+  }, [draftPlanId])
 
   // Update the URL when the tab changes
   const handleTabChange = (tab: string) => {
@@ -85,6 +98,12 @@ export default function AITransformationContent() {
       <TabsContent value="create">
         <Card>
           <CardHeader>
+            <CardTitle>{isEditingExistingPlan ? "Edit Transformation Plan" : "Create Transformation Plan"}</CardTitle>
+            <CardDescription>
+              {isEditingExistingPlan 
+                ? "Edit your existing AI-powered data transformation plan" 
+                : "Create a new AI-powered data transformation plan"}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <CreateTransformationTab 
