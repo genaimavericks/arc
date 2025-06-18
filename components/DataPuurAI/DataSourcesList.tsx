@@ -121,7 +121,8 @@ export function DataSourcesList() {
             'Authorization': `Bearer ${token}`
           },
           body: JSON.stringify({
-            name: `${dataSource.name} - Transformation`,  // The backend will add the timestamp
+            // Add timestamp to name to ensure uniqueness
+            name: `${dataSource.name} - Transformation - ${new Date().toISOString().slice(0,19).replace('T', ' ').replace(/[-:]/g, '')}`,
             description: "AI-powered data transformation plan",
             source_id: dataSource.id,  // Use source_id for data source reference
             profile_session_id: dataSource.has_profile ? dataSource.id : undefined,
