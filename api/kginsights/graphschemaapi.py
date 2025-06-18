@@ -189,6 +189,7 @@ class SaveSchemaInput(BaseModel):
     output_path: str = None  # Optional output path, if not provided will use default location
     csv_file_path: str = None  # Path to the original CSV file used to generate the schema
     dataset_type: str = "source"  # Type of dataset: "source" or "transformed"
+    domain: str = None  # Data domain (e.g., 'telecom_churn', 'foam_factory')
 
 class SaveSchemaResponse(BaseModel):
     message: str
@@ -1420,6 +1421,14 @@ async def save_schema(
             if hasattr(save_input, 'dataset_type') and save_input.dataset_type:
                 dataset_type = save_input.dataset_type
                 print(f"DEBUG: Using explicitly provided dataset_type: {dataset_type}")
+            
+            # Get domain if provided
+            domain = None
+            if hasattr(save_input, 'domain') and save_input.domain:
+                domain = save_input.domain
+                print(f"DEBUG: Using explicitly provided domain: {domain}")
+                # Also add domain to schema_data for file storage
+                schema_data['domain'] = domain
                 
             schema_record = Schema(
                 name=schema_data.get('name', f"schema_{datetime.now().isoformat()}"),
@@ -1427,7 +1436,8 @@ async def save_schema(
                 description=schema_data.get('description', ''),
                 schema=json.dumps(save_input.schema),
                 csv_file_path=save_input.csv_file_path,
-                dataset_type=dataset_type  # Set the dataset type
+                dataset_type=dataset_type,  # Set the dataset type
+                domain=domain  # Set the domain
                 # created_at and updated_at have default values
             )
             db.add(schema_record)
