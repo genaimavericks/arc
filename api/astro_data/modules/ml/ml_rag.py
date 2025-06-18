@@ -87,15 +87,16 @@ Instructions:
 2. Select the most appropriate ML model to answer the question. If no suitable model is found, respond with "No suitable model found."
 3. Extract the necessary input parameters/variables from the question and provided information. 
 4. Return the selected model name and the input parameters in JSON format. If no suitable model is found, return "No suitable model found."
-5. In output, year should be number like 2025, month should be 1 to 12, factories should be 0 to 4
-6. If default values in case following are not mentioned: factories: [0], years:[2025], months:[1]
+5. In output, year should be number like 2025, month should be 1 to 12, factories should be 1 to 5
+6. If default values in case following are not mentioned: factories: [1], years:[2025], months:[1]
 7. Strictly return output in format listed under 'Output Format:' section
 8. Use this mapping:
     Factories:
-        Factory 1 -> 0
-        Factory 2 -> 1
+        Factory 0 -> 0
+        Factory 1 -> 1
+        Factory 2 -> 2
         ...
-        Factory 5 -> 4
+        Factory 5 -> 5
 9. For time periods, use the following mapping:
     - "next quarter" or "Q1": [1, 2, 3] for first quarter, [4, 5, 6] for second quarter, etc.
     - "next month": [current month + 1]
@@ -110,7 +111,7 @@ Output: {{"model_name": "production_volume_model", "input_parameters": {{
     "Operator Experience (years)": 5,
     "Months": [3],
     "Years": [2025],
-    "Factories": [0]
+    "Factories": [1]
 }}}}
 
 2. Question: Estimate production volume for March and April across factories 1 and 2 with 90% machine utilization
@@ -118,14 +119,14 @@ Output: {{"model_name": "production_volume_model", "input_parameters": {{
     "Machine Utilization (%)": 90,
     "Months": [3, 4],
     "Years": [2025],
-    "Factories": [0, 1]
+    "Factories": [1, 2]
 }}}}
 
 3. Question: What will the production volume be over the next quarter?
 Output: {{"model_name": "production_volume_model", "input_parameters": {{
     "Months": [1, 2, 3],
     "Years": [2025],
-    "Factories": [0]
+    "Factories": [1]
 }}}}
 
 Examples for Revenue Model
@@ -134,7 +135,7 @@ Output: {{"model_name": "revenue_model", "input_parameters": {{
     "Production Volume (units)": 5000,
     "Months": [1, 2, 3],
     "Years": [2025],
-    "Factories": [0, 1, 2, 3, 4]
+    "Factories": [1, 2, 3, 4, 5]
 }}}}
 
 5. Question: Predict revenue for June and July in factories 2 and 3 with 90% machine utilization
@@ -142,14 +143,14 @@ Output: {{"model_name": "revenue_model", "input_parameters": {{
     "Machine Utilization (%)": 90,
     "Months": [6, 7],
     "Years": [2025],
-    "Factories": [1, 2]
+    "Factories": [2, 3]
 }}}}
 
 6. Question: What will the revenue for factory 3 be over the next quarter?
 Output: {{"model_name": "revenue_model", "input_parameters": {{
     "Months": [1, 2, 3],
     "Years": [2025],
-    "Factories": [2]
+    "Factories": [3]
 }}}}
 
 Examples for Profit Margin Model
@@ -158,28 +159,28 @@ Output: {{"model_name": "profit_margin_model", "input_parameters": {{
     "CO2 Emissions (kg)": 500,
     "Months": [4, 5, 6],
     "Years": [2025],
-    "Factories": [0]
+    "Factories": [1]
 }}}}
 
 8. Question: Predict profit margin for September and October across factories 1, 2 and 3
 Output: {{"model_name": "profit_margin_model", "input_parameters": {{
     "Months": [9, 10],
     "Years": [2025],
-    "Factories": [0, 1, 2]
+    "Factories": [1, 2, 3]
 }}}}
 
 9. Question: What will the profit margin of factory 1 over the next quarter?
 Output: {{"model_name": "profit_margin_model", "input_parameters": {{
     "Months": [1, 2, 3],
     "Years": [2025],
-    "Factories": [0]
+    "Factories": [1]
 }}}}
 
 10. Question: What will the profit margin of factory 2 over the next 6 months?
 Output: {{"model_name": "profit_margin_model", "input_parameters": {{
     "Months": [1, 2, 3, 4, 5, 6],
     "Years": [2025],
-    "Factories": [1]
+    "Factories": [2]
 }}}}
 
 **General Instructions:**
@@ -187,10 +188,10 @@ Output: {{"model_name": "profit_margin_model", "input_parameters": {{
 *   Select the most appropriate ML model to answer the question. If no suitable model is found, respond with "No suitable model found."
 *   Extract the necessary input parameters/variables from the question and provided information. 
 *   Return the selected model name and the input parameters in JSON format. If no suitable model is found, return "No suitable model found."
-*   In output, year should be number like 2025, month should be 1 to 12, factories should be 0 to 4 and locations should be 0 to 4
-*   In case year(s), month(s), factorie(s) or location(s) are not mentioned in question then use following: factories: [0], years:[2025], months:[1]
+*   In output, year should be number like 2025, month should be 1 to 12, factories should be 1 to 5 and locations should be 1 to 5
+*   In case year(s), month(s), factorie(s) or location(s) are not mentioned in question then use following: factories: [1], years:[2025], months:[1]
 *   For questions about "next quarter", map to the appropriate three consecutive months
-*   For "factory 1", always map to factory index 0, "factory 2" to index 1, etc.
+*   For "factory 1", always map to factory index 1, "factory 2" to index 2, etc.
 *   Strictly return output in format listed under 'Output Format:' section
 *   Handle empty results gracefully by stating that no data is available.
 
@@ -248,16 +249,16 @@ def get_model_and_params(question):
                 # Try to extract model name and parameters from non-JSON output
                 if "profit_margin_model" in llm_output[0]:
                     print("Attempting to extract profit_margin_model parameters from non-JSON output")
-                    return "profit_margin_model", {"Months": [1, 2, 3], "Years": [2025], "Factories": [0]}
+                    return "profit_margin_model", {"Months": [1, 2, 3], "Years": [2025], "Factories": [1]}
                 # Check for production volume queries
                 elif "production_model" in llm_output[0] or "production volume" in llm_output[0].lower():
                     print("Attempting to extract production_volume_model parameters from non-JSON output")
                     # Try to extract factory numbers
-                    factories = [0]  # Default to factory 1 (index 0)
+                    factories = [1]  # Default to factory 1
                     import re
                     factory_matches = re.findall(r'factory\s+(\d+)', str(llm_output[0]).lower())
                     if factory_matches:
-                        factories = [int(f) - 1 for f in factory_matches]  # Convert to 0-based index
+                        factories = [int(f) for f in factory_matches]  # Keep as 1-based index
                     
                     # Try to extract months
                     months = [1, 2, 3]  # Default to Q1
@@ -272,29 +273,29 @@ def get_model_and_params(question):
             if "profit margin" in str(llm_output).lower() and "factory" in str(llm_output).lower() and "quarter" in str(llm_output).lower():
                 print("Detected profit margin query for next quarter, using default parameters")
                 # Extract factory number if possible
-                factory_num = 0  # Default to factory 1 (index 0)
+                factory_num = 1  # Default to factory 1
                 import re
                 factory_match = re.search(r'factory\s+(\d+)', str(llm_output).lower())
                 if factory_match:
-                    factory_num = int(factory_match.group(1)) - 1  # Convert to 0-based index
+                    factory_num = int(factory_match.group(1))  # Keep as 1-based index
                 return "profit_margin_model", {"Months": [1, 2, 3], "Years": [2025], "Factories": [factory_num]}
             # Check if this is a production volume query
             elif "production volume" in str(llm_output).lower() and "factory" in str(llm_output).lower():
                 print("Detected production volume query, using extracted parameters")
                 # Extract factory numbers if possible
-                factories = [0]  # Default to factory 1 (index 0)
+                factories = [1]  # Default to factory 1
                 import re
                 factory_matches = re.findall(r'factory\s+(\d+)', str(llm_output).lower())
                 if factory_matches:
-                    factories = [int(f) - 1 for f in factory_matches]  # Convert to 0-based index
+                    factories = [int(f) for f in factory_matches]  # Keep as 1-based index
                 
                 # If no specific factories found, check for multiple factories like 4,5,6
                 if len(factories) <= 1:
                     factory_list_match = re.search(r'factory\s+(\d+)\s*,\s*(\d+)\s*,\s*(\d+)', str(llm_output).lower())
                     if factory_list_match:
-                        factories = [int(factory_list_match.group(1)) - 1, 
-                                    int(factory_list_match.group(2)) - 1,
-                                    int(factory_list_match.group(3)) - 1]
+                        factories = [int(factory_list_match.group(1)), 
+                                    int(factory_list_match.group(2)),
+                                    int(factory_list_match.group(3))]
                 
                 # Extract months if possible
                 months = [1, 2, 3]  # Default to Q1
