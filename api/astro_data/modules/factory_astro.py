@@ -63,12 +63,13 @@ class FactoryAstro:
                     except:
                         prediction_data = None
                 
-                return {
+                response_dict = {
                     "status": "success",
                     "data": parsed_response,
                     "summary": response_text,
                     "prediction_data": prediction_data
                 }
+                return response_dict
             except json.JSONDecodeError:
                 # Add to chat history
                 self.chat_history.append(('User', query))

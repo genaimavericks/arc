@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, AreaChart, Area, LabelList } from 'recharts';
+import { CustomTooltip, formatYAxisTick, formatDataLabel, getTooltipProps } from './chart-formatters';
 import { Loader2, AlertCircle, Bot, BarChart as BarChartIcon } from 'lucide-react';
 import { getApiBaseUrl } from '@/lib/config';
 import { useDjinniStore } from '@/lib/djinni/store';
@@ -217,6 +218,58 @@ export function FactoryAstro() {
     return 'line';
   };
   
+  // Calculate optimal Y-axis domain based on data range
+  const calculateYAxisDomain = (data: any[]): [number, number] => {
+    if (!data || data.length === 0) return [0, 100]; // Default domain if no data
+    
+    // Get all values
+    const values = data.map(item => item.value);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    
+    // Calculate the range of values
+    const range = max - min;
+    
+    // Get the order of magnitude of the values
+    const avgValue = (min + max) / 2;
+    const orderOfMagnitude = Math.floor(Math.log10(avgValue));
+    
+    console.log(`Value range: ${min} to ${max}, difference: ${range}, order of magnitude: 10^${orderOfMagnitude}`);
+    
+    // If range is very small compared to the values (small decimal differences)
+    if (range < avgValue * 0.01) {
+      // For small variations in decimal places, create a focused scale
+      // Calculate a precise lower and upper bound to highlight differences
+      
+      // Find how many decimal places we need to consider for meaningful differences
+      let decimalPrecision = 0;
+      let tempRange = range;
+      while (tempRange < 1 && tempRange > 0) {
+        tempRange *= 10;
+        decimalPrecision++;
+      }
+      
+      // Get a scaling factor based on the decimals where variation occurs
+      const scaleFactor = Math.pow(10, Math.max(0, decimalPrecision - 1));
+      
+      // Calculate adjusted bounds that focus on the area of variation
+      const adjustedMin = Math.floor(min * scaleFactor) / scaleFactor;
+      const adjustedMax = Math.ceil(max * scaleFactor) / scaleFactor;
+      
+      // Add some padding to ensure all points are visible
+      const padding = (adjustedMax - adjustedMin) * 0.1;
+      const lowerBound = Math.max(0, adjustedMin - padding);
+      const upperBound = adjustedMax + padding;
+      
+      console.log(`Using precise Y-axis domain: [${lowerBound}, ${upperBound}] with decimal precision ${decimalPrecision}`);
+      return [lowerBound, upperBound];
+    }
+    
+    // For normal ranges, use standard scaling with some padding
+    const padding = range * 0.1;
+    return [Math.max(0, min - padding), max + padding];
+  };
+  
   // Format data for chart if available
   const formatChartData = () => {
     console.log('Response object:', response);
@@ -308,22 +361,40 @@ export function FactoryAstro() {
       // If the data has numeric properties that could be values
       else {
         console.log('Looking for numeric properties in object');
+        // Prioritize 'prediction' field if it exists
+        const hasPrediction = 'prediction' in firstItem;
+        
         // Look for numeric properties that could be values
         const numericProps = Object.entries(firstItem)
           .filter(([key, val]) => key !== 'name' && key !== 'label' && key !== 'id')
           .filter(([_, val]) => typeof val === 'number' || (typeof val === 'string' && !isNaN(parseFloat(val as string))));
         
         console.log('Found numeric properties:', numericProps);
+        console.log('Has prediction field:', hasPrediction);
         
-        if (numericProps.length > 0) {
+        if (hasPrediction) {
+          console.log('Using prediction field for values');
+          const valueKey = 'prediction';
+        } else if (numericProps.length > 0) {
           // Use the first numeric property as the value
           const valueKey = numericProps[0][0];
           console.log('Using property as value:', valueKey);
           
           return predictionData.map((item: any, index: number) => {
-            // Try to find a name/label property, or use index
-            const nameValue = item.name || item.label || item.Month || item.Date || `Month ${index + 1}`;
-            const value = typeof item[valueKey] === 'string' ? parseFloat(item[valueKey]) : item[valueKey];
+            // Use month/year combination if available, otherwise fallback to index
+            let nameValue;
+            if (item.month && item.year) {
+              nameValue = `${item.month}/${item.year}`;  
+            } else if (item.month) {
+              nameValue = `Month ${item.month}`;
+            } else {
+              nameValue = item.name || item.label || item.Month || item.Date || `Month ${index + 1}`;
+            }
+            
+            // Prioritize the prediction field if it exists
+            const value = hasPrediction 
+              ? (typeof item.prediction === 'string' ? parseFloat(item.prediction) : item.prediction)
+              : (typeof item[valueKey] === 'string' ? parseFloat(item[valueKey]) : item[valueKey]);
             
             return {
               name: nameValue,
@@ -352,14 +423,20 @@ export function FactoryAstro() {
       if (typeof item === 'number') {
         value = item;
       } else if (typeof item === 'object') {
-        // Look for any property that might contain a numeric value
-        const numericProps = Object.entries(item)
-          .filter(([_, v]) => typeof v === 'number' || (typeof v === 'string' && !isNaN(parseFloat(v as string))))
-          .map(([k, v]) => [k, typeof v === 'string' ? parseFloat(v as string) : v]);
-        
-        if (numericProps.length > 0) {
-          // Use the first numeric property found
-          value = numericProps[0][1] as number;
+        // Check for prediction field first
+        if ('prediction' in item && (typeof item.prediction === 'number' || 
+            (typeof item.prediction === 'string' && !isNaN(parseFloat(item.prediction))))) {
+          value = typeof item.prediction === 'string' ? parseFloat(item.prediction) : item.prediction;
+        } else {
+          // Look for any property that might contain a numeric value
+          const numericProps = Object.entries(item)
+            .filter(([_, v]) => typeof v === 'number' || (typeof v === 'string' && !isNaN(parseFloat(v as string))))
+            .map(([k, v]) => [k, typeof v === 'string' ? parseFloat(v as string) : v]);
+          
+          if (numericProps.length > 0) {
+            // Use the first numeric property found
+            value = numericProps[0][1] as number;
+          }
         }
       }
       
@@ -370,6 +447,42 @@ export function FactoryAstro() {
         original: item
       };
     });
+  };
+  
+  // Enhanced tooltip function to properly display small decimal differences
+  const getEnhancedTooltip = () => {
+    const yLabel = getYAxisLabel();
+    return {
+      formatter: (value: any) => {
+        if (typeof value !== 'number') return [value, yLabel];
+        
+        // Determine decimal precision based on value magnitude
+        let minDecimals = 2;
+        let maxDecimals = 4;
+        
+        // For very small values or where precision matters, show more decimals
+        if (Math.abs(value) < 0.01) {
+          minDecimals = 4;
+          maxDecimals = 6;
+        } else if (Math.abs(value) < 1) {
+          minDecimals = 3;
+          maxDecimals = 5;
+        }
+        
+        return [
+          value.toLocaleString(undefined, { minimumFractionDigits: minDecimals, maximumFractionDigits: maxDecimals }),
+          yLabel
+        ];
+      },
+      labelFormatter: (label: string) => `Time Period: ${label}`,
+      contentStyle: { 
+        backgroundColor: '#fff', 
+        border: '1px solid #ddd', 
+        borderRadius: '4px',
+        padding: '10px',
+        fontSize: '12px'
+      }
+    };
   };
   
   // Function to render the appropriate chart based on chartType
@@ -432,32 +545,6 @@ export function FactoryAstro() {
           height={40}
           tick={{ fill: '#333', fontSize: 12 }}
           tickFormatter={(value) => value.toString().substring(0, 10)}
-          axisLine={{ stroke: '#333' }}
-          tickLine={{ stroke: '#333' }}
-          label={{ value: 'Time Period', position: 'insideBottom', offset: -5, fill: '#333', fontSize: 14 }}
-        />
-        <YAxis 
-          width={50}
-          tick={{ fill: '#333', fontSize: 12 }}
-          tickCount={5}
-          tickFormatter={(value) => value.toLocaleString()}
-          axisLine={{ stroke: '#333' }}
-          tickLine={{ stroke: '#333' }}
-          label={{ value: getYAxisLabel(), angle: -90, position: 'insideLeft', fill: '#333', dx: -30, fontSize: 14 }}
-        />
-        <Tooltip 
-          formatter={(value: number) => [value.toLocaleString(), 'Value']} 
-          labelFormatter={(label) => `Period: ${label}`}
-          contentStyle={{ 
-            backgroundColor: 'white', 
-            border: '1px solid #ddd', 
-            borderRadius: '4px',
-            boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
-            color: '#333'
-          }}
-          itemStyle={{ color: '#333' }}
-          labelStyle={{ color: '#333', fontWeight: 'bold', marginBottom: '5px' }}
-          cursor={{ strokeDasharray: '3 3' }}
         />
         <Legend 
           wrapperStyle={{ paddingTop: '10px' }} 
@@ -484,17 +571,22 @@ export function FactoryAstro() {
             />
             <YAxis 
               label={{ value: getYAxisLabel(), angle: -90, position: 'insideLeft' }}
+              domain={calculateYAxisDomain(data)}
+              tickFormatter={(value) => value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
             />
             <Tooltip />
             <Legend />
             <Bar
               dataKey="value"
-              name="Prediction"
+              name={getYAxisLabel()}
               fill="#8884d8"
               radius={[4, 4, 0, 0]}
             >
               <LabelList dataKey="value" position="top" />
             </Bar>
+            <text x="50%" y="95%" textAnchor="middle" style={{ fontSize: '12px', fill: '#666' }}>
+              Note: Chart is scaled to highlight small variations in the data
+            </text>
           </BarChart>
         );
       case 'area':
@@ -502,17 +594,24 @@ export function FactoryAstro() {
           <AreaChart data={data} {...commonProps}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="name" />
-            <YAxis />
+            <YAxis 
+              label={{ value: getYAxisLabel(), angle: -90, position: 'insideLeft' }}
+              domain={calculateYAxisDomain(data)}
+              tickFormatter={(value) => value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
+            />
             <Tooltip />
             <Legend />
             <Area
               type="monotone"
               dataKey="value"
-              name="Prediction"
+              name={getYAxisLabel()}
               stroke="#8884d8"
               fill="#8884d8"
               fillOpacity={0.3}
             />
+            <text x="50%" y="95%" textAnchor="middle" style={{ fontSize: '12px', fill: '#666' }}>
+              Note: Chart is scaled to highlight small variations in the data
+            </text>
           </AreaChart>
         );
       case 'line':
@@ -521,13 +620,17 @@ export function FactoryAstro() {
           <LineChart data={data} {...commonProps}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="name" />
-            <YAxis />
+            <YAxis 
+              label={{ value: getYAxisLabel(), angle: -90, position: 'insideLeft' }}
+              domain={calculateYAxisDomain(data)}
+              tickFormatter={(value) => value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
+            />
             <Tooltip />
             <Legend />
             <Line
               type="monotone"
               dataKey="value"
-              name="Prediction"
+              name={getYAxisLabel()}
               stroke="#8884d8"
               strokeWidth={2}
               dot={{ r: 4 }}
@@ -536,6 +639,9 @@ export function FactoryAstro() {
               animationDuration={1000}
               animationEasing="ease-in-out"
             />
+            <text x="50%" y="95%" textAnchor="middle" style={{ fontSize: '12px', fill: '#666' }}>
+              Note: Chart is scaled to highlight small variations in the data
+            </text>
           </LineChart>
         );
     }
@@ -543,6 +649,16 @@ export function FactoryAstro() {
 
   // Get appropriate Y-axis label based on data context
   const getYAxisLabel = (): string => {
+    // Check if response summary contains clues about the metric
+    if (response?.summary && typeof response.summary === 'string') {
+      const summary = response.summary.toLowerCase();
+      if (summary.includes('revenue')) return 'Revenue ($)';
+      if (summary.includes('profit margin')) return 'Profit Margin (%)';
+      if (summary.includes('profit')) return 'Profit ($)';
+      if (summary.includes('production volume')) return 'Production Volume (units)';
+      if (summary.includes('cost')) return 'Cost ($)';
+    }
+    
     // Try to extract metric name from response
     const metricName = response?.data?.metric_name || '';
     if (metricName) {
@@ -553,16 +669,16 @@ export function FactoryAstro() {
     const userQuestion = question || response?.question || '';
     const lowerQuestion = userQuestion.toLowerCase();
     
-    if (lowerQuestion.includes('revenue')) return 'Revenue';
-    if (lowerQuestion.includes('profit')) return 'Profit';
-    if (lowerQuestion.includes('margin')) return 'Margin (%)';
-    if (lowerQuestion.includes('production') || lowerQuestion.includes('volume')) return 'Production Volume';
-    if (lowerQuestion.includes('cost')) return 'Cost';
+    if (lowerQuestion.includes('revenue')) return 'Revenue ($)';
+    if (lowerQuestion.includes('profit margin')) return 'Profit Margin (%)';
+    if (lowerQuestion.includes('profit')) return 'Profit ($)';
+    if (lowerQuestion.includes('production') || lowerQuestion.includes('volume')) return 'Production Volume (units)';
+    if (lowerQuestion.includes('cost')) return 'Cost ($)';
     
     // Default label
-    return 'Value';
+    return 'Predicted Value';
   };
-  
+
   // Debug chart data and verify chart type detection
   useEffect(() => {
     if (response) {
