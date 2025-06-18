@@ -574,7 +574,7 @@ export function FactoryAstro() {
               domain={calculateYAxisDomain(data)}
               tickFormatter={(value) => value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
             />
-            <Tooltip />
+            <Tooltip {...getEnhancedTooltip()} />
             <Legend />
             <Bar
               dataKey="value"
@@ -599,7 +599,7 @@ export function FactoryAstro() {
               domain={calculateYAxisDomain(data)}
               tickFormatter={(value) => value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
             />
-            <Tooltip />
+            <Tooltip {...getEnhancedTooltip()} />
             <Legend />
             <Area
               type="monotone"
@@ -625,7 +625,7 @@ export function FactoryAstro() {
               domain={calculateYAxisDomain(data)}
               tickFormatter={(value) => value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
             />
-            <Tooltip />
+            <Tooltip {...getEnhancedTooltip()} />
             <Legend />
             <Line
               type="monotone"
