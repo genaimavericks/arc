@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -26,7 +26,8 @@ interface CreateTransformationTabProps {
   dataSourceName?: string;
 }
 
-export function CreateTransformationTab({ initialPlanId, dataSourceId, dataSourceName }: CreateTransformationTabProps) {
+// Component for creating a transformation plan
+export function CreateTransformationTab({ initialPlanId, dataSourceId, dataSourceName }: CreateTransformationTabProps): React.ReactElement {
   const router = useRouter()
   const { toast } = useToast()
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -47,16 +48,22 @@ export function CreateTransformationTab({ initialPlanId, dataSourceId, dataSourc
     }
   })
 
-  // Check for plan ID in localStorage if not provided as prop
+  // Check for plan ID from props or localStorage
   useEffect(() => {
-    const storedPlanId = localStorage.getItem('current_transformation_id');
-    
-    if (!initialPlanId && storedPlanId) {
-      console.log(`Loading plan from localStorage: ${storedPlanId}`);
-      setPlanId(storedPlanId);
-      
-      // Fetch plan details from the API
-      fetchPlanDetails(storedPlanId);
+    // If initialPlanId is provided directly, use that
+    if (initialPlanId) {
+      console.log(`Loading plan from initialPlanId prop: ${initialPlanId}`);
+      setPlanId(initialPlanId);
+      fetchPlanDetails(initialPlanId);
+    } 
+    // Otherwise check localStorage
+    else {
+      const storedPlanId = localStorage.getItem('current_transformation_id');
+      if (storedPlanId) {
+        console.log(`Loading plan from localStorage: ${storedPlanId}`);
+        setPlanId(storedPlanId);
+        fetchPlanDetails(storedPlanId);
+      }
     }
   }, [initialPlanId]);
   
@@ -86,12 +93,17 @@ export function CreateTransformationTab({ initialPlanId, dataSourceId, dataSourc
       }
       
       const planData = await response.json();
+      console.log('Loaded plan data:', planData);
       
-      // Update form with plan data
+      // Update form with plan data - ensure fields are populated
       form.reset({
         name: planData.name || '',
         description: planData.description || ''
       });
+      
+      // Explicitly set values to ensure UI updates
+      form.setValue('name', planData.name || '');
+      form.setValue('description', planData.description || '');
       
       // If the plan has a source_id, fetch that source's details
       if (planData.source_id) {
@@ -268,10 +280,14 @@ export function CreateTransformationTab({ initialPlanId, dataSourceId, dataSourc
       }
       
       console.log(`[Transform] Navigating to transformation workspace`)
-      console.log(`[Transform] Router path: /datapuur/ai-transformation/dynamic`)
       
-      // Navigate to the transformation workspace page after creating plan
-      router.push('/datapuur/ai-transformation/dynamic')
+      // Get current path to use as origin for back navigation
+      const currentPath = window.location.pathname
+      console.log(`[Transform] Current path (origin): ${currentPath}`)
+      console.log(`[Transform] Router path: /datapuur/ai-transformation/dynamic?from=${encodeURIComponent(currentPath)}`)
+      
+      // Navigate to the transformation workspace page after creating plan with origin path
+      router.push(`/datapuur/ai-transformation/dynamic?from=${encodeURIComponent(currentPath)}`)
     } catch (error: any) {
       console.error("[Transform] Error creating transformation plan:", error)
       
@@ -287,14 +303,17 @@ export function CreateTransformationTab({ initialPlanId, dataSourceId, dataSourc
 
   // When chat sends instructions, save them for form submission
   const handleInstructionsUpdate = (instructions: string) => {
-    setFinalInstructions(instructions)
-  }
+    setFinalInstructions(instructions);
+  };
   
   return (
-    <div className="flex flex-col gap-4 w-full">
-      {/* Top header with title and Execute Plan button */}
-      <div className="flex flex-row justify-between items-center mb-2">
-        <h2 className="text-2xl font-bold">Create Transformation Plan</h2>
+    <div className="space-y-4">
+      {/* Header section with title and Execute Plan button */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex-1">
+          {/* Title is now always shown, conditionally based on planId */}
+          <h2 className="text-2xl font-bold">{planId ? "Edit Transformation Plan" : "Create Transformation Plan"}</h2>
+        </div>
         <Button
           type="button"
           variant="default"
@@ -341,8 +360,12 @@ export function CreateTransformationTab({ initialPlanId, dataSourceId, dataSourc
                 // Store the transformation plan ID in localStorage
                 localStorage.setItem('current_transformation_id', data.id);
                 
-                // Navigate to the transformation workspace page
-                router.push('/datapuur/ai-transformation/dynamic');
+                // Get current path to use as origin for back navigation
+                const currentPath = window.location.pathname;
+                console.log(`[Transform] Current path (origin): ${currentPath}`);
+                
+                // Navigate to the transformation workspace page with origin path
+                router.push(`/datapuur/ai-transformation/dynamic?from=${encodeURIComponent(currentPath)}`);
                 
                 toast({
                   title: "Success",
@@ -379,12 +402,14 @@ export function CreateTransformationTab({ initialPlanId, dataSourceId, dataSourc
               {isDetailsExpanded ? <ChevronLeft /> : <ChevronRight />}
             </Button>
             <div className={isDetailsExpanded ? '' : 'sr-only'}>
-              <CardTitle>Transformation Plan Details</CardTitle>
+              <CardTitle>{planId ? "Edit Transformation Plan" : "Create Transformation Plan"}</CardTitle>
               <CardDescription>
                 {isDetailsExpanded 
-                  ? "Create a new AI-powered data transformation plan" 
+                  ? planId 
+                    ? "Edit your existing AI-powered data transformation plan"
+                    : "Create a new AI-powered data transformation plan" 
                   : planId 
-                    ? "Plan created! Click to expand and edit details" 
+                    ? "Plan loaded! Click to expand and edit details" 
                     : "Click to expand and enter plan details"}
               </CardDescription>
             </div>
@@ -400,7 +425,12 @@ export function CreateTransformationTab({ initialPlanId, dataSourceId, dataSourc
                       <FormItem>
                         <FormLabel>Name</FormLabel>
                         <FormControl>
-                          <Input placeholder="Enter a name for your transformation plan" {...field} />
+                          <Input 
+                            key={`name-field-${planId || 'new'}`}
+                            placeholder="Enter a name for your transformation plan" 
+                            {...field} 
+                            value={field.value || ''}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -413,7 +443,13 @@ export function CreateTransformationTab({ initialPlanId, dataSourceId, dataSourc
                       <FormItem>
                         <FormLabel>Description</FormLabel>
                         <FormControl>
-                          <Textarea placeholder="Enter a description for this transformation plan" className="min-h-[80px]" {...field} />
+                          <Textarea 
+                            key={`description-field-${planId || 'new'}`}
+                            placeholder="Enter a description for this transformation plan" 
+                            className="min-h-[80px]" 
+                            {...field} 
+                            value={field.value || ''}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
