@@ -47,6 +47,19 @@ export function CreateTransformationTab({ initialPlanId, dataSourceId, dataSourc
     }
   })
 
+  // Check for plan ID in localStorage if not provided as prop
+  useEffect(() => {
+    const storedPlanId = localStorage.getItem('current_transformation_id');
+    
+    if (!initialPlanId && storedPlanId) {
+      console.log(`Loading plan from localStorage: ${storedPlanId}`);
+      setPlanId(storedPlanId);
+      
+      // Fetch plan details from the API
+      fetchPlanDetails(storedPlanId);
+    }
+  }, [initialPlanId]);
+  
   // Fetch data source details if provided
   useEffect(() => {
     if (dataSourceId) {
@@ -54,6 +67,53 @@ export function CreateTransformationTab({ initialPlanId, dataSourceId, dataSourc
     }
   }, [dataSourceId])
 
+  // Fetch transformation plan details from API
+  const fetchPlanDetails = async (id: string) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('Authentication token not found');
+      }
+      
+      const response = await fetch(`/api/datapuur-ai/transformations/${id}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch plan details: ${response.status}`);
+      }
+      
+      const planData = await response.json();
+      
+      // Update form with plan data
+      form.reset({
+        name: planData.name || '',
+        description: planData.description || ''
+      });
+      
+      // If the plan has a source_id, fetch that source's details
+      if (planData.source_id) {
+        fetchDataSourceDetails(planData.source_id);
+      }
+      
+      // If there are instructions, set them
+      if (planData.input_instructions) {
+        setFinalInstructions(planData.input_instructions);
+      }
+      
+      console.log('Loaded plan details:', planData);
+    } catch (error) {
+      console.error('Error fetching plan details:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load transformation plan details.",
+        variant: "destructive"
+      });
+    }
+  };
+  
   // Fetch data source details from API
   const fetchDataSourceDetails = async (id: string) => {
     try {

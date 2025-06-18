@@ -109,7 +109,16 @@ export function TransformationPlansList() {
 
   // Navigate to plan details page
   const handleViewPlan = (planId: string | number) => {
-    router.push(`/datapuur/ai-transformation/${planId}`)
+    // Store the plan ID in localStorage for access in the Create Transformation tab
+    localStorage.setItem('current_transformation_id', planId.toString())
+    
+    // Redirect to the Create Transformation tab with the plan ID as a query parameter
+    router.push(`/datapuur/ai-transformation?tab=create&draft_plan_id=${planId}`)
+    
+    // After navigation, wait a moment and force page reload to ensure tab changes
+    setTimeout(() => {
+      window.location.reload()
+    }, 100)
   }
 
   // Handle creating a new plan
@@ -260,7 +269,7 @@ export function TransformationPlansList() {
                   size="sm" 
                   onClick={() => handleViewPlan(plan.id)}
                 >
-                  <ArrowRight className="h-4 w-4 mr-1" /> View
+                  <ArrowRight className="h-4 w-4 mr-1" /> Edit
                 </Button>
                 
                 <AlertDialog>
