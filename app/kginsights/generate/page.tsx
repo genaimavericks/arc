@@ -446,7 +446,8 @@ function GenerateGraphContent() {
       console.log("Saving schema with parameters:", {
         name: schemaName,
         source_id: selectedSource,
-        source_type: selectedDatasetType
+        source_type: selectedDatasetType,
+        domain: domain
       });
 
       // Use the correct API route - the router is mounted at /api prefix in main.py
@@ -463,10 +464,12 @@ function GenerateGraphContent() {
             description: kgDescription,
             source_id: selectedSource,
             source_type: selectedDatasetType, // Include the dataset type
+            domain: domain, // Include the domain in the schema
             created_at: new Date().toISOString(),
           },
           csv_file_path: schema.csv_file_path || "",
-          dataset_type: selectedDatasetType // Add dataset type at the top level too
+          dataset_type: selectedDatasetType, // Add dataset type at the top level too
+          domain: domain // Add domain at the top level too
         }),
       })
 

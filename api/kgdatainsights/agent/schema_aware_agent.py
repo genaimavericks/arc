@@ -294,8 +294,9 @@ class SchemaAwareGraphAssistant:
         regenerate_prompts = False
         current_generation_id = None
         existing_prompts = None
+        domain = None
 
-        # 1. Fetch current generation_id from DB
+        # 1. Fetch current generation_id and domain from DB
         print(f"TRACE: Starting DB fetch for generation_id, schema_id={self.schema_id}")
         db = None # Initialize db to None
         try:
@@ -306,6 +307,8 @@ class SchemaAwareGraphAssistant:
             if schema_record:
                 print(f"TRACE: Schema record found, checking generation_id")
                 current_generation_id = schema_record.generation_id
+                domain = schema_record.domain  # Get the domain from the schema record
+                print(f"TRACE: Domain from schema record: {domain}")
                 if not current_generation_id:
                     print(f"Warning: Schema record found for {self.schema_id}, but generation_id is missing. Will regenerate prompts.")
                     regenerate_prompts = True
@@ -356,7 +359,42 @@ class SchemaAwareGraphAssistant:
             print(f"TRACE: Starting _generate_prompts() for db_id={self.db_id}, schema_id={self.schema_id}")
             # Generate prompts based on schema
             try:
-                prompts = self._generate_prompts() # Assumes this returns a dict
+                # Check if we should use domain-specific sample queries
+                use_domain_specific_queries = False
+                domain_specific_queries = []
+                domain_queries_file = None
+                
+                # Check if domain contains telecom_churn or foam_factory
+                if domain:
+                    domain_lower = domain.lower()
+                    if 'telecom_churn' in domain_lower:
+                        print(f"Using domain-specific sample queries for telecom_churn domain")
+                        domain_queries_file = os.path.join(os.path.dirname(__file__), 'domain_queries', 'telecom_churn_queries.json')
+                        use_domain_specific_queries = True
+                    elif 'foam_factory' in domain_lower:
+                        print(f"Using domain-specific sample queries for foam_factory domain")
+                        domain_queries_file = os.path.join(os.path.dirname(__file__), 'domain_queries', 'foam_factory_queries.json')
+                        use_domain_specific_queries = True
+                
+                # Generate prompts - pass a flag indicating if domain-specific queries will be used
+                prompts = self._generate_prompts(skip_sample_queries_generation=use_domain_specific_queries) # Assumes this returns a dict
+                
+                # If we should use domain-specific queries, load them from the JSON file
+                if use_domain_specific_queries and domain_queries_file and os.path.exists(domain_queries_file):
+                    try:
+                        with open(domain_queries_file, 'r') as f:
+                            domain_data = json.load(f)
+                            domain_specific_queries = domain_data.get('queries', [])
+                        
+                        if domain_specific_queries:
+                            # Replace the LLM-generated sample queries with domain-specific ones
+                            print(f"Replacing LLM-generated sample queries with domain-specific queries for {domain}")
+                            prompts["sample_queries"] = domain_specific_queries
+                    except Exception as e:
+                        print(f"Error loading domain-specific queries from {domain_queries_file}: {e}")
+                        print(f"TRACE: Exception details: {traceback.format_exc()}")
+                        # Continue with LLM-generated queries if there's an error
+                
                 print(f"TRACE: Successfully completed _generate_prompts()")
             except Exception as e:
                 print(f"TRACE: Error in _generate_prompts(): {str(e)}")
@@ -406,7 +444,7 @@ class SchemaAwareGraphAssistant:
                         formatted_queries[category].append({
                             "id": f"{category}_{len(formatted_queries[category])+1}",
                             "query": query,
-                            "description": f"AI-generated sample query #{i+1}"
+                            "description": f"Sample query for {domain if domain else 'graph'} #{i+1}"
                         })
                     
                     json.dump(formatted_queries, f, indent=2)
@@ -416,8 +454,13 @@ class SchemaAwareGraphAssistant:
                 print(f"Error saving prompts to {prompt_file}: {e}")
                 print("Warning: Prompts generated but failed to save to file. Using in-memory prompts for this session.")
         
-    def _generate_prompts(self) -> Dict[str, Any]:
-        """Generate custom prompts using LLM based on the schema"""
+    def _generate_prompts(self, skip_sample_queries_generation=False) -> Dict[str, Any]:
+        """Generate custom prompts using LLM based on the schema
+        
+        Args:
+            skip_sample_queries_generation: If True, don't generate sample queries with LLM
+                                          as they will be replaced with domain-specific ones
+        """
         
         # Define a system prompt for prompt generation
         cypher_system_prompt = """
@@ -654,17 +697,22 @@ class SchemaAwareGraphAssistant:
             #qa_prompt_gen_txt = 'You are an expert at answering questions using data from a knowledge graph. You will receive a question and the results of a Cypher query executed against the graph. Your task is to interpret the Cypher query results and provide a concise and informative natural language answer to the original question.'
             #qa_prompt_template = f"{qa_prompt_gen_txt}\n\n{self.formatted_schema}\n\n{qa_prompt_template}"
             
-            # Generate sample data JSON
-            sample_data = self._generate_sample_data_json()
-            print(f"Sample data JSON for Queries!!!: {sample_data}")
-            # Generate sample queries with retry
-            sample_queries_messages = [
-                {"role": "system", "content": sample_queries_system_prompt},
-                {"role": "user", "content": f"Use this Neo4j schema: {self.formatted_schema} and the data to use: {sample_data} for generating sample questions prompt as per following instruction: \n\n{sample_queries_instruction}"}
-            ]
-            
-            # Use retry mechanism for sample queries generation and parsing
-            sample_queries = self._generate_sample_queries_with_retry(llm_local, sample_queries_messages, sample_data)
+            # Generate sample queries only if we're not using domain-specific ones
+            if skip_sample_queries_generation:
+                print(f"Skipping sample queries generation as domain-specific queries will be used")
+                sample_queries = []  # Empty list as placeholder, will be replaced by domain-specific queries
+            else:
+                # Generate sample data JSON
+                sample_data = self._generate_sample_data_json()
+                print(f"Sample data JSON for Queries!!!: {sample_data}")
+                # Generate sample queries with retry
+                sample_queries_messages = [
+                    {"role": "system", "content": sample_queries_system_prompt},
+                    {"role": "user", "content": f"Use this Neo4j schema: {self.formatted_schema} and the data to use: {sample_data} for generating sample questions prompt as per following instruction: \n\n{sample_queries_instruction}"}
+                ]
+                
+                # Use retry mechanism for sample queries generation and parsing
+                sample_queries = self._generate_sample_queries_with_retry(llm_local, sample_queries_messages, sample_data)
                             
             # Create prompts dictionary
             prompts = {
