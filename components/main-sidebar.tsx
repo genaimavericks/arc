@@ -162,8 +162,8 @@ export function MainSidebar() {
   const [collapsed, setCollapsed] = useState(false)
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     "datapuur": pathname.startsWith("/datapuur"),
-    "kginsights": pathname.startsWith("/kginsights"),
-    "k-graff": pathname.startsWith("/kginsights"),
+    "kginsights": pathname.startsWith("/kginsights") && !pathname.startsWith("/kginsights/insights"),
+    "k-graff": pathname.startsWith("/kginsights") && !pathname.startsWith("/djinni/kgraph-insights"),
     "factory-dashboard": pathname === "/" || pathname.includes("?tab=") || pathname.startsWith("/factory_dashboard"),
     "djinni-assistant": pathname.startsWith("/djinni")
   })
@@ -193,8 +193,8 @@ export function MainSidebar() {
     setExpandedSections(prev => ({
       ...prev,
       "datapuur": pathname.startsWith("/datapuur"),
-      "kginsights": pathname.startsWith("/kginsights"),
-      "k-graff": pathname.startsWith("/kginsights"),
+      "kginsights": pathname.startsWith("/kginsights") && !pathname.startsWith("/kginsights/insights"),
+      "k-graff": pathname.startsWith("/kginsights") && !pathname.startsWith("/djinni/kgraph-insights"),
       "factory-dashboard": pathname === "/" || pathname.startsWith("/factory_dashboard"),
       "churn-dashboard": pathname.startsWith("/churn_dashboard"),
       "sales-overview": pathname === "/" || pathname.startsWith("/sales-performance"),
@@ -262,7 +262,7 @@ export function MainSidebar() {
     let submenuItems = [
       { 
         label: "KGraph Insights", 
-        href: "/kginsights/insights", 
+        href: "/djinni/kgraph-insights", 
         icon: NetworkIcon,
         // Using djinni:read instead of kginsights:read so it's always visible in Djinni menu
         requiredPermission: "djinni:read" 
