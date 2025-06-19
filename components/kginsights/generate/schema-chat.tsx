@@ -400,7 +400,8 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
           feedback: message,
           file_path: filePath, // Reuse stored file path
           domain: domain, // Include domain information
-          custom_domain_file: customDomainFiles?.[domain] // Include custom domain file if available
+          custom_domain_file: customDomainFiles?.[domain], // Include custom domain file if available
+          dataset_type: selectedDatasetType, // Include dataset type for proper path handling
         }),
       })
       
