@@ -202,128 +202,18 @@ export function MainSidebar() {
     }))
   }, [pathname])
 
-  // Group menu sections by category
-  const allCommandCenters: MenuSection[] = [
-    // {
-    //   label: "Sales Overview",
-    //   icon: LayoutDashboard,
-    //   href: "/",
-    //   key: "sales-overview",
-    //   requiredPermission: "command:read",
-    //   subItems: [
-    //     {
-    //       label: "Sales Performance",
-    //       icon: BarChart2,
-    //       href: "/sales-performance",
-    //     }
-    //   ]
-    // },
-    // {
-    //   label: "Inventory Overview",
-    //   icon: Database,
-    //   href: "/inventory",
-    //   requiredPermission: "command:read"
-    // },
-    // {
-    //   label: "Financial Overview",
-    //   icon: BarChart2,
-    //   href: "/financial",
-    //   requiredPermission: "command:read"
-    // },
-    {
-      label: "Factory Dashboard",
-      icon: Factory,
-      href: "/",
-      key: "factory-dashboard",
-      requiredPermission: "command:read",
-      subItems: [
-        { 
-          label: "Performance Overview", 
-          href: "/", 
-          icon: LayoutDashboard,
-          requiredPermission: "command:read" 
-        },
-        {
-          label: "Operations & Maintenance",
-          icon: BarChart2,
-          href: "/factory_dashboard/operations",
-          requiredPermission: "command:read"
-        },
-        {
-          label: "Workforce & Resources",
-          icon: BarChart2,
-          href: "/factory_dashboard/workforce",
-          requiredPermission: "command:read"
-        }
-      ]
-    },
-    {
-      label: "Churn Dashboard",
-      icon: BarChart2,
-      href: "/churn_dashboard",
-      key: "churn-dashboard",
-      requiredPermission: "command:read",
-      subItems: [
-        {
-          label: "Summary",
-          icon: LayoutDashboard,
-          href: "/churn_dashboard",
-          requiredPermission: "command:read"
-        },
-        {
-          label: "Customer Profile",
-          icon: BarChart2,
-          href: "/churn_dashboard/customer",
-          requiredPermission: "command:read"
-        },
-        {
-          label: "Churner Profile",
-          icon: BarChart2,
-          href: "/churn_dashboard/churner",
-          requiredPermission: "command:read"
-        }
-      ]
-    }
-  ]
-  
-  // Filter command centers based on user permissions
-  const commandCenters = allCommandCenters.filter(item => {
-    if (!user || !user.permissions || !item.requiredPermission) return false
-    return user.permissions.includes(item.requiredPermission as string)
-  })
-  
-  // Track the active model from both Zustand store and localStorage
+  // Track the active model from both Zustand store and localStorage for dashboard filtering
   const djinniStore = useDjinniStore();
   const [activeModelState, setActiveModelState] = useState<string>(() => {
     // Initialize from localStorage if available, otherwise use store
     if (typeof window !== 'undefined') {
       const localModel = localStorage.getItem('djinni_active_model');
-      return localModel || djinniStore.activeModel;
+      return localModel || djinniStore.activeModel || "factory_astro"; // Default to factory_astro if not set
     }
-    return djinniStore.activeModel;
+    return djinniStore.activeModel || "factory_astro";
   });
   
-  // Get submenu items based on active model
-  const getActiveModelSubmenu = (model: string) => {
-    console.log(`Generating submenu for model: ${model}`);
-    let submenuItems = [
-      { 
-        label: "KGraph Insights", 
-        href: "/kginsights/insights", 
-        icon: NetworkIcon,
-        // Using djinni:read instead of kginsights:read so it's always visible in Djinni menu
-        requiredPermission: "djinni:read" 
-      }
-    ]
-    if (model === "factory_astro") {
-      submenuItems.push({ label: "Factory Astro", href: "/djinni/factory-astro", icon: Bot, requiredPermission: "djinni:read" });
-    } else if (model === "churn_astro") {
-      submenuItems.push({ label: "Churn Astro", href: "/djinni/churn-astro", icon: Bot, requiredPermission: "djinni:read" });
-    } 
-    return submenuItems;
-  };
-  
-  // Check for changes in localStorage and Zustand store
+  // Effect to keep track of model changes for dashboard filtering
   useEffect(() => {
     // Function to check and update the active model
     const checkActiveModel = () => {
@@ -367,8 +257,146 @@ export function MainSidebar() {
     };
   }, [djinniStore, activeModelState]);
   
-  // Generate submenu items based on active model
+  // Get submenu items based on active model
+  const getActiveModelSubmenu = (model: string) => {
+    let submenuItems = [
+      { 
+        label: "KGraph Insights", 
+        href: "/kginsights/insights", 
+        icon: NetworkIcon,
+        // Using djinni:read instead of kginsights:read so it's always visible in Djinni menu
+        requiredPermission: "djinni:read" 
+      }
+    ]
+    if (model === "factory_astro") {
+      submenuItems.push({ label: "Factory Astro", href: "/djinni/factory-astro", icon: Bot, requiredPermission: "djinni:read" });
+    } else if (model === "churn_astro") {
+      submenuItems.push({ label: "Churn Astro", href: "/djinni/churn-astro", icon: Bot, requiredPermission: "djinni:read" });
+    } 
+    return submenuItems;
+  };
+  
+  // Define all possible command centers
+  const factoryDashboard: MenuSection = {
+    label: "Factory Dashboard",
+    icon: Factory,
+    href: "/",
+    key: "factory-dashboard",
+    requiredPermission: "command:read",
+    subItems: [
+      { 
+        label: "Performance Overview", 
+        href: "/", 
+        icon: LayoutDashboard,
+        requiredPermission: "command:read" 
+      },
+      {
+        label: "Operations & Maintenance",
+        icon: BarChart2,
+        href: "/factory_dashboard/operations",
+        requiredPermission: "command:read"
+      },
+      {
+        label: "Workforce & Resources",
+        icon: BarChart2,
+        href: "/factory_dashboard/workforce",
+        requiredPermission: "command:read"
+      }
+    ]
+  };
+  
+  const churnDashboard: MenuSection = {
+    label: "Churn Dashboard",
+    icon: BarChart2,
+    href: "/churn_dashboard",
+    key: "churn-dashboard",
+    requiredPermission: "command:read",
+    subItems: [
+      {
+        label: "Summary",
+        icon: LayoutDashboard,
+        href: "/churn_dashboard",
+        requiredPermission: "command:read"
+      },
+      {
+        label: "Customer Profile",
+        icon: BarChart2,
+        href: "/churn_dashboard/customer",
+        requiredPermission: "command:read"
+      },
+      {
+        label: "Churner Profile",
+        icon: BarChart2,
+        href: "/churn_dashboard/churner",
+        requiredPermission: "command:read"
+      }
+    ]
+  };
+  
+  // Conditionally include dashboards based on active model
+  const allCommandCenters: MenuSection[] = [];
+  
+  // Add the appropriate dashboard based on active model
+  if (activeModelState === "churn_astro") {
+    allCommandCenters.push(churnDashboard);
+  } else {
+    // Default to factory dashboard for any other model or factory_astro
+    allCommandCenters.push(factoryDashboard);
+  }
+  
+  // Filter command centers based on user permissions
+  const commandCenters = allCommandCenters.filter(item => {
+    if (!user || !user.permissions || !item.requiredPermission) return false
+    return user.permissions.includes(item.requiredPermission as string)
+  })
+  
+  // Prepare submenu items based on the active model
   const submenuItems = getActiveModelSubmenu(activeModelState);
+  
+  // Check for changes in localStorage and Zustand store
+  useEffect(() => {
+    const checkActiveModel = () => {
+      if (typeof window !== 'undefined') {
+        const localModel = localStorage.getItem('djinni_active_model');
+        const storeModel = djinniStore.activeModel;
+        
+        // Prioritize localStorage value as it's updated by the admin settings
+        const newModel = localModel || storeModel;
+        
+        if (newModel !== activeModelState) {
+          console.log(`Model changed: ${activeModelState} -> ${newModel}`);
+          setActiveModelState(newModel);
+          
+          // Also update the Zustand store to keep it in sync
+          if (localModel && localModel !== storeModel) {
+            djinniStore.setActiveModel(localModel as any);
+          }
+        }
+      }
+    };
+    
+    // Check immediately
+    checkActiveModel();
+    
+    // Set up an interval to check for changes
+    const intervalId = setInterval(checkActiveModel, 1000);
+    
+    // Set up storage event listener for immediate updates
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'djinni_active_model') {
+        checkActiveModel();
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [djinniStore, activeModelState]);
+  
+  // Using submenuItems already generated earlier
 
   const allDjinni: MenuSection[] = [
     {
