@@ -202,6 +202,7 @@ class RefineSchemaInput(BaseModel):
     file_path: str = None  # Optional file path, similar to SourceIdInput
     domain: str = None  # Data domain (e.g., 'telecom_churn', 'foam_factory')
     custom_domain_file: str = None
+    dataset_type: str = "source"  # Can be 'source' or 'transformed'
 
 class ApplySchemaInput(BaseModel):
     schema_id: int
@@ -678,10 +679,27 @@ async def refine_schema(
         source_id = refine_input.source_id
         temp_json_file = None
         
+        # Import required modules for data directory access
+        import os.path
+        from pathlib import Path
+        # Get the path to the datapuur_ai data directory
+        api_dir = Path(__file__).parent.parent  # api directory
+        data_dir = os.path.join(api_dir, "datapuur_ai", "data")
+        
         # Check if file_path is provided directly in the request
         if refine_input.file_path:
             print(f"DEBUG: Using provided file path: {refine_input.file_path}")
-            file_path = refine_input.file_path
+            raw_file_path = refine_input.file_path
+            
+            # Handle dataset type-specific path construction
+            dataset_type = refine_input.dataset_type
+            if dataset_type == "transformed" and raw_file_path.endswith('.parquet'):
+                # For transformed datasets, construct absolute path in the data directory
+                file_path = os.path.join(data_dir, os.path.basename(raw_file_path))
+                print(f"DEBUG: Mapped transformed dataset path to: {file_path}")
+            else:
+                # For source datasets or if not a parquet file, use as-is
+                file_path = raw_file_path
             
             # Validate file exists
             if not os.path.exists(file_path):

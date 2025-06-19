@@ -376,8 +376,8 @@ class SchemaAwareGraphAssistant:
                         domain_queries_file = os.path.join(os.path.dirname(__file__), 'domain_queries', 'foam_factory_queries.json')
                         use_domain_specific_queries = True
                 
-                # Generate prompts
-                prompts = self._generate_prompts() # Assumes this returns a dict
+                # Generate prompts - pass a flag indicating if domain-specific queries will be used
+                prompts = self._generate_prompts(skip_sample_queries_generation=use_domain_specific_queries) # Assumes this returns a dict
                 
                 # If we should use domain-specific queries, load them from the JSON file
                 if use_domain_specific_queries and domain_queries_file and os.path.exists(domain_queries_file):
@@ -454,8 +454,13 @@ class SchemaAwareGraphAssistant:
                 print(f"Error saving prompts to {prompt_file}: {e}")
                 print("Warning: Prompts generated but failed to save to file. Using in-memory prompts for this session.")
         
-    def _generate_prompts(self) -> Dict[str, Any]:
-        """Generate custom prompts using LLM based on the schema"""
+    def _generate_prompts(self, skip_sample_queries_generation=False) -> Dict[str, Any]:
+        """Generate custom prompts using LLM based on the schema
+        
+        Args:
+            skip_sample_queries_generation: If True, don't generate sample queries with LLM
+                                          as they will be replaced with domain-specific ones
+        """
         
         # Define a system prompt for prompt generation
         cypher_system_prompt = """
@@ -692,17 +697,22 @@ class SchemaAwareGraphAssistant:
             #qa_prompt_gen_txt = 'You are an expert at answering questions using data from a knowledge graph. You will receive a question and the results of a Cypher query executed against the graph. Your task is to interpret the Cypher query results and provide a concise and informative natural language answer to the original question.'
             #qa_prompt_template = f"{qa_prompt_gen_txt}\n\n{self.formatted_schema}\n\n{qa_prompt_template}"
             
-            # Generate sample data JSON
-            sample_data = self._generate_sample_data_json()
-            print(f"Sample data JSON for Queries!!!: {sample_data}")
-            # Generate sample queries with retry
-            sample_queries_messages = [
-                {"role": "system", "content": sample_queries_system_prompt},
-                {"role": "user", "content": f"Use this Neo4j schema: {self.formatted_schema} and the data to use: {sample_data} for generating sample questions prompt as per following instruction: \n\n{sample_queries_instruction}"}
-            ]
-            
-            # Use retry mechanism for sample queries generation and parsing
-            sample_queries = self._generate_sample_queries_with_retry(llm_local, sample_queries_messages, sample_data)
+            # Generate sample queries only if we're not using domain-specific ones
+            if skip_sample_queries_generation:
+                print(f"Skipping sample queries generation as domain-specific queries will be used")
+                sample_queries = []  # Empty list as placeholder, will be replaced by domain-specific queries
+            else:
+                # Generate sample data JSON
+                sample_data = self._generate_sample_data_json()
+                print(f"Sample data JSON for Queries!!!: {sample_data}")
+                # Generate sample queries with retry
+                sample_queries_messages = [
+                    {"role": "system", "content": sample_queries_system_prompt},
+                    {"role": "user", "content": f"Use this Neo4j schema: {self.formatted_schema} and the data to use: {sample_data} for generating sample questions prompt as per following instruction: \n\n{sample_queries_instruction}"}
+                ]
+                
+                # Use retry mechanism for sample queries generation and parsing
+                sample_queries = self._generate_sample_queries_with_retry(llm_local, sample_queries_messages, sample_data)
                             
             # Create prompts dictionary
             prompts = {
