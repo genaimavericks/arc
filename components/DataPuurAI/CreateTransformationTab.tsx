@@ -533,7 +533,7 @@ export function CreateTransformationTab({ initialPlanId, dataSourceId, dataSourc
               Chat with the AI to refine your transformation plan
             </CardDescription>
           </CardHeader>
-          <CardContent className="min-h-[350px]">
+          <CardContent className="min-h-[450px]">
             <TransformationChat
               planId={planId}
               profileSessionId={dataSource?.id}

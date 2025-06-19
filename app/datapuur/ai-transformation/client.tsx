@@ -16,8 +16,8 @@ export default function AITransformationContent() {
   const searchParams = useSearchParams()
   const tabParam = searchParams.get('tab')
   const [activeTab, setActiveTab] = useState(
-    tabParam === 'plans' ? 'plans' : 
-    tabParam === 'create' ? 'create' : 'datasources'
+    tabParam === 'datasources' ? 'transform' : 
+    tabParam === 'create' ? 'create' : 'plans'
   )
   
   // Get any passed data source ID from the URL
@@ -51,8 +51,8 @@ export default function AITransformationContent() {
     const handlePopState = () => {
       const newTabParam = new URLSearchParams(window.location.search).get('tab')
       setActiveTab(
-        newTabParam === 'plans' ? 'plans' : 
-        newTabParam === 'create' ? 'create' : 'datasources'
+        newTabParam === 'datasources' ? 'transform' : 
+        newTabParam === 'create' ? 'create' : 'plans'
       )
     }
 
@@ -63,23 +63,9 @@ export default function AITransformationContent() {
   return (
     <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
       <TabsList>
-        <TabsTrigger value="datasources">Data Sources</TabsTrigger>
         <TabsTrigger value="plans">Transformation Plans</TabsTrigger>
+        <TabsTrigger value="transform">Transform Data</TabsTrigger>
       </TabsList>
-      
-      <TabsContent value="datasources">
-        <Card>
-          <CardHeader>
-            <CardTitle>Available Data Sources</CardTitle>
-            <CardDescription>
-              Select a data source to create a new AI-powered transformation plan
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <DataSourcesList />
-          </CardContent>
-        </Card>
-      </TabsContent>
       
       <TabsContent value="plans">
         <Card>
@@ -91,6 +77,20 @@ export default function AITransformationContent() {
           </CardHeader>
           <CardContent>
             <TransformationPlansList />
+          </CardContent>
+        </Card>
+      </TabsContent>
+      
+      <TabsContent value="transform">
+        <Card>
+          <CardHeader>
+            <CardTitle>Transform Data</CardTitle>
+            <CardDescription>
+              Select a data source to create a new AI-powered transformation
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <DataSourcesList />
           </CardContent>
         </Card>
       </TabsContent>
