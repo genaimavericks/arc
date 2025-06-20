@@ -107,7 +107,7 @@ async def list_graphs(
 
 @router.get("/schema", response_model=SchemaListResponse)
 async def list_graphs(
-    current_user: User = Depends(has_any_permission(["kginsights:read"])),
+    current_user: User = Depends(has_any_permission(["kginsights:read", "djinni:read"])),
     db: SessionLocal = Depends(get_db)
 ):
     """
