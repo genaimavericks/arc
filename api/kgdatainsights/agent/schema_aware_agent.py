@@ -170,6 +170,95 @@ class SchemaAwareGraphAssistant:
                 "allow_dangerous_requests": True
             }
             
+            # Ensure schema is properly parsed into a dict
+            try:
+                # self.schema can be a dict (already parsed) or a string (needs parsing)
+                if isinstance(self.schema, str):
+                    # json.loads converts a string to a Python object (dict)
+                    db_schema = json.loads(self.schema)
+                else:
+                    # Already a dict, use as is
+                    db_schema = self.schema
+                    
+                print(f"DEBUG: Schema information type: {type(db_schema).__name__}")
+                # Only proceed with validation if we have a proper dict
+                if db_schema and isinstance(db_schema, dict):
+                    # Extract node and relationship schemas if available
+                    node_props = {}
+                    rel_props = {}
+                
+                    # Extract schema information based on the structure we have
+                    if 'nodes' in db_schema:
+                        for node in db_schema.get('nodes', []):
+                            if 'label' in node and 'properties' in node:
+                                # Extract property names from the properties object
+                                # Properties are in format {"prop_name": "type"}
+                                node_props[node['label']] = list(node['properties'].keys())
+                    
+                    if 'relationships' in db_schema:
+                        for rel in db_schema.get('relationships', []):
+                            if 'type' in rel:
+                                # Extract property names from the properties object 
+                                # Properties are in format {"prop_name": "value"}
+                                rel_props[rel['type']] = list(rel.get('properties', {}).keys())
+                    
+                    # Only enable schema validation if we have actual schema data
+                    if node_props or rel_props:
+                        print("DEBUG: Enabling Cypher validation with schema information")
+                        chain_config["validate_cypher"] = True
+                        
+                        # Prepare the schema for validation
+                        formatted_schema = {
+                            "node_props": node_props,
+                            "rel_props": rel_props
+                        }
+                        
+                        # The structured_schema needs to be directly available to the graph
+                        # Create a structured schema with relationships in the format expected by CypherQueryCorrector
+                        structured_schema = {
+                            "nodes": [],
+                            "relationships": []
+                        }
+                        
+                        # Extract relationship info with the correct field names
+                        # CypherQueryCorrector expects 'start', 'type', and 'end' fields
+                        if 'relationships' in db_schema:
+                            for rel in db_schema.get('relationships', []):
+                                if all(k in rel for k in ['startNode', 'type', 'endNode']):
+                                    # Map from our schema format to the expected format
+                                    structured_schema['relationships'].append({
+                                        "start": rel['startNode'],
+                                        "type": rel['type'],
+                                        "end": rel['endNode']
+                                    })
+                        
+                        print(f"DEBUG: Structured schema: {structured_schema}")
+                        
+                        # For Cypher validation to work, the structured_schema needs to be 
+                        # an attribute of the graph object itself
+                        # This is because CommunityGraphCypherQAChain accesses it via:
+                        # kwargs["graph"].structured_schema
+                        
+                        # Attach the structured schema to the graph object
+                        self.graph.structured_schema = structured_schema
+                        
+                        # Add node/rel properties to the config
+                        chain_config["schema"] = formatted_schema
+
+                    else:
+                        # Don't enable validation if we don't have schema data
+                        print("DEBUG: Disabling Cypher validation due to missing schema information")
+                        chain_config["validate_cypher"] = False
+                else:
+                    # Don't enable validation if schema is not available
+                    print("DEBUG: Disabling Cypher validation due to missing schema information")
+                    chain_config["validate_cypher"] = False
+            except Exception as e:
+                print(f"ERROR: Failed to process schema: {e}")
+                print(f"DEBUG: Error details: {traceback.format_exc()}")
+                print("DEBUG: Disabling Cypher validation due to schema processing error")
+                chain_config["validate_cypher"] = False
+            
             # Only add prompts if they are properly loaded
             if hasattr(self, 'cypher_prompt') and self.cypher_prompt:
                 print('DEBUG: cypher prompt found')
@@ -1368,7 +1457,6 @@ class SchemaAwareGraphAssistant:
                 # Step 1: Generate Cypher query using the cypher_prompt
                 print("DEBUG: Generating Cypher query")
                 cypher_inputs = {"query": question}
-                
                 if hasattr(self.chain, "llm") and hasattr(self.chain, "cypher_prompt"):
                     # Use the retry-enabled LLM invocation
                     generated_cypher = self._invoke_llm_with_retry(
@@ -1453,6 +1541,67 @@ class SchemaAwareGraphAssistant:
 _assistants = {}
 _lock = threading.Lock()
 
+def initialize_all_agents(db_session=None):
+    """
+    Initialize all schema-aware agents at application startup.
+    This helps avoid cold-start delays when users first interact with the system.
+    
+    Args:
+        db_session: Optional database session. If not provided, a new session will be created.
+    
+    Returns:
+        dict: A dictionary mapping schema IDs to initialization status (True for success, False for failure)
+    """
+    from ...db_config import SessionLocal
+    from ...models import Schema
+    import time
+    
+    print("Starting initialization of all schema-aware agents...")
+    start_time = time.time()
+    
+    # Use provided session or create a new one
+    close_session = False
+    if db_session is None:
+        db_session = SessionLocal()
+        close_session = True
+    
+    results = {}
+    try:
+        # Get all schemas from the database
+        schemas = db_session.query(Schema).all()
+        print(f"Found {len(schemas)} schemas to initialize")
+        
+        for schema in schemas:
+            if not schema.schema or not schema.db_id:
+                print(f"Skipping schema {schema.id}: Missing schema data or DB ID")
+                results[schema.id] = False
+                continue
+            
+            try:
+                print(f"Pre-initializing agent for schema {schema.id}...")
+                # Initialize the agent
+                assistant = get_schema_aware_assistant(schema.db_id, schema.id, schema.schema)
+                # Force initialization of prompt templates
+                assistant._ensure_prompt()
+                results[schema.id] = True
+                print(f"Successfully initialized agent for schema {schema.id}")
+            except Exception as e:
+                print(f"Failed to initialize agent for schema {schema.id}: {str(e)}")
+                results[schema.id] = False
+    
+    except Exception as e:
+        print(f"Error during agent initialization: {str(e)}")
+    
+    finally:
+        if close_session:
+            db_session.close()
+    
+    elapsed_time = time.time() - start_time
+    success_count = sum(1 for v in results.values() if v)
+    print(f"Completed initialization of {success_count}/{len(results)} agents in {elapsed_time:.2f} seconds")
+    
+    return results
+
 def get_schema_aware_assistant(db_id: str, schema_id: str, schema: str, session_id: str = None) -> SchemaAwareGraphAssistant:
     """
     Get a schema-aware assistant for the specified database ID.
@@ -1463,7 +1612,6 @@ def get_schema_aware_assistant(db_id: str, schema_id: str, schema: str, session_
         schema_id: ID of the schema being used
         schema: JSON string containing the schema
         session_id: Optional session ID for chat history
-        gen_schema: If True, only initialize minimal components needed for schema generation
     Returns:
         SchemaAwareGraphAssistant: The assistant for the database
     """

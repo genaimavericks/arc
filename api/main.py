@@ -258,6 +258,16 @@ async def startup_event():
     # Include WebSocket API router
     app.include_router(websocket_router, prefix="/api")
     print("Included WebSocket API router")
+    
+    # Initialize all schema-aware agents at startup to avoid cold-start delays
+    try:
+        from api.kgdatainsights.agent.schema_aware_agent import initialize_all_agents
+        initialization_results = initialize_all_agents(db)
+        success_count = sum(1 for v in initialization_results.values() if v)
+        print(f"Pre-initialized {success_count}/{len(initialization_results)} schema-aware agents at startup")
+    except Exception as e:
+        print(f"Error initializing schema-aware agents: {str(e)}")
+        # Non-fatal error - continue application startup
 
 # Mount static files after all API routes are registered
 # Mount static files directory if it exists
