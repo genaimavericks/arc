@@ -613,7 +613,11 @@ class SchemaAwareGraphAssistant:
         Keep the prompt concise but comprehensive enough to guide accurate Cypher query generation.
         
         11. IMPORTANT: Use {question} (not {{question}} or query) as the placeholder for the user's question, as this is required for compatibility with the GraphCypherQAChain.
-        12. Append following critical instructions to **Instructions for Cypher Query Generation:** section:
+        12. CRITICAL: When accessing relationship properties, ALWAYS first assign the relationship to a variable and then access its properties. For example:
+            - INCORRECT: MATCH (a)-[:RELATIONSHIP {property: value}]->(b)
+            - CORRECT: MATCH (a)-[r:RELATIONSHIP]->(b) WHERE r.property = value
+            - CORRECT: MATCH (a)-[r:RELATIONSHIP]->(b) RETURN r.property
+        13. Append following critical instructions to **Instructions for Cypher Query Generation:** section:
             - Cypher query should only include names of node, relationship or properties as per given schema
             - Return ONLY a single raw Cypher query with NO explanations, NO headers, NO numbering, NO query repetition, NO backticks, and NO additional text of any kind
             - The response should be ONLY the executable Cypher query with no additional text. The LLM must not include any of the following in its response:
@@ -625,9 +629,10 @@ class SchemaAwareGraphAssistant:
                 - NO "Here's a Cypher query that..." text
                 - NO "This query will..." explanatory text
             - For Date properties, in where clause or in filter queries, cast 'Date' attribute to datetime type and value to datetime type e.g. WHERE datetime(d.Date) = datetime('2020-01-03')
+            - IMPORTANT: When accessing relationship properties, ALWAYS first assign the relationship to a variable and then access its properties. NEVER try to filter on relationship properties inside the relationship pattern.
             - If no cypher query could be generated for given query then return None or empty. DO NOT RETURN text with explaination.
-        13. Do not alter **Sample Cyphers used for node/relationship creation** section
-        14. Output Format:
+        14. Do not alter **Sample Cyphers used for node/relationship creation** section
+        15. Output Format:
         **Your Role:**
         **Your Task:**
         **Schema:**
