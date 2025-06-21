@@ -2075,8 +2075,9 @@ async def load_data_from_schema(
             job_id=job_id  # Pass the job_id for direct job updates
         )
         
-        # Load data
+        # Load data using thread pool to avoid blocking the main event loop
         print(f"DEBUG: Loading data from {schema.csv_file_path} into Neo4j graph {graph_name}")
+        from api.utils.thread_pool import run_in_threadpool
         result = await loader.load_data(db)
         
         # Check for errors

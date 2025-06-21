@@ -624,26 +624,28 @@ class DataLoader:
         Returns:
             Dict with loading results
         """
+        from api.utils.thread_pool import run_in_threadpool
+        
         self.status["start_time"] = datetime.now().isoformat()
         self.status["status"] = "running"
         
         try:
-            # Load schema
-            schema_loaded = await self._load_schema(db)
+            # Load schema - run in thread pool to avoid blocking
+            schema_loaded = await run_in_threadpool(lambda: asyncio.run(self._load_schema(db)))
             if not schema_loaded:
                 self.status["status"] = "failed"
                 self.status["end_time"] = datetime.now().isoformat()
                 return self.status
                 
-            # Validate data path
-            data_path_valid = await self._validate_data_path()
+            # Validate data path - run in thread pool to avoid blocking
+            data_path_valid = await run_in_threadpool(lambda: asyncio.run(self._validate_data_path()))
             if not data_path_valid:
                 self.status["status"] = "failed"
                 self.status["end_time"] = datetime.now().isoformat()
                 return self.status
             
-            # Initialize Neo4j configuration
-            config_initialized = await self._initialize_neo4j_config()
+            # Initialize Neo4j configuration - run in thread pool to avoid blocking
+            config_initialized = await run_in_threadpool(lambda: asyncio.run(self._initialize_neo4j_config()))
             if not config_initialized:
                 self.status["status"] = "failed"
                 self.status["end_time"] = datetime.now().isoformat()
@@ -670,32 +672,32 @@ class DataLoader:
                 target = rel.get("target") or rel.get("endNode") or rel.get("to_node")
                 print(f"Relationship {idx+1}: {source}-[{rel_type}]->{target}")
             
-            # Generate Neo4j import files
+            # Generate Neo4j import files - run in thread pool to avoid blocking
             print(f"Starting data loading from {self.data_path}")
-            files_generated = await self._generate_neo4j_files()
+            files_generated = await run_in_threadpool(lambda: asyncio.run(self._generate_neo4j_files()))
             if not files_generated:
                 self.status["status"] = "failed"
                 self.status["end_time"] = datetime.now().isoformat()
                 return self.status
             
-            # Run Neo4j import
-            import_successful = await self._run_neo4j_import()
+            # Run Neo4j import - run in thread pool to avoid blocking
+            import_successful = await run_in_threadpool(lambda: asyncio.run(self._run_neo4j_import()))
             if not import_successful:
                 self.status["status"] = "failed"
                 self.status["end_time"] = datetime.now().isoformat()
                 return self.status
                 
-            # Start Neo4j to ensure the database is available
+            # Start Neo4j to ensure the database is available - run in thread pool to avoid blocking
             print("Starting Neo4j service to make the imported database available...")
-            neo4j_started = await self._start_neo4j()  # We continue even if start fails
+            neo4j_started = await run_in_threadpool(lambda: asyncio.run(self._start_neo4j()))
             
             if not neo4j_started:
                 print("WARNING: Neo4j may not have started properly. You might need to start it manually.")
                 self.status["warnings"].append("Neo4j may not have started properly. Consider restarting it manually.")
             
-            # Get database statistics
+            # Get database statistics - run in thread pool to avoid blocking
             print("Inspecting database after data loading...")
-            stats = await self._get_database_stats()
+            stats = await run_in_threadpool(lambda: asyncio.run(self._get_database_stats()))
             
             # Update status with database statistics
             self.status["nodes_created"] = stats.get("node_count", 0)

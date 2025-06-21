@@ -159,30 +159,35 @@ async def process_load_data_job(job_id: str, schema_id: int, graph_name: str, dr
     """
     Background task to load data into Neo4j
     """
+    from api.utils.thread_pool import run_in_threadpool
+    
     # Create a new session specifically for this background task
     task_db = BackgroundSessionLocal()
     
     try:
-        # Get the job using the new session
-        job = task_db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first()
+        # Get the job using the new session - run in thread pool to avoid blocking
+        job = await run_in_threadpool(lambda: task_db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first())
         if not job:
             print(f"Error: Job with ID {job_id} not found")
             return
         
-        # Update job status to running
+        # Update job status to running - run in thread pool to avoid blocking
         job.status = "running"
         job.started_at = datetime.now()
         job.message = f"Starting data load for schema ID {schema_id} to graph {graph_name}"
         job.progress = 5
-        task_db.commit()
+        await run_in_threadpool(lambda: task_db.commit())
         
         try:
             # Call the existing load_data_from_schema function with our new session
             # if dataset_type is empty or null then it will load it from schema table using given schema id
+            from api.utils.thread_pool import run_in_threadpool
+            
             if dataset_type is None or dataset_type == "":
-                schema_db = db.query(Schema).filter(Schema.id == schema_id).first()
+                schema_db = await run_in_threadpool(lambda: db.query(Schema).filter(Schema.id == schema_id).first())
                 dataset_type = schema_db.dataset_type
                 
+            # Use the thread pool to run the data loading operation
             result = await graphschema_load_data(
                 schema_id=schema_id,
                 graph_name=graph_name,
@@ -196,7 +201,9 @@ async def process_load_data_job(job_id: str, schema_id: int, graph_name: str, dr
             print(f"Data loading result: {result}")
             # Get a fresh instance of the job from the database instead of refreshing
             # This prevents the 'not persistent within this Session' error
-            job = db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first()
+            from api.utils.thread_pool import run_in_threadpool
+            
+            job = await run_in_threadpool(lambda: db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first())
             if not job:
                 print(f"Error: Job with ID {job_id} not found after data loading")
                 return
@@ -231,20 +238,21 @@ async def process_load_data_job(job_id: str, schema_id: int, graph_name: str, dr
                         job.result = json.dumps(job_result)
                 
                 # Update schema record to indicate data has been loaded
-                schema_db = db.query(Schema).filter(Schema.id == schema_id).first()
+                schema_db = await run_in_threadpool(lambda: db.query(Schema).filter(Schema.id == schema_id).first())
                 if schema_db:
                     schema_db.db_loaded = "yes"
                     print(f"Updated schema record {schema_id} with db_loaded=yes")
                 
-                db.commit()
+                await run_in_threadpool(lambda: db.commit())
             else:
                 print(f"Job {job_id} already in {job.status} status, not updating")
                 # Still commit any schema updates if needed
-                schema_db = db.query(Schema).filter(Schema.id == schema_id).first()
+                from api.utils.thread_pool import run_in_threadpool
+                schema_db = await run_in_threadpool(lambda: db.query(Schema).filter(Schema.id == schema_id).first())
                 if schema_db and schema_db.db_loaded != "yes":
                     schema_db.db_loaded = "yes"
                     print(f"Updated schema record {schema_id} with db_loaded=yes")
-                    db.commit()
+                    await run_in_threadpool(lambda: db.commit())
             
             # Start prompt template generation as a background task
             background_tasks = BackgroundTasks()
@@ -273,22 +281,24 @@ async def process_clean_data_job(job_id: str, schema_id: int, graph_name: str, d
     """
     Background task to clean data from Neo4j
     """
+    from api.utils.thread_pool import run_in_threadpool
+    
     # Create a new session specifically for this background task
     task_db = BackgroundSessionLocal()
     
     try:
-        # Get the job using the new session
-        job = task_db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first()
+        # Get the job using the new session - run in thread pool to avoid blocking
+        job = await run_in_threadpool(lambda: task_db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first())
         if not job:
             print(f"Error: Job with ID {job_id} not found")
             return
         
-        # Update job status to running
+        # Update job status to running - run in thread pool to avoid blocking
         job.status = "running"
         job.started_at = datetime.now()
         job.message = f"Starting data cleaning for schema ID {schema_id} from graph {graph_name}"
         job.progress = 5
-        task_db.commit()
+        await run_in_threadpool(lambda: task_db.commit())
         
         try:
             # Get schema record

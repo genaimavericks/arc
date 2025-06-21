@@ -31,10 +31,20 @@ if __name__ == "__main__":
     print("Configured custom logging to filter out access logs for specific URLs")
     
     # Run the FastAPI app with uvicorn
+    # Configure with workers and thread settings to better handle async operations
+    import multiprocessing
+    
+    # Calculate optimal number of workers based on CPU cores
+    workers = min(multiprocessing.cpu_count() + 1, 4)  # Use at most 4 workers
+    
+    print(f"Starting server with {workers} workers for better async handling")
+    
     uvicorn.run(
         "api.main:app", 
         host=host, 
         port=port, 
         reload=True,
+        workers=workers,  # Multiple workers to handle concurrent requests
+        loop="asyncio",   # Explicitly use asyncio event loop
         log_level="info"
     )
