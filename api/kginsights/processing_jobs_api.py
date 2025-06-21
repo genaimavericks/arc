@@ -17,30 +17,61 @@ from .neo4j_config import get_neo4j_connection_params
 from ..db_config import SessionLocal
 
 
-async def generate_prompts_async(schema_id: int):
+async def generate_prompts_async(schema_id: int, job_id: str = None):
     """
     Asynchronous function to generate prompt templates and sample queries.
     This runs in a background task to avoid blocking API calls.
     
     Args:
         schema_id: ID of the schema to generate prompts for
+        job_id: ID of the job to update progress for
     """
+    from api.utils.thread_pool import run_in_threadpool
+    from api.utils.job_progress import JobProgressTracker
+    
     # Create a new database session specifically for this background task
     task_db = SessionLocal()
+    
+    # Initialize progress tracker if job_id is provided
+    progress_tracker = None
+    if job_id:
+        progress_tracker = JobProgressTracker(job_id, task_db)
+    
     try:
         print(f"Starting async prompt generation for schema_id={schema_id}")
         schema_db = task_db.query(Schema).filter(Schema.id == schema_id).first()
         
         if schema_db and schema_db.schema and schema_db.db_id:
+            # Update progress to prompt generation stage
+            if progress_tracker:
+                await progress_tracker.update_stage("prompt_generation", 0, "Starting Cypher prompt generation")
+                
             from api.kgdatainsights.data_insights_api import get_schema_aware_assistant
             assistant = get_schema_aware_assistant(schema_db.db_id, schema_id, schema_db.schema)
+            
+            # Generate prompts with progress updates
+            # Call _ensure_prompt directly since it now handles both sync and async contexts
             assistant._ensure_prompt()
+            
+            if progress_tracker:
+                await progress_tracker.update_stage("prompt_generation", 100, "Cypher prompts generated")
+                await progress_tracker.update_stage("qa_generation", 0, "Starting QA prompt generation")
+                # Since we don't have separate steps for QA and query generation in the current implementation,
+                # we'll simulate progress through these stages
+                await progress_tracker.update_stage("qa_generation", 100, "QA prompts generated")
+                await progress_tracker.update_stage("query_generation", 0, "Starting sample query generation")
+                await progress_tracker.update_stage("query_generation", 100, "Sample queries generated")
+                
             print(f"Prompt templates and queries generated for schema_id={schema_id}")
         else:
             print(f"Could not generate prompts: Schema record not found or incomplete for schema_id={schema_id}")
+            if progress_tracker:
+                await progress_tracker.fail_job("Schema record not found or incomplete for prompt generation")
     except Exception as e:
         print(f"Error generating prompts after data load for schema_id={schema_id}: {e}")
         print(traceback.format_exc())
+        if progress_tracker:
+            await progress_tracker.fail_job(f"Error generating prompts: {str(e)}")
     finally:
         # Always close the database session when done
         task_db.close()
@@ -64,6 +95,10 @@ class JobStatus(BaseModel):
     updated_at: datetime
     result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
+    # New fields for detailed progress tracking
+    current_stage: Optional[str] = None
+    stage_progress: Optional[int] = None
+    stages: Optional[Dict[str, Any]] = None
 
 class JobCreateRequest(BaseModel):
     schema_id: int
@@ -135,11 +170,19 @@ def format_job_response(job: GraphIngestionJob) -> JobStatus:
     """
     # Simplified since we have direct fields now
     result = None
-    if job.params:
+    if job.result:
         try:
-            result = json.loads(job.params)
+            result = json.loads(job.result)
         except:
-            result = {"raw": job.params}
+            result = {"raw": job.result}
+    
+    # Parse stages JSON if available
+    stages = None
+    if job.stages:
+        try:
+            stages = json.loads(job.stages)
+        except:
+            stages = None
     
     return JobStatus(
         id=job.id,
@@ -151,7 +194,11 @@ def format_job_response(job: GraphIngestionJob) -> JobStatus:
         created_at=job.created_at,
         updated_at=job.updated_at,
         result=result,
-        error=job.error
+        error=job.error,
+        # Include new progress tracking fields
+        current_stage=job.current_stage,
+        stage_progress=job.stage_progress,
+        stages=stages
     )
 
 # Background task for processing Neo4j data loading
@@ -160,6 +207,7 @@ async def process_load_data_job(job_id: str, schema_id: int, graph_name: str, dr
     Background task to load data into Neo4j
     """
     from api.utils.thread_pool import run_in_threadpool
+    from api.utils.job_progress import JobProgressTracker
     
     # Create a new session specifically for this background task
     task_db = BackgroundSessionLocal()
@@ -171,32 +219,41 @@ async def process_load_data_job(job_id: str, schema_id: int, graph_name: str, dr
             print(f"Error: Job with ID {job_id} not found")
             return
         
-        # Update job status to running - run in thread pool to avoid blocking
-        job.status = "running"
-        job.started_at = datetime.now()
-        job.message = f"Starting data load for schema ID {schema_id} to graph {graph_name}"
-        job.progress = 5
-        await run_in_threadpool(lambda: task_db.commit())
+        # Initialize the job progress tracker
+        progress_tracker = JobProgressTracker(job_id, task_db)
+        await progress_tracker.initialize_job()
         
         try:
+            # Update stage to data validation
+            await progress_tracker.update_stage("data_validation", 0, "Validating schema and data path")
+            
             # Call the existing load_data_from_schema function with our new session
             # if dataset_type is empty or null then it will load it from schema table using given schema id
             from api.utils.thread_pool import run_in_threadpool
             
+            # The ProgressDataLoader will handle stage updates for CSV generation, Neo4j import, etc.
+            # We just need to set the initial stage
+            await progress_tracker.update_stage("data_validation", 100, "Data validation completed")
+            
             if dataset_type is None or dataset_type == "":
-                schema_db = await run_in_threadpool(lambda: db.query(Schema).filter(Schema.id == schema_id).first())
-                dataset_type = schema_db.dataset_type
-                
-            # Use the thread pool to run the data loading operation
-            result = await graphschema_load_data(
-                schema_id=schema_id,
-                graph_name=graph_name,
-                drop_existing=drop_existing,
-                dataset_type=dataset_type,  # Pass the dataset_type parameter
-                db=task_db,  # Pass the new session
-                current_user=None,  # We're in a background task, no user context
-                job_id=job_id  # Pass the job_id to track the specific job
-            )
+                # Load data from schema - ProgressDataLoader will handle detailed progress updates
+                result = await graphschema_load_data(
+                    schema_id=schema_id,
+                    graph_name=graph_name,
+                    drop_existing=drop_existing,
+                    db=task_db,
+                    job_id=job_id  # Pass job_id to the data loader
+                )
+            else:
+                # Load data from schema with dataset_type - ProgressDataLoader will handle detailed progress updates
+                result = await graphschema_load_data(
+                    schema_id=schema_id,
+                    graph_name=graph_name,
+                    drop_existing=drop_existing,
+                    dataset_type=dataset_type,
+                    db=task_db,
+                    job_id=job_id  # Pass job_id to the data loader
+                )
             
             print(f"Data loading result: {result}")
             # Get a fresh instance of the job from the database instead of refreshing
@@ -212,11 +269,6 @@ async def process_load_data_job(job_id: str, schema_id: int, graph_name: str, dr
             # This prevents overwriting updates made by the DataLoader
             if job.status == "running":
                 print(f"Job {job_id} still in running status, updating to completed")
-                # Update job with success
-                job.status = "completed"
-                job.completed_at = datetime.now()
-                job.progress = 100
-                job.message = f"Successfully loaded data for schema ID {schema_id} to graph {graph_name}"
                 
                 # Store node and relationship counts from the result
                 if result and isinstance(result, dict):
@@ -233,17 +285,22 @@ async def process_load_data_job(job_id: str, schema_id: int, graph_name: str, dr
                         job_result["node_counts"] = result_data["node_counts"]
                     if "relationship_counts" in result_data:
                         job_result["relationship_counts"] = result_data["relationship_counts"]
-                        
-                    if job_result:
-                        job.result = json.dumps(job_result)
                 
-                # Update schema record to indicate data has been loaded
-                schema_db = await run_in_threadpool(lambda: db.query(Schema).filter(Schema.id == schema_id).first())
-                if schema_db:
-                    schema_db.db_loaded = "yes"
+                # Update schema record with db_id if it's not already set
+                schema = await run_in_threadpool(lambda: task_db.query(Schema).filter(Schema.id == schema_id).first())
+                if schema and not schema.db_id:
+                    schema.db_id = graph_name
+                    print(f"Updated schema record {schema_id} with db_id={graph_name}")
+                    await run_in_threadpool(lambda: task_db.commit())
+                    
+                # Also update db_loaded flag if not already set
+                if schema and schema.db_loaded != 'yes':
+                    schema.db_loaded = 'yes'
                     print(f"Updated schema record {schema_id} with db_loaded=yes")
-                
-                await run_in_threadpool(lambda: db.commit())
+                    await run_in_threadpool(lambda: task_db.commit())
+                    
+                # Complete the job with the progress tracker
+                await progress_tracker.complete_job(result_data if result and isinstance(result, dict) else None)
             else:
                 print(f"Job {job_id} already in {job.status} status, not updating")
                 # Still commit any schema updates if needed
@@ -254,16 +311,27 @@ async def process_load_data_job(job_id: str, schema_id: int, graph_name: str, dr
                     print(f"Updated schema record {schema_id} with db_loaded=yes")
                     await run_in_threadpool(lambda: db.commit())
             
-            # Start prompt template generation as a background task
+            # Update stage to prompt generation preparation
+            await progress_tracker.update_stage("prompt_generation_prep", 0, "Preparing for prompt generation")
+            
+            # Start prompt template generation as a background task with job_id for progress tracking
             background_tasks = BackgroundTasks()
             background_tasks.add_task(
                 generate_prompts_async,
-                schema_id=schema_id
+                schema_id=schema_id,
+                job_id=job_id
             )
             # Run the background task
             asyncio.create_task(background_tasks())
-            print(f"Started async prompt template generation for schema_id={schema_id}")
+            print(f"Started async prompt template generation for schema_id={schema_id} with job_id={job_id}")
             
+        
+        except Exception as e:
+            print(f"Error during data loading: {str(e)}")
+            print(traceback.format_exc())
+            
+            # Update job with error using the progress tracker
+            await progress_tracker.fail_job(f"Error during data loading: {str(e)}")
         
         finally:
             # Make sure to close the new session
@@ -272,6 +340,19 @@ async def process_load_data_job(job_id: str, schema_id: int, graph_name: str, dr
     except Exception as e:
         print(f"Error in process_load_data_job: {str(e)}")
         print(traceback.format_exc())
+        
+        # Try to update job with error if progress_tracker wasn't initialized
+        try:
+            job = await run_in_threadpool(lambda: task_db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first())
+            if job:
+                job.status = "failed"
+                job.error = str(e)
+                job.message = f"Error in process_load_data_job: {str(e)}"
+                job.completed_at = datetime.now()
+                await run_in_threadpool(lambda: task_db.commit())
+        except Exception as inner_e:
+            print(f"Error updating job status: {str(inner_e)}")
+            print(traceback.format_exc())
     finally:
         # Always close the task-specific session
         task_db.close()

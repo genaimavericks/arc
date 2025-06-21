@@ -2065,14 +2065,17 @@ async def load_data_from_schema(
             
             print(f"Using data path: {data_path}")
         
-        # Initialize data loader
-        loader = DataLoader(
+        # Initialize data loader with progress tracking
+        from api.kginsights.loaders.progress_data_loader import ProgressDataLoader
+        
+        # Use ProgressDataLoader instead of DataLoader for better progress tracking
+        loader = ProgressDataLoader(
             schema_id=schema_id,
             data_path=data_path,
             graph_name=graph_name,
             batch_size=1000,  # Default batch size
             drop_existing=drop_existing,
-            job_id=job_id  # Pass the job_id for direct job updates
+            job_id=job_id  # Pass the job_id for progress tracking
         )
         
         # Load data using thread pool to avoid blocking the main event loop

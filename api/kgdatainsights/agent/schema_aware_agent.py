@@ -373,7 +373,11 @@ class SchemaAwareGraphAssistant:
             }
         
     def _ensure_prompt(self) -> None:
-        """Check if prompts exist, validate generation_id, create and save if needed."""
+        """Check if prompts exist, validate generation_id, create and save if needed.
+        
+        This method checks if prompts already exist and are valid. If not, it triggers
+        asynchronous prompt generation to avoid blocking the main thread.
+        """
         print(f"TRACE: _ensure_prompt started for db_id={self.db_id}, schema_id={self.schema_id}")
         prompt_file = PROMPT_DIR / f"prompt_{self.db_id}_{self.schema_id}.json"
         query_file = QUERY_DIR / f"{self.schema_id}_queries.json" 
@@ -445,69 +449,101 @@ class SchemaAwareGraphAssistant:
         # 3. Regenerate and save if needed
         if regenerate_prompts:
             print("Generating new prompts...")
-            print(f"TRACE: Starting _generate_prompts() for db_id={self.db_id}, schema_id={self.schema_id}")
-            # Generate prompts based on schema
+            print(f"TRACE: Starting prompt generation for db_id={self.db_id}, schema_id={self.schema_id}")
+            
+            # Start prompt generation asynchronously to avoid blocking
+            # Check if we're in an event loop context or not
             try:
-                # Check if we should use domain-specific sample queries
-                use_domain_specific_queries = False
-                domain_specific_queries = []
-                domain_queries_file = None
-                
-                # Check if domain contains telecom_churn or foam_factory
-                if domain:
-                    domain_lower = domain.lower()
-                    if 'telecom_churn' in domain_lower:
-                        print(f"Using domain-specific sample queries for telecom_churn domain")
-                        domain_queries_file = os.path.join(os.path.dirname(__file__), 'domain_queries', 'telecom_churn_queries.json')
-                        use_domain_specific_queries = True
-                    elif 'foam_factory' in domain_lower:
-                        print(f"Using domain-specific sample queries for foam_factory domain")
-                        domain_queries_file = os.path.join(os.path.dirname(__file__), 'domain_queries', 'foam_factory_queries.json')
-                        use_domain_specific_queries = True
-                
-                # Generate prompts - pass a flag indicating if domain-specific queries will be used
-                prompts = self._generate_prompts(skip_sample_queries_generation=use_domain_specific_queries) # Assumes this returns a dict
-                
-                # If we should use domain-specific queries, load them from the JSON file
-                if use_domain_specific_queries and domain_queries_file and os.path.exists(domain_queries_file):
-                    try:
-                        with open(domain_queries_file, 'r') as f:
-                            domain_data = json.load(f)
-                            domain_specific_queries = domain_data.get('queries', [])
-                        
-                        if domain_specific_queries:
-                            # Replace the LLM-generated sample queries with domain-specific ones
-                            print(f"Replacing LLM-generated sample queries with domain-specific queries for {domain}")
-                            prompts["sample_queries"] = domain_specific_queries
-                    except Exception as e:
-                        print(f"Error loading domain-specific queries from {domain_queries_file}: {e}")
-                        print(f"TRACE: Exception details: {traceback.format_exc()}")
-                        # Continue with LLM-generated queries if there's an error
-                
-                print(f"TRACE: Successfully completed _generate_prompts()")
-            except Exception as e:
-                print(f"TRACE: Error in _generate_prompts(): {str(e)}")
-                print(f"TRACE: Exception details: {traceback.format_exc()}")
-                raise
+                # Try to get the current event loop - if this succeeds, we're in an async context
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # We're in an async context, create a task
+                    asyncio.create_task(self._generate_prompts_async(domain, current_generation_id))
+                    print(f"TRACE: Prompt generation started in background task for db_id={self.db_id}, schema_id={self.schema_id}")
+                else:
+                    # We have an event loop but it's not running
+                    print(f"TRACE: Event loop exists but not running, running prompt generation directly for db_id={self.db_id}, schema_id={self.schema_id}")
+                    # Run synchronously since we can't create a task without a running loop
+                    self._generate_prompts_sync(domain, current_generation_id)
+            except RuntimeError:
+                # No event loop, we're in a synchronous context (like a thread pool)
+                print(f"TRACE: No running event loop, running prompt generation directly for db_id={self.db_id}, schema_id={self.schema_id}")
+                # Run synchronously since we can't create a task without an event loop
+                self._generate_prompts_sync(domain, current_generation_id)
+            
+            # Return early - prompts will be generated in the background or have been generated synchronously
+            print(f"TRACE: Prompt generation initiated for db_id={self.db_id}, schema_id={self.schema_id}")
+            return
+            
+    async def _generate_prompts_async(self, domain, current_generation_id):
+        """Generate prompts asynchronously to avoid blocking the main thread.
+        
+        Args:
+            domain: The domain for the schema (used for domain-specific queries)
+            current_generation_id: The current generation ID from the schema record
+        """
+        prompt_file = PROMPT_DIR / f"prompt_{self.db_id}_{self.schema_id}.json"
+        query_file = QUERY_DIR / f"{self.schema_id}_queries.json"
+        
+        try:
+            print(f"TRACE: Starting async prompt generation for db_id={self.db_id}, schema_id={self.schema_id}")
+            
+            # Check if we should use domain-specific sample queries
+            use_domain_specific_queries = False
+            domain_specific_queries = []
+            domain_queries_file = None
+            
+            # Check if domain contains telecom_churn or foam_factory
+            if domain:
+                domain_lower = domain.lower()
+                if 'telecom_churn' in domain_lower:
+                    print(f"Using domain-specific sample queries for telecom_churn domain")
+                    domain_queries_file = os.path.join(os.path.dirname(__file__), 'domain_queries', 'telecom_churn_queries.json')
+                    use_domain_specific_queries = True
+                elif 'foam_factory' in domain_lower:
+                    print(f"Using domain-specific sample queries for foam_factory domain")
+                    domain_queries_file = os.path.join(os.path.dirname(__file__), 'domain_queries', 'foam_factory_queries.json')
+                    use_domain_specific_queries = True
+            
+            # Generate prompts - pass a flag indicating if domain-specific queries will be used
+            # Run the synchronous _generate_prompts in a thread pool to avoid blocking
+            from api.utils.thread_pool import run_in_threadpool
+            prompts = await run_in_threadpool(self._generate_prompts, skip_sample_queries_generation=use_domain_specific_queries)
+            
+            # If we should use domain-specific queries, load them from the JSON file
+            if use_domain_specific_queries and domain_queries_file and os.path.exists(domain_queries_file):
+                try:
+                    with open(domain_queries_file, 'r') as f:
+                        domain_data = json.load(f)
+                        domain_specific_queries = domain_data.get('queries', [])
+                    
+                    if domain_specific_queries:
+                        # Replace the LLM-generated sample queries with domain-specific ones
+                        print(f"Replacing LLM-generated sample queries with domain-specific queries for {domain}")
+                        prompts["sample_queries"] = domain_specific_queries
+                except Exception as e:
+                    print(f"Error loading domain-specific queries from {domain_queries_file}: {e}")
+                    print(f"TRACE: Exception details: {traceback.format_exc()}")
+                    # Continue with LLM-generated queries if there's an error
             
             # Add the current generation_id (if available and valid)
             if current_generation_id:
                 prompts["generation_id"] = current_generation_id
             else:
-                 print(f"Warning: Could not retrieve valid current generation_id for schema {self.schema_id}. Saving prompts without generation_id.")
-                 prompts.pop("generation_id", None) # Ensure it's not stale
-
+                print(f"Warning: Could not retrieve valid current generation_id for schema {self.schema_id}. Saving prompts without generation_id.")
+                prompts.pop("generation_id", None)  # Ensure it's not stale
+            
             # Save the prompts to file
             try:
                 print(f"TRACE: Creating prompt directory: {PROMPT_DIR}")
-                PROMPT_DIR.mkdir(parents=True, exist_ok=True) # Ensure directory exists
+                PROMPT_DIR.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
                 print(f"TRACE: Saving prompts to file: {prompt_file}")
                 with open(prompt_file, "w") as f:
                     json.dump(prompts, f, indent=2)
                 print(f"Prompts saved to {prompt_file}")
 
                 print(f"TRACE: Creating query directory: {QUERY_DIR}")
-                QUERY_DIR.mkdir(parents=True, exist_ok=True) # Ensure directory exists
+                QUERY_DIR.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
                 print(f"TRACE: Saving queries to file: {query_file}")
                 with open(query_file, "w") as f:
                     # Format the sample queries to match what the API expects
@@ -538,10 +574,127 @@ class SchemaAwareGraphAssistant:
                     
                     json.dump(formatted_queries, f, indent=2)
                 print(f"Queries saved to {query_file}")
+                print(f"TRACE: Successfully completed async prompt generation for db_id={self.db_id}, schema_id={self.schema_id}")
 
             except Exception as e:
                 print(f"Error saving prompts to {prompt_file}: {e}")
                 print("Warning: Prompts generated but failed to save to file. Using in-memory prompts for this session.")
+                print(f"TRACE: Exception details: {traceback.format_exc()}")
+        
+        except Exception as e:
+            print(f"TRACE: Error in async prompt generation for db_id={self.db_id}, schema_id={self.schema_id}: {str(e)}")
+            print(f"TRACE: Exception details: {traceback.format_exc()}")
+            
+    def _generate_prompts_sync(self, domain, current_generation_id):
+        """Generate prompts synchronously when no event loop is available.
+        
+        This is a synchronous version of _generate_prompts_async for use when called from a thread
+        or other context where no event loop is available.
+        
+        Args:
+            domain: The domain for the schema (used for domain-specific queries)
+            current_generation_id: The current generation ID from the schema record
+        """
+        prompt_file = PROMPT_DIR / f"prompt_{self.db_id}_{self.schema_id}.json"
+        query_file = QUERY_DIR / f"{self.schema_id}_queries.json"
+        
+        try:
+            print(f"TRACE: Starting sync prompt generation for db_id={self.db_id}, schema_id={self.schema_id}")
+            
+            # Check if we should use domain-specific sample queries
+            use_domain_specific_queries = False
+            domain_specific_queries = []
+            domain_queries_file = None
+            
+            # Check if domain contains telecom_churn or foam_factory
+            if domain:
+                domain_lower = domain.lower()
+                if 'telecom_churn' in domain_lower:
+                    print(f"Using domain-specific sample queries for telecom_churn domain")
+                    domain_queries_file = os.path.join(os.path.dirname(__file__), 'domain_queries', 'telecom_churn_queries.json')
+                    use_domain_specific_queries = True
+                elif 'foam_factory' in domain_lower:
+                    print(f"Using domain-specific sample queries for foam_factory domain")
+                    domain_queries_file = os.path.join(os.path.dirname(__file__), 'domain_queries', 'foam_factory_queries.json')
+                    use_domain_specific_queries = True
+            
+            # Generate prompts - pass a flag indicating if domain-specific queries will be used
+            prompts = self._generate_prompts(skip_sample_queries_generation=use_domain_specific_queries)
+            
+            # If we should use domain-specific queries, load them from the JSON file
+            if use_domain_specific_queries and domain_queries_file and os.path.exists(domain_queries_file):
+                try:
+                    with open(domain_queries_file, 'r') as f:
+                        domain_data = json.load(f)
+                        domain_specific_queries = domain_data.get('queries', [])
+                    
+                    if domain_specific_queries:
+                        # Replace the LLM-generated sample queries with domain-specific ones
+                        print(f"Replacing LLM-generated sample queries with domain-specific queries for {domain}")
+                        prompts["sample_queries"] = domain_specific_queries
+                except Exception as e:
+                    print(f"Error loading domain-specific queries from {domain_queries_file}: {e}")
+                    print(f"TRACE: Exception details: {traceback.format_exc()}")
+                    # Continue with LLM-generated queries if there's an error
+            
+            # Add the current generation_id (if available and valid)
+            if current_generation_id:
+                prompts["generation_id"] = current_generation_id
+            else:
+                print(f"Warning: Could not retrieve valid current generation_id for schema {self.schema_id}. Saving prompts without generation_id.")
+                prompts.pop("generation_id", None)  # Ensure it's not stale
+            
+            # Save the prompts to file
+            try:
+                print(f"TRACE: Creating prompt directory: {PROMPT_DIR}")
+                PROMPT_DIR.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
+                print(f"TRACE: Saving prompts to file: {prompt_file}")
+                with open(prompt_file, "w") as f:
+                    json.dump(prompts, f, indent=2)
+                print(f"Prompts saved to {prompt_file}")
+
+                print(f"TRACE: Creating query directory: {QUERY_DIR}")
+                QUERY_DIR.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
+                print(f"TRACE: Saving queries to file: {query_file}")
+                with open(query_file, "w") as f:
+                    # Format the sample queries to match what the API expects
+                    # The API expects a dictionary with categories as keys and lists of queries as values
+                    formatted_queries = {
+                        "general": [],
+                        "relationships": [],
+                        "domain": []
+                    }
+                    
+                    # Add each sample query to an appropriate category based on content analysis
+                    for i, query in enumerate(prompts["sample_queries"]):
+                        query_lower = query.lower()
+                        
+                        # Determine the best category based on query content
+                        if any(keyword in query_lower for keyword in ["relation", "connect", "link", "between", "path"]):
+                            category = "relationships"
+                        elif any(keyword in query_lower for keyword in ["domain", "specific", "industry", "field", "area"]):
+                            category = "domain"
+                        else:
+                            category = "general"  # Default category
+                        
+                        formatted_queries[category].append({
+                            "id": f"{category}_{len(formatted_queries[category])+1}",
+                            "query": query,
+                            "description": f"Sample query for {domain if domain else 'graph'} #{i+1}"
+                        })
+                    
+                    json.dump(formatted_queries, f, indent=2)
+                print(f"Queries saved to {query_file}")
+                print(f"TRACE: Successfully completed sync prompt generation for db_id={self.db_id}, schema_id={self.schema_id}")
+
+            except Exception as e:
+                print(f"Error saving prompts to {prompt_file}: {e}")
+                print("Warning: Prompts generated but failed to save to file. Using in-memory prompts for this session.")
+                print(f"TRACE: Exception details: {traceback.format_exc()}")
+        
+        except Exception as e:
+            print(f"TRACE: Error in sync prompt generation for db_id={self.db_id}, schema_id={self.schema_id}: {str(e)}")
+            print(f"TRACE: Exception details: {traceback.format_exc()}")
         
     def _generate_prompts(self, skip_sample_queries_generation=False) -> Dict[str, Any]:
         """Generate custom prompts using LLM based on the schema

@@ -165,10 +165,14 @@ class GraphIngestionJob(Base):
     node_count = Column(Integer, default=0)  # Count of nodes created during job execution
     relationship_count = Column(Integer, default=0)  # Count of relationships created during job execution
     result = Column(Text, nullable=True)  # Store detailed job results as JSON string
-
+    
+    # New fields for detailed progress tracking
+    stages = Column(Text, nullable=True)  # JSON string with stage definitions
+    current_stage = Column(String, nullable=True)  # Current active stage ID
+    stage_progress = Column(Integer, default=0)  # Progress within current stage (0-100)
+    
     # Relationship to Schema
     schema = relationship("Schema", backref="graph_jobs")
-
 
 class DatabaseConnection(Base):
     """Database connection model for storing connection configurations"""
