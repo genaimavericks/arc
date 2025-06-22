@@ -229,6 +229,17 @@ export function CreateTransformationTab({ initialPlanId, dataSourceId, dataSourc
         console.log("[Transform] API response headers:", Object.fromEntries([...response.headers.entries()]));
       }
       
+      // Handle permission denied errors specifically
+      if (response.status === 403) {
+        console.error("[Transform] Permission denied error:", response.status);
+        toast({
+          title: "Permission Denied",
+          description: "You don't have access to create transformation plans.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
       if (!response.ok) {
         console.error("[Transform] API request failed with status:", response.status);
         const errorText = await response.text();

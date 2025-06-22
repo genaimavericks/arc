@@ -257,6 +257,8 @@ export function ProfileList({ onProfileSelect, selectedProfileId, fileIdFilter }
     return "destructive";
   };
 
+  const [permissionError, setPermissionError] = useState<string | null>(null);
+
   const handleDelete = async (profileId: string, e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent triggering row selection
     
@@ -283,6 +285,17 @@ export function ProfileList({ onProfileSelect, selectedProfileId, fileIdFilter }
           Authorization: `Bearer ${token}`,
         },
       });
+      
+      // Check for permission errors
+      if (response.status === 403) {
+        setPermissionError("Permission denied: You don't have access to delete profiles");
+        
+        // Auto-dismiss the error after 5 seconds
+        setTimeout(() => {
+          setPermissionError(null);
+        }, 5000);
+        return;
+      }
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -327,11 +340,14 @@ export function ProfileList({ onProfileSelect, selectedProfileId, fileIdFilter }
       
     } catch (error) {
       console.error("Error deleting profile:", error);
-      toast({
-        title: "Error",
-        description: "Failed to delete profile. You may not have sufficient permissions.",
-        variant: "destructive",
-      });
+      // Only show toast for non-permission errors since permission errors are shown in the UI
+      if (!permissionError) {
+        toast({
+          title: "Error",
+          description: "Failed to delete profile. Please try again.",
+          variant: "destructive",
+        });
+      }
     } finally {
       setDeleting(null);
     }
@@ -339,6 +355,12 @@ export function ProfileList({ onProfileSelect, selectedProfileId, fileIdFilter }
 
   return (
     <div id="profile-list-component" ref={componentRef}>
+      
+      {permissionError && (
+        <div className="bg-destructive text-white p-4 mb-4 rounded-md flex items-center justify-between">
+          <span>{permissionError}</span>
+        </div>
+      )}
       
       <Card>
         <CardContent className="p-6">

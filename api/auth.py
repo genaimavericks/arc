@@ -164,8 +164,8 @@ def has_permission(permission: str):
         A dependency function that checks if the current user has the permission
     """
     def permission_checker(current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)):
-        print(f"\n==== PERMISSION CHECK ====")
-        print(f"Checking if user '{current_user.username}' with role '{current_user.role}' has permission '{permission}'")
+        # print(f"\n==== PERMISSION CHECK ====")
+        # print(f"Checking if user '{current_user.username}' with role '{current_user.role}' has permission '{permission}'")
         
         # Admin can access everything
         if current_user.role == "admin":
@@ -192,7 +192,7 @@ def has_permission(permission: str):
             role_permissions = []
             # Extract permissions from the description field (stored as JSON)
             if role.description:
-                print(f"Role {role.name} description: {role.description}")
+                # print(f"Role {role.name} description: {role.description}")
                 
                 try:
                     # Try to parse as JSON even if it doesn't start with {
@@ -200,23 +200,23 @@ def has_permission(permission: str):
                         description_data = json.loads(role.description)
                         if isinstance(description_data, dict):
                             role_permissions = description_data.get("permissions", [])
-                            print(f"Extracted permissions from JSON dict: {role_permissions}")
+                            # print(f"Extracted permissions from JSON dict: {role_permissions}")
                         elif isinstance(description_data, list):
                             # Handle case where description is a direct list of permissions
                             role_permissions = description_data
-                            print(f"Extracted permissions from JSON list: {role_permissions}")
+                            # print(f"Extracted permissions from JSON list: {role_permissions}")
                     else:
                         # Not JSON format, check if it's a comma-separated list
                         if ',' in role.description:
                             role_permissions = [p.strip() for p in role.description.split(',')]
-                            print(f"Extracted permissions from comma-separated list: {role_permissions}")
+                            # print(f"Extracted permissions from comma-separated list: {role_permissions}")
                 except (json.JSONDecodeError, TypeError) as e:
                     print(f"Error parsing description JSON for role {role.name}: {e}")
                     print(f"Description content: {role.description}")
             
             # Debug output
-            print(f"Checking permission '{permission}' for user '{current_user.username}' with role '{role.name}'")
-            print(f"Role permissions: {role_permissions}")
+            #print(f"Checking permission '{permission}' for user '{current_user.username}' with role '{role.name}'")
+            # print(f"Role permissions: {role_permissions}")
             
             # Check directly if the role has the required permission
             if permission in role_permissions:

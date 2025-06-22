@@ -247,6 +247,10 @@ export function FileUpload({
               });
               
               if (!response.ok) {
+                // Handle permission denied errors
+                if (response.status === 403) {
+                  throw new Error("Permission denied: You don't have sufficient permissions to upload files");
+                }
                 throw new Error(`Failed to upload chunk ${uploadedChunks + 1} of ${totalChunks}`);
               }
               
@@ -303,6 +307,12 @@ export function FileUpload({
           });
           
           if (!completeResponse.ok) {
+            // Handle permission denied errors specifically
+            if (completeResponse.status === 403) {
+              console.error("Permission denied during chunked upload completion");
+              throw new Error("Permission denied: You don't have access to upload files");
+            }
+            
             const errorText = await completeResponse.text();
             let errorMessage = "Failed to complete chunked upload";
             try {
@@ -752,7 +762,8 @@ export function FileUpload({
         
         // Set error state with the extracted information
         setError(errorMessage + (errorSuggestion ? `\n\nSuggestion: ${errorSuggestion}` : ""));
-        onError({ message: errorMessage, suggestion: errorSuggestion })
+        // Only pass the message property to match the expected type
+        onError({ message: errorMessage + (errorSuggestion ? ` (Suggestion: ${errorSuggestion})` : "") })
         
         // Remove the temporary job if it exists
         const tempJobId = `temp-${Date.now()}-${i}`

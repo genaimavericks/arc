@@ -103,7 +103,7 @@ script_executor = ScriptExecutor()
 @router.post("/sessions", response_model=ProfileSessionResponse)
 async def create_profile_session(
     request: ProfileSessionCreate,
-    current_user: User = Depends(has_any_permission(["datapuur:read"])),
+    current_user: User = Depends(has_any_permission(["datapuur:write"])),
     db: Session = Depends(get_db)
 ):
     """Create a new AI profiling session"""
@@ -729,7 +729,7 @@ async def get_profile_session(
 async def chat_profile_session(
     session_id: str,
     request: ProfileChatRequest,
-    current_user: User = Depends(has_any_permission(["datapuur:read"])),
+    current_user: User = Depends(has_any_permission(["datapuur:write"])),
     db: Session = Depends(get_db)
 ):
     """Chat with AI about data profiling"""

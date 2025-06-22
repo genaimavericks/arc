@@ -118,6 +118,7 @@ export default function AIProfilePage() {
   const [loading, setLoading] = useState(false)
   const [loadingProfiles, setLoadingProfiles] = useState(false)
   const [loadingSessions, setLoadingSessions] = useState(false)
+  const [permissionError, setPermissionError] = useState<string | null>(null)
   const [creatingSession, setCreatingSession] = useState(false)
   const [activeTab, setActiveTab] = useState('new')
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
@@ -271,6 +272,10 @@ export default function AIProfilePage() {
         })
       })
 
+      if (response.status === 403) {
+        throw new Error('Failed to create profile. You do not have required permissions.')
+      }
+      
       if (!response.ok) {
         throw new Error('Failed to create profile')
       }
@@ -458,6 +463,17 @@ export default function AIProfilePage() {
         }
       })
 
+      // Handle permission denied errors
+      if (response.status === 403) {
+        setPermissionError("Permission denied: You don't have access to delete profile sessions")
+        
+        // Auto-dismiss the error after 5 seconds
+        setTimeout(() => {
+          setPermissionError(null)
+        }, 5000)
+        return
+      }
+      
       if (!response.ok) {
         throw new Error('Failed to delete session')
       }
@@ -476,11 +492,14 @@ export default function AIProfilePage() {
         setActiveTab('new')
       }
     } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to delete session",
-        variant: "destructive"
-      })
+      // Only show toast for non-permission errors
+      if (!permissionError) {
+        toast({
+          title: "Error",
+          description: "Failed to delete session",
+          variant: "destructive"
+        })
+      }
     } finally {
       setShowDeleteDialog(false)
       setSessionToDelete(null)
@@ -523,6 +542,12 @@ export default function AIProfilePage() {
   return (
     <DataPuurLayout>
       <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
+        {permissionError && (
+          <div className="bg-destructive text-white p-4 mb-4 rounded-md flex items-center justify-between">
+            <span>{permissionError}</span>
+          </div>
+        )}
+        
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold tracking-tight">AI Profile Analysis</h2>
         </div>
