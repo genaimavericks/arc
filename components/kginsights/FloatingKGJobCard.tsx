@@ -132,33 +132,24 @@ export default function FloatingKGJobCard() {
     };
   }, [jobs, activeJobs.length, completedJobs.length, failedJobs.length, userDismissed, showCardTimeout]);
 
-  // Force refresh jobs periodically when there are active jobs, but with reduced frequency
+  // Implement auto-refresh for active jobs
   useEffect(() => {
-    if (activeJobs.length > 0) {
-      const refreshTimer = setInterval(() => {
-        const currentTime = Date.now();
-        if (currentTime - lastRefreshTime >= 3000) {
-          refreshJobs();
-          setLastRefreshTime(currentTime);
-        }
-      }, 3000);
-      
-      return () => {
-        clearInterval(refreshTimer);
-      };
-    }
+    const refreshInterval = setInterval(() => {
+      if (activeJobs.length > 0) {
+        refreshJobs()
+        setLastRefreshTime(Date.now())
+      }
+    }, 3000) // Refresh every 3 seconds for more responsive updates
+    
+    return () => clearInterval(refreshInterval)
   }, [activeJobs.length, refreshJobs, lastRefreshTime]);
 
   // Handle job status icons and colors
   const getStatusBadge = (status: string) => {
+    // For both pending and running jobs, show as "Running" with spinning loader
+    // This helps match UI with actual backend status which may be ahead of what API returns
     switch (status) {
       case "pending":
-        return (
-          <Badge variant="outline" className="bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/20 flex items-center gap-1">
-            <Clock className="h-3 w-3" />
-            Pending
-          </Badge>
-        )
       case "running":
         return (
           <Badge variant="outline" className="bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20 flex items-center gap-1">
@@ -431,14 +422,10 @@ export default function FloatingKGJobCard() {
                     animate={{ opacity: 1, y: 0 }}
                     className="relative bg-card dark:bg-gray-800 border border-border dark:border-gray-700 rounded-lg p-3 overflow-hidden"
                   >
-                    {/* Progress bar background for running jobs */}
+                    {/* Background for running jobs */}
                     {job.status === "running" && (
                       <div 
                         className="absolute inset-0 bg-blue-500/5 dark:bg-blue-500/10 z-0"
-                        style={{ 
-                          width: `${job.progress}%`,
-                          transition: 'width 0.5s ease-in-out'
-                        }}
                       />
                     )}
                     
@@ -450,25 +437,34 @@ export default function FloatingKGJobCard() {
                             {formatJobType(job.job_type)} - Schema #{job.schema_id}
                           </h4>
                           <p className="text-xs text-muted-foreground dark:text-gray-400 break-words max-w-[220px]">
-                            {job.message || 'Processing...'}
+                            {job.message || (job.status === 'running' ? 'Processing data...' : job.status === 'pending' ? 'Waiting to start...' : 'Processing...')}
                           </p>
                         </div>
                         <div className="flex flex-col items-end space-y-1">
                           {getStatusBadge(job.status)}
-                          <span className="text-xs text-muted-foreground dark:text-gray-400">
-                            {getTimeAgo(job.created_at)}
-                          </span>
+                          {/* Show active status instead of time estimate for running/pending jobs */}
+                          {job.status === "pending" || job.status === "running" ? (
+                            <span className="text-xs text-blue-500 dark:text-blue-400 animate-pulse">
+                              Active
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground dark:text-gray-400">
+                              {getTimeAgo(job.created_at)}
+                            </span>
+                          )}
                         </div>
                       </div>
                       
-                      {/* Progress indicator for running jobs */}
-                      {job.status === "running" && (
+                      {/* Status indicator for running/pending jobs */}
+                      {(job.status === "running" || job.status === "pending") && (
                         <div className="mt-2">
-                          <div className="flex justify-between text-xs mb-1">
-                            <span className="text-muted-foreground dark:text-gray-400">Progress</span>
-                            <span className="text-foreground dark:text-gray-300 font-medium">{job.progress || 0}%</span>
+                          <div className="flex items-center text-xs gap-2">
+                            <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
+                            <span className="text-foreground dark:text-blue-300 font-medium">
+                              {/* Show just 'Loading data' status for clearer indication */}
+                              Processing data
+                            </span>
                           </div>
-                          <Progress value={job.progress || 0} className="h-1.5 dark:bg-gray-700" />
                         </div>
                       )}
                       

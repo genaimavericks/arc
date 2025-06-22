@@ -1563,9 +1563,9 @@ def initialize_all_agents(db_session=None):
     
     results = {}
     try:
-        # Get all schemas from the database
-        schemas = db_session.query(Schema).all()
-        print(f"Found {len(schemas)} schemas to initialize")
+        # Get only schemas with db_loaded='yes' from the database
+        schemas = db_session.query(Schema).filter(Schema.db_loaded == 'yes').all()
+        print(f"Found {len(schemas)} schemas with db_loaded='yes' to initialize")
         
         for schema in schemas:
             if not schema.schema or not schema.db_id:
@@ -1597,6 +1597,46 @@ def initialize_all_agents(db_session=None):
     print(f"Completed initialization of {success_count}/{len(results)} agents in {elapsed_time:.2f} seconds")
     
     return results
+
+def remove_schema_aware_assistant(schema_id: str):
+    """
+    Remove schema-aware assistant for the specified schema ID.
+    This should be called when a schema's db_loaded status is changed to 'no'.
+    
+    Args:
+        schema_id: ID of the schema whose assistant should be removed
+        
+    Returns:
+        bool: True if an assistant was removed, False otherwise
+    """
+    removed = False
+    try:
+        with _lock:
+            # Find and remove all assistants for this schema_id
+            keys_to_remove = []
+            for key in list(_assistants.keys()):
+                # Each key is formatted as "db_id:schema_id" or "db_id:schema_id:session_id"
+                parts = key.split(':')
+                if len(parts) >= 2 and parts[1] == str(schema_id):
+                    keys_to_remove.append(key)
+            
+            # Remove all found assistants
+            for key in keys_to_remove:
+                if key in _assistants:
+                    print(f"DEBUG: Removing schema-aware assistant for schema {schema_id} with key {key}")
+                    del _assistants[key]
+                    removed = True
+            
+            if removed:
+                print(f"DEBUG: Successfully removed assistant(s) for schema {schema_id}")
+            else:
+                print(f"DEBUG: No assistants found for schema {schema_id}")
+            
+            return removed
+    except Exception as e:
+        print(f"ERROR: Failed to remove schema-aware assistant for schema {schema_id}: {str(e)}")
+        return False
+
 
 def get_schema_aware_assistant(db_id: str, schema_id: str, schema: str, session_id: str = None) -> SchemaAwareGraphAssistant:
     """

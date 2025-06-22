@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from .agent.graph_schema_agent import GraphSchemaAgent
+from ..kgdatainsights.agent.schema_aware_agent import remove_schema_aware_assistant
 # Using only Google Generative AI
 import os
 import json
@@ -1641,6 +1642,9 @@ async def delete_schema(
                 print(f"DEBUG: Deleting related job with ID: {job.id}")
                 db.delete(job)
         
+        print(f"DEBUG: Cleaning up schema-aware assistant for schema_id={schema.id}")
+        remove_schema_aware_assistant(schema.id)
+        
         # Flush to ensure related records are deleted before deleting the schema
         print(f"DEBUG: Flushing session to apply related job deletions")
         db.flush()
@@ -1679,53 +1683,6 @@ async def delete_schema(
             detail=f"Error deleting schema: {str(e)}"
         )
 
-@router.post("/cleanup-schemas")
-async def cleanup_schemas(
-    current_user: User = Depends(has_any_permission(["kginsights:manage"])),
-    db: SessionLocal = Depends(get_db)
-):
-    """
-    Clean up the schemas table by removing entries where the associated CSV files don't exist.
-    
-    Args:
-        current_user: Current authenticated user with manage permissions
-        db: Database session
-        
-    Returns:
-        Dict with cleanup results
-    """
-    try:
-        # Get all schemas
-        schemas = db.query(Schema).all()
-        removed_count = 0
-        preserved_count = 0
-        
-        for schema in schemas:
-            # Check if CSV file exists
-            # Normalize path for cross-platform compatibility
-            csv_path = Path(schema.csv_file_path).resolve() if schema.csv_file_path else None
-            if csv_path and not csv_path.exists():
-                print(f"Removing schema {schema.id}: CSV file not found at {csv_path}")
-                db.delete(schema)
-                removed_count += 1
-            else:
-                preserved_count += 1
-                
-        # Commit changes
-        db.commit()
-        
-        return {
-            "message": f"Schema cleanup completed",
-            "removed": removed_count,
-            "preserved": preserved_count
-        }
-        
-    except Exception as e:
-        db.rollback()
-        print(f"Error in cleanup_schemas: {str(e)}")
-        print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Error cleaning up schemas: {str(e)}")
-
 
 @router.post("/clean-neo4j-database")
 async def clean_neo4j_database(
@@ -1753,6 +1710,20 @@ async def clean_neo4j_database(
             
         # Clean the database
         result = await neo4j_loader.clean_database()
+        
+        # Find schemas associated with this graph before resetting them
+        print(f"DEBUG: Cleaning up schemas for graph {graph_name}")
+        schemas_to_clean = []
+        with SessionLocal() as session:
+            schemas_to_clean = session.query(Schema).filter(Schema.name == graph_name).all()
+            schema_ids = [schema.id for schema in schemas_to_clean]
+            if schema_ids:
+                print(f"DEBUG: Found schemas to clean: {schema_ids}")
+                
+                # Clean up schema-aware agents for all affected schemas
+                for schema_id in schema_ids:
+                    print(f"DEBUG: Cleaning up schema-aware assistant for schema_id={schema_id}")
+                    remove_schema_aware_assistant(schema_id)
         
         # Update schema record to mark database as cleaned
         reset_schemas_for_db_id(graph_name)
@@ -1908,6 +1879,18 @@ async def load_data_to_neo4j(
             schema_id=load_input.schema_id,
             db_loaded='yes'
         )
+        
+        # Clean up schema-aware agents for schemas that will be marked as 'db_loaded=no'
+        other_schemas = db.query(Schema).filter(Schema.id != load_input.schema_id).all()
+        for other_schema in other_schemas:
+            if other_schema.db_loaded == 'yes':
+                print(f"DEBUG: Cleaning up schema-aware assistant for schema_id={other_schema.id}")
+                remove_schema_aware_assistant(other_schema.id)
+        
+        # Now that data load is complete, set db_loaded to 'no' for all other schemas
+        db.query(Schema).filter(Schema.id != load_input.schema_id).update({"db_loaded": "no"})
+        db.commit()
+        print(f"DEBUG: Set db_loaded='no' for all schemas except schema_id={load_input.schema_id}")
             
         return {
             "message": "Data loaded successfully",
@@ -2094,6 +2077,18 @@ async def load_data_from_schema(
             schema_generated='yes',
             db_loaded='yes'
         )
+        
+        # Clean up schema-aware agents for schemas that will be marked as 'db_loaded=no'
+        other_schemas = db.query(Schema).filter(Schema.id != schema_id).all()
+        for other_schema in other_schemas:
+            if other_schema.db_loaded == 'yes':
+                print(f"DEBUG: Cleaning up schema-aware assistant for schema_id={other_schema.id}")
+                remove_schema_aware_assistant(other_schema.id)
+        
+        # Now that data load is complete, set db_loaded to 'no' for all other schemas
+        db.query(Schema).filter(Schema.id != schema_id).update({"db_loaded": "no"})
+        db.commit()
+        print(f"DEBUG: Set db_loaded='no' for all schemas except schema_id={schema_id}")
             
         return {
             "message": "Data loaded successfully",
