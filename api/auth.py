@@ -315,6 +315,90 @@ def has_any_permission(permissions: List[str]):
     
     return permission_checker
 
+
+def has_permissions(permissions: List[str]):
+    """
+    Check if the current user has ALL of the specified permissions.
+    
+    This function creates a dependency that can be used in FastAPI routes to
+    check if the current user has all of the specified permissions. If the user has
+    all the permissions, the function returns the user object. 
+    Otherwise, it raises an HTTP 403 Forbidden exception.
+    
+    Args:
+        permissions: List of permissions to check for (ALL must be present)
+        
+    Returns:
+        A dependency function that checks if the current user has all of the permissions
+    """
+    def all_permissions_checker(current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)):  
+        # Admin can access everything
+        if current_user.role == "admin":
+            return current_user
+            
+        # Get the role from the database
+        role = db.query(Role).filter(Role.name == current_user.role).first()
+        if not role:
+            # If the role doesn't exist, try to create it with default permissions
+            try:
+                role = validate_role(current_user.role, db)
+            except Exception as e:
+                print(f"Error validating role: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"User has an invalid role: {current_user.role}"
+                )
+        
+        # Check if the role has ALL of the required permissions
+        try:
+            role_permissions = []
+            # Extract permissions from the description field (stored as JSON)
+            if role.description:
+                print(f"Role {role.name} description: {role.description}")
+                
+                try:
+                    # Try to parse as JSON even if it doesn't start with {
+                    if role.description.strip() and (role.description.strip()[0] == '{' or role.description.strip()[0] == '['):
+                        description_data = json.loads(role.description)
+                        if isinstance(description_data, dict):
+                            role_permissions = description_data.get("permissions", [])
+                        elif isinstance(description_data, list):
+                            # Handle case where description is a direct list of permissions
+                            role_permissions = description_data
+                    else:
+                        # Not JSON format, check if it's a comma-separated list
+                        if ',' in role.description:
+                            role_permissions = [p.strip() for p in role.description.split(',')]
+                except (json.JSONDecodeError, TypeError) as e:
+                    print(f"Error parsing description JSON for role {role.name}: {e}")
+                    print(f"Description content: {role.description}")
+            
+            # Debug output
+            print(f"Checking ALL permissions {permissions} for user '{current_user.username}' with role '{role.name}'")
+            print(f"Role permissions: {role_permissions}")
+            
+            # Check if the role has ALL of the required permissions
+            missing_permissions = [p for p in permissions if p not in role_permissions]
+            if not missing_permissions:
+                return current_user
+                
+            # If user is missing some permissions, show which ones in the error
+            print(f"User is missing these permissions: {missing_permissions}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"User does not have all required permissions. Missing: {missing_permissions}"
+            )
+            
+        except Exception as e:
+            print(f"Error checking permissions: {str(e)}")
+            # If there's an error parsing the permissions, deny access
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Error verifying permissions: {str(e)}"
+            )
+    
+    return all_permissions_checker
+
 def log_activity(
     db: Session, 
     username: str, 

@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
-import { Database, Trash, Edit, Play, FileText, FileCode, BarChart } from "lucide-react"
+import { Database, Trash, Play, FileText, FileCode, BarChart } from "lucide-react"
 import { formatDistanceToNow, format } from "date-fns"
 
 // Define schema status interface
@@ -39,14 +39,35 @@ interface SchemaStatus {
 }
 
 export default function SchemaDetail() {
-  const { selectedSchemaId, getSchemaById, deleteSchema, schemas, selectSchema } = useSchemaSelection()
-  const { jobs, getActiveJobsForSchema, startLoadDataJob, startCleanDataJob, refreshJobs } = useKGInsightsJobs()
+  const { 
+    selectedSchemaId, 
+    getSchemaById, 
+    deleteSchema, 
+    schemas, 
+    selectSchema, 
+    errorMessage: schemaErrorMessage, 
+    showError: showSchemaError, 
+    setShowError: setShowSchemaError 
+  } = useSchemaSelection()
+  
+  const { 
+    jobs, 
+    getActiveJobsForSchema, 
+    startLoadDataJob, 
+    startCleanDataJob, 
+    refreshJobs,
+    errorMessage: jobsErrorMessage,
+    showError: showJobsError,
+    setShowError: setShowJobsError
+  } = useKGInsightsJobs()
   
   const [schemaStatus, setSchemaStatus] = useState<SchemaStatus | null>(null)
   const [isLoadingStatus, setIsLoadingStatus] = useState(false)
   const [activeTab, setActiveTab] = useState("overview")
   const [fullSchemaData, setFullSchemaData] = useState<any>(null)
   const [isLoadingSchemaData, setIsLoadingSchemaData] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [showError, setShowError] = useState(false)
   
   const selectedSchema = selectedSchemaId ? getSchemaById(selectedSchemaId) : undefined
   const activeJobs = selectedSchemaId ? getActiveJobsForSchema(selectedSchemaId) : []
@@ -142,37 +163,57 @@ export default function SchemaDetail() {
   const handleLoadData = async () => {
     if (!selectedSchemaId) return
     
-    await startLoadDataJob(selectedSchemaId, {
-      use_source_data: true,
-      drop_existing: false
-    })
+    try{
+      
+      // If successful, let startLoadDataJob handle the job creation
+      await startLoadDataJob(selectedSchemaId, {
+        use_source_data: true,
+        drop_existing: false
+      })
+    } catch (error) {
+      console.error("Error loading data:", error)
+      setErrorMessage(error instanceof Error ? error.message : 'Unknown error loading data')
+      setShowError(true)
+      // Auto-dismiss after 5 seconds
+      setTimeout(() => setShowError(false), 5000)
+    }
   }
   
   // Handle clean data action
   const handleCleanData = async () => {
     if (!selectedSchemaId) return
     
-    const job = await startCleanDataJob(selectedSchemaId, {
-      graph_name: "default"
-    })
-    
-    // Force refresh the schema status and jobs after a delay
-    if (job) {
-      // Poll for job completion
-      const checkJobCompletion = async () => {
-        await refreshJobs()
-        await fetchSchemaStatus(selectedSchemaId)
-        
-        // Check if job is still active
-        const updatedJob = jobs.find(j => j.id === job.id)
-        if (updatedJob && (updatedJob.status === "pending" || updatedJob.status === "running")) {
-          // Continue polling
-          setTimeout(checkJobCompletion, 1000)
-        }
-      }
+    try {
       
-      // Start polling
-      setTimeout(checkJobCompletion, 1000)
+      // If successful, let startCleanDataJob handle the job creation
+      const job = await startCleanDataJob(selectedSchemaId, {
+        graph_name: "default"
+      })
+      
+      // Force refresh the schema status and jobs after a delay
+      if (job) {
+        // Poll for job completion
+        const checkJobCompletion = async () => {
+          await refreshJobs()
+          await fetchSchemaStatus(selectedSchemaId)
+          
+          // Check if job is still active
+          const updatedJob = jobs.find(j => j.id === job.id)
+          if (updatedJob && (updatedJob.status === "pending" || updatedJob.status === "running")) {
+            // Continue polling
+            setTimeout(checkJobCompletion, 1000)
+          }
+        }
+        
+        // Start polling
+        setTimeout(checkJobCompletion, 1000)
+      }
+    } catch (error) {
+      console.error("Error cleaning data:", error)
+      setErrorMessage(error instanceof Error ? error.message : 'Unknown error cleaning data')
+      setShowError(true)
+      // Auto-dismiss after 5 seconds
+      setTimeout(() => setShowError(false), 5000)
     }
   }
   
@@ -192,6 +233,70 @@ export default function SchemaDetail() {
   
   return (
     <div className="animate-in fade-in duration-300">
+      {/* Error message alerts */}
+      {(showError || showSchemaError || showJobsError) && (
+        <div className="space-y-2 mb-4">
+          {/* Local component error */}
+          {showError && errorMessage && (
+            <div className="bg-destructive/15 border border-destructive text-destructive px-4 py-3 rounded-md flex items-center justify-between animate-in slide-in-from-top duration-300">
+              <div className="flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                <span>{errorMessage}</span>
+              </div>
+              <button 
+                onClick={() => setShowError(false)}
+                className="text-destructive hover:text-destructive/80"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+          )}
+          
+          {/* Schema selection context error */}
+          {showSchemaError && schemaErrorMessage && (
+            <div className="bg-destructive/15 border border-destructive text-destructive px-4 py-3 rounded-md flex items-center justify-between animate-in slide-in-from-top duration-300">
+              <div className="flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                <span>{schemaErrorMessage}</span>
+              </div>
+              <button 
+                onClick={() => setShowSchemaError(false)}
+                className="text-destructive hover:text-destructive/80"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+          )}
+          
+          {/* KGInsights jobs context error */}
+          {showJobsError && jobsErrorMessage && (
+            <div className="bg-destructive/15 border border-destructive text-destructive px-4 py-3 rounded-md flex items-center justify-between animate-in slide-in-from-top duration-300">
+              <div className="flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                <span>{jobsErrorMessage}</span>
+              </div>
+              <button 
+                onClick={() => setShowJobsError(false)}
+                className="text-destructive hover:text-destructive/80"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-2xl font-bold flex items-center gap-2">
@@ -281,24 +386,6 @@ export default function SchemaDetail() {
             </AlertDialogContent>
           </AlertDialog>
           
-          {/* Edit Button */}
-          <TooltipProvider>
-            <Tooltip delayDuration={200}>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="transition-colors hover:bg-primary/10"
-                  disabled={activeJobs.length > 0}
-                >
-                  <Edit className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">
-                <p>Edit schema</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
           
           {/* Delete Button - Wrapped in AlertDialog */}
           <AlertDialog>
@@ -332,15 +419,25 @@ export default function SchemaDetail() {
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction onClick={async () => {
                   if (selectedSchema) {
-                    const success = await deleteSchema(selectedSchema.id);
-                    if (success) {
-                      // Navigate to the schemas list or select another schema if available
-                      if (schemas.length > 1) {
-                        const remainingSchemas = schemas.filter((schema: Schema) => schema.id !== selectedSchema.id);
-                        if (remainingSchemas.length > 0) {
-                          selectSchema(remainingSchemas[0].id);
+                    try {
+                      
+                      // If successful, let deleteSchema handle the state updates
+                      const success = await deleteSchema(selectedSchema.id);
+                      if (success) {
+                        // Navigate to the schemas list or select another schema if available
+                        if (schemas.length > 1) {
+                          const remainingSchemas = schemas.filter((schema: Schema) => schema.id !== selectedSchema.id);
+                          if (remainingSchemas.length > 0) {
+                            selectSchema(remainingSchemas[0].id);
+                          }
                         }
                       }
+                    } catch (error) {
+                      console.error("Error deleting schema:", error);
+                      setErrorMessage(error instanceof Error ? error.message : 'Unknown error deleting schema');
+                      setShowError(true);
+                      // Auto-dismiss after 5 seconds
+                      setTimeout(() => setShowError(false), 5000);
                     }
                   }
                 }}>Confirm Delete</AlertDialogAction>

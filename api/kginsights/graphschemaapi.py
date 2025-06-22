@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from sqlalchemy.orm import Session
 from ..models import get_db, IngestionJob, UploadedFile, Schema
-from ..auth import has_any_permission
+from ..auth import has_any_permission, has_permissions
 from ..models import User
 from ..db_config import SessionLocal
 from neo4j import GraphDatabase
@@ -407,7 +407,7 @@ async def build_schema_from_path(file_input: FilePathInput):
 @router.post('/build-schema-from-source', response_model=SchemaResult)
 async def build_schema_from_source(
     source_input: SourceIdInput,
-    current_user: User = Depends(has_any_permission(["kginsights:read", "datapuur:read", "djinni:read"])),
+    current_user: User = Depends(has_permissions(["kginsights:write", "datapuur:read"])),
     db: SessionLocal = Depends(get_db)
 ):
     """Generate Neo4j schema from a source ID and return the results."""
@@ -671,7 +671,7 @@ async def build_schema_from_source(
 @router.post('/refine-schema', response_model=SchemaResult)
 async def refine_schema(
     refine_input: RefineSchemaInput,
-    current_user: User = Depends(has_any_permission(["kginsights:read", "datapuur:read", "djinni:read"])),
+    current_user: User = Depends(has_any_permission(["kginsights:write", "datapuur:read", "djinni:read"])),
     db: SessionLocal = Depends(get_db)
 ):
     """Refine an existing Neo4j schema based on user feedback."""

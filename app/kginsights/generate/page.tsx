@@ -98,6 +98,7 @@ function GenerateGraphContent() {
   const [showErrorDialog, setShowErrorDialog] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [showDomainError, setShowDomainError] = useState(false)
+  const [showError, setShowError] = useState(false)
   const [aiAssistantCollapsed, setAiAssistantCollapsed] = useState(false)
   const [showCustomDomainDialog, setShowCustomDomainDialog] = useState(false)
   const [customDomain, setCustomDomain] = useState<string>("")
@@ -319,6 +320,18 @@ function GenerateGraphContent() {
       });
 
       if (!response.ok) {
+        if (response.status === 403) {
+          const errorMsg = "Permission denied: You don't have sufficient permissions to upload custom domains.";
+          
+          // Set error message and show in UI
+          setErrorMessage(errorMsg);
+          setShowError(true);
+          
+          // Auto-dismiss after 5 seconds
+          setTimeout(() => setShowError(false), 5000);
+          
+          throw new Error(errorMsg);
+        }
         throw new Error(`Upload failed: ${response.status}`);
       }
 
@@ -477,8 +490,21 @@ function GenerateGraphContent() {
         const errorData = await response.json().catch(() => null)
         console.log('Error response:', response.status, errorData)
         
+        // Handle specific error for permissions (403 Forbidden)
+        if (response.status === 403) {
+          const errorMsg = "Permission denied: You don't have sufficient permissions to save schemas.";
+          
+          // Set error message and show in UI
+          setErrorMessage(errorMsg);
+          setShowError(true);
+          
+          // Auto-dismiss after 5 seconds
+          setTimeout(() => setShowError(false), 5000);
+          
+          throw new Error(errorMsg);
+        }
         // Handle specific error for duplicate schema name (409 Conflict)
-        if (response.status === 409) {
+        else if (response.status === 409) {
           const errorMsg = `A schema with the name "${schemaName}" already exists. Please use a different name.`;
           
           // Set error message and show error dialog
@@ -496,7 +522,7 @@ function GenerateGraphContent() {
           
           throw new Error(errorMsg);
 
-        }
+        }  
         
         // Extract error message from response if available
         const errorMessage = errorData?.detail || `Failed to save schema: ${response.status}`
@@ -583,6 +609,26 @@ function GenerateGraphContent() {
 
 
       <div className="w-full relative z-10 min-h-[calc(100vh-120px)] flex flex-col">
+        {/* Error message display */}
+        {showError && errorMessage && (
+          <div className="bg-destructive/15 border border-destructive text-destructive px-4 py-3 rounded-md mb-4 flex items-center justify-between animate-in slide-in-from-top duration-300">
+            <div className="flex items-center">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+              <span>{errorMessage}</span>
+            </div>
+            <button 
+              onClick={() => setShowError(false)}
+              className="text-destructive hover:text-destructive/80"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
+        )}
+        
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -1052,9 +1098,11 @@ function GenerateGraphContent() {
                               <h3 className="text-md font-medium text-foreground">Notes</h3>
                             </div>
                             <div className="p-4">
-                              <p className="text-sm text-muted-foreground bg-card/60 p-3 rounded-lg border border-primary/10">
-                                This schema captures the structure of your data with appropriate indexes for optimal query performance. Property types have been mapped to match the original data types.
-                              </p>
+                              <div className="relative z-10 max-w-7xl mx-auto">
+                                <p className="text-sm text-muted-foreground bg-card/60 p-3 rounded-lg border border-primary/10">
+                                  This schema captures the structure of your data with appropriate indexes for optimal query performance. Property types have been mapped to match the original data types.
+                                </p>
+                              </div>
                             </div>
                           </div>
                         </motion.div>
