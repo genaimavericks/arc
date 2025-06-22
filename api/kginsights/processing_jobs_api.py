@@ -81,19 +81,19 @@ async def generate_prompts_async(schema_id: int, job_id: str = None):
                 # Pass the progress tracker to _ensure_prompt
                 assistant._ensure_prompt(progress_tracker)
                 
-                # Update progress after initiating prompt generation
+                # Update progress after initiating prompt generation - start with just the first stage
                 if progress_tracker:
-                    await progress_tracker.update_stage("prompt_generation", 50, "Cypher prompt generation in progress")
-                    await progress_tracker.update_stage("qa_generation", 50, "QA prompt generation in progress")
-                    await progress_tracker.update_stage("query_generation", 50, "Sample query generation in progress")
+                    # Only update the prompt_generation stage initially
+                    await progress_tracker.update_stage("prompt_generation", 10, "Starting Cypher prompt generation")
                     
-                    # Mark the job as complete since prompt generation will continue in the background
-                    # The actual prompt generation will continue in the background
-                    result_data = {
-                        "schema_id": schema_id,
-                        "status": "Prompt generation continuing in background"
-                    }
-                    await progress_tracker.complete_job(result_data)
+                    # Set other stages to 0% to show they're coming up next
+                    await progress_tracker.update_stage("qa_generation", 0, "Waiting for Cypher prompt generation to complete")
+                    await progress_tracker.update_stage("query_generation", 0, "Waiting for QA prompt generation to complete")
+                    
+                    # DO NOT mark the job as complete yet - the prompt generation will continue in the background
+                    # and the job will be marked as complete when prompt generation finishes
+                    # This ensures the frontend can continue to receive progress updates
+                    print(f"Job {job_id} remains in running state while prompt generation continues in background")
                 
                 print(f"Prompt generation initiated for schema_id={schema_id}")
             except Exception as e:
@@ -164,18 +164,29 @@ def get_all_jobs(db: Session, schema_id: Optional[int] = None, job_type: Optiona
     """
     Get all jobs, optionally filtered by schema ID or job type
     """
+    print(f"Fetching jobs with filters - schema_id: {schema_id}, job_type: {job_type}")
+    
     # Updated to use GraphIngestionJob
     query = db.query(GraphIngestionJob)
     
     if schema_id:
         # Direct filter on schema_id field
         query = query.filter(GraphIngestionJob.schema_id == schema_id)
+        print(f"Filtering jobs by schema_id: {schema_id}")
         
     if job_type:
         # Direct filter on job_type field
         query = query.filter(GraphIngestionJob.job_type == job_type)
-        
-    return query.order_by(GraphIngestionJob.created_at.desc()).all()
+        print(f"Filtering jobs by job_type: {job_type}")
+    
+    jobs = query.order_by(GraphIngestionJob.created_at.desc()).all()
+    print(f"Found {len(jobs)} jobs matching the criteria")
+    
+    # Print details for each job
+    for job in jobs:
+        print(f"Job ID: {job.id}, Type: {job.job_type}, Schema ID: {job.schema_id}, Status: {job.status}, Message: {job.message}, Progress: {job.progress}%, Created: {job.created_at}")
+    
+    return jobs
 
 def create_job(db: Session, schema_id: int, job_type: str, params: Dict[str, Any] = {}):
     """
@@ -206,14 +217,20 @@ def create_job(db: Session, schema_id: int, job_type: str, params: Dict[str, Any
 
 def format_job_response(job: GraphIngestionJob) -> JobStatus:
     """
-    Format job database record into API response format
+    Format job database record into API response format with enhanced logging
     """
-    # Simplified since we have direct fields now
+    # Log the raw job data to help diagnose issues
+    print(f"TRACE: Formatting job response for job_id={job.id}")
+    print(f"TRACE: Raw job data - Status: {job.status}, Progress: {job.progress}%, Message: {job.message}, Current Stage: {job.current_stage}, Stage Progress: {job.stage_progress}")
+    
+    # Parse result JSON if available
     result = None
     if job.result:
         try:
             result = json.loads(job.result)
-        except:
+            print(f"TRACE: Successfully parsed job result JSON")
+        except Exception as e:
+            print(f"WARNING: Failed to parse job result JSON: {e}")
             result = {"raw": job.result}
     
     # Parse stages JSON if available
@@ -221,15 +238,24 @@ def format_job_response(job: GraphIngestionJob) -> JobStatus:
     if job.stages:
         try:
             stages = json.loads(job.stages)
-        except:
+            print(f"TRACE: Successfully parsed job stages JSON with {len(stages) if stages else 0} stages")
+        except Exception as e:
+            print(f"WARNING: Failed to parse job stages JSON: {e}")
             stages = None
     
-    return JobStatus(
+    # Ensure progress is properly normalized to 0.0-1.0 range
+    normalized_progress = 0.0
+    if job.progress is not None:
+        normalized_progress = float(job.progress) / 100
+        print(f"TRACE: Normalized progress from {job.progress}% to {normalized_progress}")
+    
+    # Create the response object
+    response = JobStatus(
         id=job.id,
         schema_id=job.schema_id,
         job_type=job.job_type,
         status=job.status,
-        progress=float(job.progress) / 100 if job.progress is not None else 0.0,  # Convert from 0-100 to 0.0-1.0
+        progress=normalized_progress,  # Convert from 0-100 to 0.0-1.0
         message=job.message or "",
         created_at=job.created_at,
         updated_at=job.updated_at,
@@ -240,6 +266,10 @@ def format_job_response(job: GraphIngestionJob) -> JobStatus:
         stage_progress=job.stage_progress,
         stages=stages
     )
+    
+    print(f"TRACE: Formatted job response - Status: {response.status}, Progress: {response.progress}, Message: {response.message}, Current Stage: {response.current_stage}")
+    
+    return response
 
 # Background task for processing Neo4j data loading
 async def process_load_data_job(job_id: str, schema_id: int, graph_name: str, drop_existing: bool, dataset_type: str = None, db: Session = None):
@@ -260,12 +290,20 @@ async def process_load_data_job(job_id: str, schema_id: int, graph_name: str, dr
             return
         
         # Initialize the job progress tracker
+        print(f"TRACE: Initializing job progress tracker for job_id={job_id}")
         progress_tracker = JobProgressTracker(job_id, task_db)
         await progress_tracker.initialize_job()
+        print(f"TRACE: Job progress tracker initialized successfully")
         
         try:
             # Update stage to data validation
+            print(f"TRACE: Updating progress - data_validation 0%")
             await progress_tracker.update_stage("data_validation", 0, "Validating schema and data path")
+            print(f"TRACE: Progress updated for data_validation stage")
+            
+            # Force commit to ensure progress updates are visible to frontend
+            await run_in_threadpool(lambda: task_db.commit())
+            print(f"TRACE: Database changes committed")
             
             # Call the existing load_data_from_schema function with our new session
             # if dataset_type is empty or null then it will load it from schema table using given schema id
@@ -273,7 +311,13 @@ async def process_load_data_job(job_id: str, schema_id: int, graph_name: str, dr
             
             # The ProgressDataLoader will handle stage updates for CSV generation, Neo4j import, etc.
             # We just need to set the initial stage
+            print(f"TRACE: Updating progress - data_validation 100%")
             await progress_tracker.update_stage("data_validation", 100, "Data validation completed")
+            print(f"TRACE: Progress updated for data_validation completion")
+            
+            # Force commit to ensure progress updates are visible to frontend
+            await run_in_threadpool(lambda: task_db.commit())
+            print(f"TRACE: Database changes committed")
             
             if dataset_type is None or dataset_type == "":
                 # Load data from schema - ProgressDataLoader will handle detailed progress updates
@@ -352,9 +396,16 @@ async def process_load_data_job(job_id: str, schema_id: int, graph_name: str, dr
                     await run_in_threadpool(lambda: db.commit())
             
             # Update stage to prompt generation preparation
+            print(f"TRACE: Updating progress - prompt_generation_prep 0%")
             await progress_tracker.update_stage("prompt_generation_prep", 0, "Preparing for prompt generation")
+            print(f"TRACE: Progress updated for prompt_generation_prep stage")
+            
+            # Force commit to ensure progress updates are visible to frontend
+            await run_in_threadpool(lambda: task_db.commit())
+            print(f"TRACE: Database changes committed")
             
             # Start prompt template generation as a background task with job_id for progress tracking
+            print(f"TRACE: Starting prompt template generation as a background task")
             background_tasks = BackgroundTasks()
             background_tasks.add_task(
                 generate_prompts_async,
@@ -363,7 +414,11 @@ async def process_load_data_job(job_id: str, schema_id: int, graph_name: str, dr
             )
             # Run the background task
             asyncio.create_task(background_tasks())
-            print(f"Started async prompt template generation for schema_id={schema_id} with job_id={job_id}")
+            print(f"TRACE: Started async prompt template generation for schema_id={schema_id} with job_id={job_id}")
+            
+            # Force commit to ensure all progress updates are visible to frontend
+            await run_in_threadpool(lambda: task_db.commit())
+            print(f"TRACE: Final database changes committed for this phase")
             
         
         except Exception as e:
@@ -537,12 +592,20 @@ async def get_jobs(
     """
     Get all KGInsights processing jobs, optionally filtered by schema ID or job type
     """
-    # Removed debug output to reduce log verbosity
-    # print(f"DEBUG: get_jobs endpoint called with schema_id={schema_id}, job_type={job_type}")
+    print(f"TRACE: get_jobs endpoint called with schema_id={schema_id}, job_type={job_type}")
+    
+    # Get all jobs matching the criteria
     jobs = get_all_jobs(db, schema_id, job_type)
-    # Removed debug output to reduce log verbosity
-    # print(f"DEBUG: Found {len(jobs)} jobs")
-    return [format_job_response(job) for job in jobs]
+    print(f"TRACE: Found {len(jobs)} jobs matching the criteria")
+    
+    # Format job responses with detailed logging
+    formatted_jobs = []
+    for job in jobs:
+        formatted_job = format_job_response(job)
+        print(f"TRACE: Formatted job - ID: {job.id}, Status: {formatted_job.status}, Progress: {formatted_job.progress}, Current Stage: {formatted_job.current_stage}")
+        formatted_jobs.append(formatted_job)
+    
+    return formatted_jobs
 
 @router.get("/{job_id}", response_model=JobStatus)
 async def get_job(
@@ -553,12 +616,21 @@ async def get_job(
     """
     Get status of a specific job
     """
+    print(f"TRACE: get_job endpoint called for job_id={job_id}")
+    
     # Updated to use GraphIngestionJob
     job = db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first()
     if not job:
+        print(f"ERROR: Job with ID {job_id} not found")
         raise HTTPException(status_code=404, detail=f"Job with ID {job_id} not found")
-        
-    return format_job_response(job)
+    
+    print(f"TRACE: Found job - ID: {job.id}, Type: {job.job_type}, Status: {job.status}, Progress: {job.progress}%, Message: {job.message}, Current Stage: {job.current_stage}, Stage Progress: {job.stage_progress}")
+    
+    # Format the job response
+    response = format_job_response(job)
+    print(f"TRACE: Formatted job response - Status: {response.status}, Progress: {response.progress}, Message: {response.message}, Current Stage: {response.current_stage}")
+    
+    return response
 
 @router.post("", response_model=JobStatus)
 async def create_new_job(

@@ -431,16 +431,7 @@ export default function FloatingKGJobCard() {
                     animate={{ opacity: 1, y: 0 }}
                     className="relative bg-card dark:bg-gray-800 border border-border dark:border-gray-700 rounded-lg p-3 overflow-hidden"
                   >
-                    {/* Progress bar background for running jobs */}
-                    {job.status === "running" && (
-                      <div 
-                        className="absolute inset-0 bg-blue-500/5 dark:bg-blue-500/10 z-0"
-                        style={{ 
-                          width: `${job.progress}%`,
-                          transition: 'width 0.5s ease-in-out'
-                        }}
-                      />
-                    )}
+                    {/* Progress bar background removed as requested */}
                     
                     {/* Job content */}
                     <div className="relative z-10">
@@ -461,16 +452,7 @@ export default function FloatingKGJobCard() {
                         </div>
                       </div>
                       
-                      {/* Progress indicator for running jobs */}
-                      {job.status === "running" && (
-                        <div className="mt-2">
-                          <div className="flex justify-between text-xs mb-1">
-                            <span className="text-muted-foreground dark:text-gray-400">Progress</span>
-                            <span className="text-foreground dark:text-gray-300 font-medium">{job.progress || 0}%</span>
-                          </div>
-                          <Progress value={job.progress || 0} className="h-1.5 dark:bg-gray-700" />
-                        </div>
-                      )}
+                      {/* Progress indicator removed as requested */}
                       
                       {/* Error message for failed jobs */}
                       {job.error && (

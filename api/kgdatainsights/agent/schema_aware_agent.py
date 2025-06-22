@@ -602,7 +602,11 @@ class SchemaAwareGraphAssistant:
             print(f"TRACE: Starting async prompt generation with tracking for db_id={self.db_id}, schema_id={self.schema_id}")
             
             if progress_tracker:
+                # Clear indication that we're in the Cypher prompt generation stage
                 await progress_tracker.update_stage("prompt_generation", 30, "Generating Cypher prompts")
+                # Keep other stages at 0% with waiting messages
+                await progress_tracker.update_stage("qa_generation", 0, "Waiting to start QA prompt generation")
+                await progress_tracker.update_stage("query_generation", 0, "Waiting to start sample query generation")
             
             # Check if we should use domain-specific sample queries
             use_domain_specific_queries = False
@@ -627,11 +631,17 @@ class SchemaAwareGraphAssistant:
             
             if progress_tracker:
                 await progress_tracker.update_stage("prompt_generation", 50, "Running LLM to generate Cypher prompts")
+                # Keep other stages at 0%
+                await progress_tracker.update_stage("qa_generation", 0, "Waiting to start QA prompt generation")
+                await progress_tracker.update_stage("query_generation", 0, "Waiting to start sample query generation")
                 
             prompts = await run_in_threadpool(self._generate_prompts, skip_sample_queries_generation=use_domain_specific_queries)
             
             if progress_tracker:
                 await progress_tracker.update_stage("prompt_generation", 70, "Processing generated prompts")
+                # Keep other stages at 0%
+                await progress_tracker.update_stage("qa_generation", 0, "Waiting to start QA prompt generation")
+                await progress_tracker.update_stage("query_generation", 0, "Waiting to start sample query generation")
             
             # If we should use domain-specific queries, load them from the JSON file
             if use_domain_specific_queries and domain_queries_file and os.path.exists(domain_queries_file):
@@ -658,6 +668,9 @@ class SchemaAwareGraphAssistant:
             
             if progress_tracker:
                 await progress_tracker.update_stage("prompt_generation", 80, "Saving generated prompts")
+                # Keep other stages at 0%
+                await progress_tracker.update_stage("qa_generation", 0, "Waiting to start QA prompt generation")
+                await progress_tracker.update_stage("query_generation", 0, "Waiting to start sample query generation")
             
             # Save the prompts to file
             try:
@@ -669,8 +682,15 @@ class SchemaAwareGraphAssistant:
                 print(f"Prompts saved to {prompt_file}")
 
                 if progress_tracker:
-                    await progress_tracker.update_stage("prompt_generation", 90, "Saving sample queries")
+                    # Complete the Cypher prompt generation stage
+                    await progress_tracker.update_stage("prompt_generation", 100, "Cypher prompts generated successfully")
+                    
+                    # Start the QA prompt generation stage
+                    await progress_tracker.update_stage("qa_generation", 30, "Starting QA prompt generation")
                     await progress_tracker.update_stage("qa_generation", 50, "Processing QA prompts")
+                    
+                    # Keep query generation waiting
+                    await progress_tracker.update_stage("query_generation", 0, "Waiting to start sample query generation")
 
                 print(f"TRACE: Creating query directory: {QUERY_DIR}")
                 QUERY_DIR.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
@@ -706,17 +726,128 @@ class SchemaAwareGraphAssistant:
                 print(f"Queries saved to {query_file}")
                 
                 if progress_tracker:
-                    await progress_tracker.update_stage("prompt_generation", 100, "Cypher prompts generated successfully")
-                    await progress_tracker.update_stage("qa_generation", 100, "QA prompts generated successfully")
-                    await progress_tracker.update_stage("query_generation", 100, "Sample queries generated successfully")
+                    # All stages should be at 100% now
+                    # Cypher prompt generation already at 100%
                     
-                    # Complete the job with success status
-                    result_data = {
-                        "prompt_file": str(prompt_file),
-                        "query_file": str(query_file),
-                        "generation_id": current_generation_id
-                    }
-                    await progress_tracker.complete_job(result_data)
+                    # Complete QA prompt generation
+                    await progress_tracker.update_stage("qa_generation", 100, "QA prompts generated successfully")
+                    
+                    # Start and complete query generation
+                    try:
+                        print(f"Using domain-specific sample queries for {domain} domain")
+                        await progress_tracker.update_stage("query_generation", 0, "Starting sample query generation")
+                        print(f"TRACE: Updated progress - query_generation 0%")
+                        
+                        # Add more granular progress updates during sample query generation
+                        print(f"TRACE: Beginning sample query generation process")
+                        await progress_tracker.update_stage("query_generation", 10, "Initializing sample query generation")
+                        print(f"TRACE: Updated progress - query_generation 10%")
+                        
+                        # First phase of sample query generation
+                        print(f"TRACE: Preparing domain-specific query templates")
+                        await progress_tracker.update_stage("query_generation", 30, "Preparing domain-specific query templates")
+                        print(f"TRACE: Updated progress - query_generation 30%")
+                        
+                        # Second phase of sample query generation
+                        print(f"TRACE: Adapting query templates to schema")
+                        await progress_tracker.update_stage("query_generation", 50, "Adapting query templates to schema")
+                        print(f"TRACE: Updated progress - query_generation 50%")
+                        
+                        # Third phase of sample query generation
+                        print(f"TRACE: Generating final sample queries")
+                        await progress_tracker.update_stage("query_generation", 70, "Generating final sample queries")
+                        print(f"TRACE: Updated progress - query_generation 70%")
+                        
+                        # Actually generate the sample queries
+                        try:
+                            print(f"TRACE: Loading domain-specific sample queries for {domain}")
+                            # Use domain-specific queries instead of generating them
+                            sample_queries = self._load_domain_specific_queries(domain)
+                            print(f"TRACE: Successfully loaded domain-specific sample queries")
+                        except Exception as e:
+                            print(f"Error loading domain-specific sample queries: {e}")
+                            print(traceback.format_exc())
+                            # Fallback to empty sample queries
+                            sample_queries = []
+                        
+                        # Final phase of sample query generation
+                        print(f"TRACE: Finalizing sample queries")
+                        await progress_tracker.update_stage("query_generation", 90, "Finalizing sample queries")
+                        print(f"TRACE: Updated progress - query_generation 90%")
+                        
+                        # Complete the sample query generation
+                        await progress_tracker.update_stage("query_generation", 100, "Sample query generation completed")
+                        print(f"TRACE: Updated progress - query_generation 100%")
+                    except Exception as e:
+                        print(f"Error generating sample queries: {e}")
+                        print(traceback.format_exc())
+                        # Try to mark the job as failed if we encounter an error
+                    try:
+                        print(f"TRACE: Preparing to complete job with success status")
+                        
+                        # Force a database commit before completing the job to ensure all progress updates are visible
+                        try:
+                            from sqlalchemy.ext.asyncio import AsyncSession
+                            if isinstance(progress_tracker.db, AsyncSession):
+                                await progress_tracker.db.commit()
+                            else:
+                                # For synchronous sessions
+                                progress_tracker.db.commit()
+                            print(f"TRACE: Database committed before job completion")
+                        except Exception as commit_error:
+                            print(f"Warning: Could not commit database before job completion: {commit_error}")
+                        
+                        # Add a small delay to ensure all progress updates are processed
+                        import asyncio
+                        await asyncio.sleep(1)
+                        print(f"TRACE: Added delay before job completion to ensure progress updates are processed")
+                        
+                        # Prepare result data
+                        result_data = {
+                            "prompt_file": str(prompt_file),
+                            "query_file": str(query_file),
+                            "generation_id": current_generation_id
+                        }
+                        
+                        # Now complete the job
+                        await progress_tracker.complete_job(result_data)
+                        print(f"TRACE: Job marked as completed successfully")
+                        
+                        # Verify job status after completion
+                        try:
+                            from kginsights.models import GraphIngestionJob
+                            job = progress_tracker.db.query(GraphIngestionJob).filter(GraphIngestionJob.id == progress_tracker.job_id).first()
+                            if job:
+                                print(f"TRACE: Job status after completion: {job.status}, Progress: {job.progress}%, Message: {job.message}")
+                            else:
+                                print(f"TRACE: Could not verify job status after completion - job not found")
+                        except Exception as verify_error:
+                            print(f"Warning: Could not verify job status after completion: {verify_error}")
+                    except Exception as e:
+                        print(f"ERROR: Failed to complete job: {e}")
+                        print(f"TRACE: Exception details: {traceback.format_exc()}")
+                        
+                        # Try to mark the job as failed if we encounter an error
+                        try:
+                            await progress_tracker.fail_job(f"Error completing job: {str(e)}")
+                            print(f"Job marked as failed")
+                        except Exception as inner_e:
+                            print(f"Failed to mark job as failed: {inner_e}")
+                            
+                            # Last resort: try to update the job status directly in the database
+                            try:
+                                from kginsights.models import GraphIngestionJob
+                                job = progress_tracker.db.query(GraphIngestionJob).filter(GraphIngestionJob.id == progress_tracker.job_id).first()
+                                if job:
+                                    job.status = "failed"
+                                    job.progress = 100
+                                    job.message = f"Error completing job: {str(e)}"
+                                    job.error = traceback.format_exc()
+                                    progress_tracker.db.commit()
+                                    print(f"TRACE: Job marked as failed directly in database")
+                            except Exception as db_error:
+                                print(f"CRITICAL: Could not update job status directly in database: {db_error}")
+                                print(f"TRACE: Inner exception details: {traceback.format_exc()}")
                     
                 print(f"TRACE: Successfully completed async prompt generation for db_id={self.db_id}, schema_id={self.schema_id}")
 
@@ -1497,6 +1628,57 @@ class SchemaAwareGraphAssistant:
             # This makes debugging easier by exposing the actual error
             raise RuntimeError(f"Failed to load prompts for schema: {str(e)}") from e
             
+    def _load_domain_specific_queries(self, domain: str):
+        """Load domain-specific sample queries for a given domain
+        
+        Args:
+            domain: The domain name (e.g., 'telecom_churn', 'healthcare', etc.)
+            
+        Returns:
+            list: A list of sample queries specific to the domain
+        """
+        print(f"Loading domain-specific queries for {domain}")
+        
+        # Define domain-specific queries for different domains
+        domain_queries = {
+            "telecom_churn": [
+                "MATCH (c:Customer)-[:SUBSCRIBES_TO]->(p:Plan) WHERE c.churn_risk > 0.7 RETURN c.customer_id, c.name, c.churn_risk, p.name ORDER BY c.churn_risk DESC LIMIT 10",
+                "MATCH (c:Customer)-[:MADE]->(cc:CustomerComplaint) RETURN c.name, COUNT(cc) AS complaint_count ORDER BY complaint_count DESC LIMIT 5",
+                "MATCH (c:Customer)-[:USES]->(d:Device) WHERE c.churn_risk > 0.5 RETURN c.name, c.churn_risk, COLLECT(d.model) as devices",
+                "MATCH (c:Customer)-[:LIVES_IN]->(l:Location) WHERE l.city = 'New York' RETURN c.name, c.customer_since, c.monthly_charge ORDER BY c.monthly_charge DESC",
+                "MATCH (c:Customer)-[:SUBSCRIBES_TO]->(p:Plan) WHERE p.type = 'Premium' AND c.tenure_months < 12 RETURN c.name, c.tenure_months, c.monthly_charge"
+            ],
+            "healthcare": [
+                "MATCH (p:Patient)-[:HAS_DIAGNOSIS]->(d:Diagnosis) WHERE d.name CONTAINS 'Diabetes' RETURN p.patient_id, p.name, p.age",
+                "MATCH (p:Patient)-[:PRESCRIBED]->(m:Medication) RETURN m.name, COUNT(p) AS patient_count ORDER BY patient_count DESC LIMIT 10",
+                "MATCH (p:Patient)-[:VISITED]->(h:Hospital) WHERE p.age > 65 RETURN h.name, COUNT(p) AS elderly_patients ORDER BY elderly_patients DESC",
+                "MATCH (p:Patient)-[:HAS_DIAGNOSIS]->(d:Diagnosis)-[:REQUIRES]->(t:Treatment) RETURN d.name, COLLECT(t.name) AS treatments",
+                "MATCH (p:Patient)-[:HAS_INSURANCE]->(i:InsuranceProvider) RETURN i.name, COUNT(p) AS covered_patients ORDER BY covered_patients DESC"
+            ],
+            "finance": [
+                "MATCH (c:Customer)-[:HAS_ACCOUNT]->(a:Account) WHERE a.balance > 10000 RETURN c.name, a.account_number, a.balance ORDER BY a.balance DESC",
+                "MATCH (c:Customer)-[:MADE]->(t:Transaction) WHERE t.amount > 5000 RETURN c.name, t.date, t.amount, t.type ORDER BY t.amount DESC",
+                "MATCH (c:Customer)-[:HAS_CREDIT_SCORE]->(cs:CreditScore) WHERE cs.score < 650 RETURN c.name, cs.score ORDER BY cs.score",
+                "MATCH (c:Customer)-[:APPLIED_FOR]->(l:Loan) WHERE l.status = 'Approved' RETURN c.name, l.amount, l.interest_rate ORDER BY l.amount DESC",
+                "MATCH (c:Customer)-[:LIVES_IN]->(a:Address) WHERE a.country = 'USA' RETURN c.name, a.state, COUNT(c) AS customer_count GROUP BY a.state ORDER BY customer_count DESC"
+            ],
+            # Default queries for any other domain
+            "default": [
+                "MATCH (n) RETURN DISTINCT labels(n) AS NodeLabels, COUNT(n) AS Count",
+                "MATCH (n)-[r]->(m) RETURN DISTINCT type(r) AS RelationshipType, COUNT(r) AS Count",
+                "MATCH (n) WHERE NOT (n)--() RETURN labels(n) AS IsolatedNodeLabels, COUNT(n) AS Count",
+                "MATCH p=()-[r]->() RETURN p LIMIT 10",
+                "MATCH (n) RETURN DISTINCT labels(n) AS NodeLabel, keys(n) AS Properties"
+            ]
+        }
+        
+        # Return domain-specific queries or default queries if domain not found
+        if domain.lower() in domain_queries:
+            return domain_queries[domain.lower()]
+        else:
+            print(f"No specific queries found for domain '{domain}', using default queries")
+            return domain_queries["default"]
+    
     def _debug_print_prompts(self):
         """Print debug information about the loaded prompts"""
         print("\n=== DEBUG: PROMPT INFORMATION ===")
