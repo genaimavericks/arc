@@ -713,7 +713,9 @@ class SchemaAwareGraphAssistant:
             # Use retry mechanism for Cypher prompt generation
             cypher_prompt_template = self._generate_prompt_with_retry(llm_local, cypher_messages, "Cypher prompt")
             
-            import pandas as pd
+            cypher_queries = ''
+            
+            '''import pandas as pd
             import tempfile
             import os
             
@@ -762,10 +764,7 @@ class SchemaAwareGraphAssistant:
                                                      LLMConstants.Providers.GOOGLE, 
                                                      LLMConstants.GoogleModels.DEFAULT)
                 cypher_queries = cypher_generator.generate_cypher_for_rows()
-            #cypher_queries_str = '\n'.join(cypher_queries)
-            #import_notes = '\n\n Note: DO NOT return example question and cypher query. Return PROPER cypher query only. DO NOT include any explanation'
-            #cypher_prompt_template = f"### Task: Generate Cypher queries for time-series data using this schema:\n\n### Cypher Queries:\n\n{cypher_queries_str}\n\n{import_notes}\n\n{cypher_prompt_template}"
-
+            '''
             # Apply Neo4j property syntax escaping to prevent template variable confusion
             cypher_prompt_template = self._escape_neo4j_properties(cypher_prompt_template)
             cypher_prompt_template = cypher_prompt_template.replace("{context}", "")
@@ -782,9 +781,6 @@ class SchemaAwareGraphAssistant:
             
             # Apply Neo4j property syntax escaping to prevent template variable confusion
             qa_prompt_template = self._escape_neo4j_properties(qa_prompt_template)
-            # Append formatted schema at the front of the template
-            #qa_prompt_gen_txt = 'You are an expert at answering questions using data from a knowledge graph. You will receive a question and the results of a Cypher query executed against the graph. Your task is to interpret the Cypher query results and provide a concise and informative natural language answer to the original question.'
-            #qa_prompt_template = f"{qa_prompt_gen_txt}\n\n{self.formatted_schema}\n\n{qa_prompt_template}"
             
             # Generate sample queries only if we're not using domain-specific ones
             if skip_sample_queries_generation:
