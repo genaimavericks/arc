@@ -56,26 +56,27 @@ class JobProgressTracker:
             bool: True if successful, False otherwise
         """
         if stage_id not in self.stages:
-            print(f"Warning: Unknown stage ID: {stage_id}")
+            print(f"Warning: Unknown stage ID '{stage_id}' for job {self.job_id}")
             return False
             
-        job = await run_in_threadpool(lambda: self._get_job())
+        job = await run_in_threadpool(self._get_job)
         if not job:
+            print(f"Warning: Job {self.job_id} not found when updating stage")
             return False
             
-        # Update job with stage info
+        # Update stage
         job.current_stage = stage_id
         job.stage_progress = progress
         
         # Calculate overall progress based on stage weights
-        total_weight = sum(stage["weight"] for stage in self.stages.values())
+        total_weight = sum(stage_info["weight"] for stage_info in self.stages.values())
         completed_weight = 0
         
-        # Add weight from completed stages
+        # Find current stage index
         stage_keys = list(self.stages.keys())
         current_stage_index = stage_keys.index(stage_id)
         
-        # Add full weight for completed stages
+        # Add weights for completed stages
         for i, stage_key in enumerate(stage_keys):
             if i < current_stage_index:
                 completed_weight += self.stages[stage_key]["weight"]
@@ -94,9 +95,24 @@ class JobProgressTracker:
             
         # Update timestamp
         job.updated_at = datetime.now()
-            
-        await run_in_threadpool(lambda: self.db.commit())
-        return True
+        
+        # Use a separate session for the commit to avoid transaction conflicts
+        from ..db_config import engine
+        from sqlalchemy.orm import sessionmaker
+        
+        # Create a new session just for this commit
+        CommitSession = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        commit_db = CommitSession()
+        try:
+            # Merge the job object into the new session
+            merged_job = commit_db.merge(job)
+            commit_db.commit()
+            return True
+        except Exception as e:
+            print(f"Error committing job update: {e}")
+            return False
+        finally:
+            commit_db.close()
     
     async def complete_job(self, result: Dict[str, Any] = None):
         """
@@ -108,15 +124,17 @@ class JobProgressTracker:
         Returns:
             bool: True if successful, False otherwise
         """
-        job = await run_in_threadpool(lambda: self._get_job())
+        job = await run_in_threadpool(self._get_job)
         if not job:
             return False
             
+        # Update job status
         job.status = "completed"
-        job.completed_at = datetime.now()
         job.progress = 100
         job.message = "Job completed successfully"
+        job.completed_at = datetime.now()
         
+        # Store result if provided
         if result:
             # Store node and relationship counts
             job.node_count = result.get("nodes_created", 0)
@@ -131,9 +149,24 @@ class JobProgressTracker:
                 
             if job_result:
                 job.result = json.dumps(job_result)
-                
-        await run_in_threadpool(lambda: self.db.commit())
-        return True
+        
+        # Use a separate session for the commit to avoid transaction conflicts
+        from ..db_config import engine
+        from sqlalchemy.orm import sessionmaker
+        
+        # Create a new session just for this commit
+        CommitSession = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        commit_db = CommitSession()
+        try:
+            # Merge the job object into the new session
+            merged_job = commit_db.merge(job)
+            commit_db.commit()
+            return True
+        except Exception as e:
+            print(f"Error committing job completion: {e}")
+            return False
+        finally:
+            commit_db.close()
     
     async def fail_job(self, error_message: str):
         """
@@ -145,16 +178,31 @@ class JobProgressTracker:
         Returns:
             bool: True if successful, False otherwise
         """
-        job = await run_in_threadpool(lambda: self._get_job())
+        job = await run_in_threadpool(self._get_job)
         if not job:
             return False
             
         job.status = "failed"
-        job.error = error_message
-        job.message = f"Job failed: {error_message}"
+        job.message = error_message
         job.completed_at = datetime.now()
-        await run_in_threadpool(lambda: self.db.commit())
-        return True
+        
+        # Use a separate session for the commit to avoid transaction conflicts
+        from ..db_config import engine
+        from sqlalchemy.orm import sessionmaker
+        
+        # Create a new session just for this commit
+        CommitSession = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        commit_db = CommitSession()
+        try:
+            # Merge the job object into the new session
+            merged_job = commit_db.merge(job)
+            commit_db.commit()
+            return True
+        except Exception as e:
+            print(f"Error committing job failure: {e}")
+            return False
+        finally:
+            commit_db.close()
     
     def _get_job(self):
         """Get job from database"""

@@ -372,11 +372,110 @@ class SchemaAwareGraphAssistant:
                 "database": None
             }
         
-    def _ensure_prompt(self) -> None:
+    async def _ensure_prompt_with_job_tracking(self, progress_tracker=None) -> None:
+        """Check if prompts exist, validate generation_id, create and save if needed.
+        
+        This method is similar to _ensure_prompt but is designed to work with job tracking.
+        It will update the job progress and mark the job as complete when prompt generation is done.
+        
+        Args:
+            progress_tracker: The JobProgressTracker instance to update job progress
+        """
+        print(f"TRACE: _ensure_prompt_with_job_tracking started for db_id={self.db_id}, schema_id={self.schema_id}")
+        prompt_file = PROMPT_DIR / f"prompt_{self.db_id}_{self.schema_id}.json"
+        query_file = QUERY_DIR / f"{self.schema_id}_queries.json" 
+        print(f"TRACE: Prompt file path: {prompt_file}")
+        print(f"TRACE: Query file path: {query_file}")
+
+        regenerate_prompts = False
+        current_generation_id = None
+        existing_prompts = None
+        domain = None
+
+        # 1. Fetch current generation_id and domain from DB
+        print(f"TRACE: Starting DB fetch for generation_id, schema_id={self.schema_id}")
+        db = None # Initialize db to None
+        try:
+            print(f"TRACE: Creating DB session")
+            db = SessionLocal()
+            print(f"TRACE: Querying Schema table for schema_id={self.schema_id}")
+            schema_record = db.query(Schema).filter(Schema.id == self.schema_id).first()
+            if schema_record:
+                print(f"TRACE: Schema record found, checking generation_id")
+                current_generation_id = schema_record.generation_id
+                domain = schema_record.domain  # Get the domain from the schema record
+                print(f"TRACE: Domain from schema record: {domain}")
+                if not current_generation_id:
+                    print(f"Warning: Schema record found for {self.schema_id}, but generation_id is missing. Will regenerate prompts.")
+                    regenerate_prompts = True
+                else:
+                    print(f"DEBUG: Schema record found for {self.schema_id} with generation_id {current_generation_id}")    
+            else:
+                print(f"Warning: Schema record not found for {self.schema_id}. Will regenerate prompts.")
+                regenerate_prompts = True
+        except Exception as e:
+            print(f"Error querying schema record: {e}")
+            regenerate_prompts = True  # Regenerate prompts if there's an error
+        finally:
+            if db:
+                print(f"TRACE: Closing DB session")
+                db.close()
+                
+        # 2. Check if prompt file exists and has matching generation_id
+        if not regenerate_prompts and prompt_file.exists():
+            try:
+                with open(prompt_file, "r") as f:
+                    existing_prompts = json.load(f)
+                    
+                if "generation_id" not in existing_prompts or existing_prompts["generation_id"] != current_generation_id:
+                    print(f"Prompt file exists but generation_id mismatch or missing. Regenerating prompts.")
+                    print(f"File generation_id: {existing_prompts.get('generation_id')}, Current generation_id: {current_generation_id}")
+                    regenerate_prompts = True
+                else:
+                    print(f"Valid prompt file found with matching generation_id {current_generation_id}")
+            except Exception as e:
+                print(f"Error reading prompt file: {e}")
+                regenerate_prompts = True  # Regenerate if there's an error reading the file
+        elif not prompt_file.exists():
+             print(f"Prompt file for db '{self.db_id}' and schema '{self.schema_id}' not found. Creating prompts...")
+             regenerate_prompts = True
+
+        # 3. Regenerate and save if needed
+        if regenerate_prompts:
+            print("Generating new prompts...")
+            print(f"TRACE: Starting prompt generation for db_id={self.db_id}, schema_id={self.schema_id}")
+            
+            # Start prompt generation with job tracking
+            # Create a task that will update the job progress and complete the job when done
+            task = asyncio.create_task(self._generate_prompts_async_with_tracking(domain, current_generation_id, progress_tracker))
+            
+            # Return early - prompts will be generated in the background
+            print(f"TRACE: Prompt generation started in background with job tracking for db_id={self.db_id}, schema_id={self.schema_id}")
+            return
+            
+        # If we get here, prompts already exist and are valid
+        if progress_tracker:
+            # Update progress and complete the job since prompts already exist
+            await progress_tracker.update_stage("prompt_generation", 100, "Cypher prompts already exist and are valid")
+            await progress_tracker.update_stage("qa_generation", 100, "QA prompts already exist and are valid")
+            await progress_tracker.update_stage("query_generation", 100, "Sample queries already exist and are valid")
+            
+            # Complete the job with success status
+            result_data = {
+                "prompt_file": str(prompt_file),
+                "query_file": str(query_file),
+                "generation_id": current_generation_id
+            }
+            await progress_tracker.complete_job(result_data)
+            
+    def _ensure_prompt(self, progress_tracker=None) -> None:
         """Check if prompts exist, validate generation_id, create and save if needed.
         
         This method checks if prompts already exist and are valid. If not, it triggers
         asynchronous prompt generation to avoid blocking the main thread.
+        
+        Args:
+            progress_tracker: Optional JobProgressTracker instance to update job progress
         """
         print(f"TRACE: _ensure_prompt started for db_id={self.db_id}, schema_id={self.schema_id}")
         prompt_file = PROMPT_DIR / f"prompt_{self.db_id}_{self.schema_id}.json"
@@ -451,30 +550,214 @@ class SchemaAwareGraphAssistant:
             print("Generating new prompts...")
             print(f"TRACE: Starting prompt generation for db_id={self.db_id}, schema_id={self.schema_id}")
             
-            # Start prompt generation asynchronously to avoid blocking
-            # Check if we're in an event loop context or not
+            # Check if we're in an async context
             try:
-                # Try to get the current event loop - if this succeeds, we're in an async context
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
-                    # We're in an async context, create a task
-                    asyncio.create_task(self._generate_prompts_async(domain, current_generation_id))
-                    print(f"TRACE: Prompt generation started in background task for db_id={self.db_id}, schema_id={self.schema_id}")
+                    # We're in an async context, so create a task to run in the background
+                    print(f"TRACE: In async context, creating task for prompt generation")
+                    if progress_tracker:
+                        # If we have a progress tracker, use the version that updates job progress
+                        asyncio.create_task(self._generate_prompts_async_with_tracking(domain, current_generation_id, progress_tracker))
+                    else:
+                        # Otherwise use the standard async version
+                        asyncio.create_task(self._generate_prompts_async(domain, current_generation_id))
                 else:
-                    # We have an event loop but it's not running
-                    print(f"TRACE: Event loop exists but not running, running prompt generation directly for db_id={self.db_id}, schema_id={self.schema_id}")
-                    # Run synchronously since we can't create a task without a running loop
+                    # No running event loop, fall back to synchronous execution
+                    print(f"TRACE: No running event loop, falling back to synchronous prompt generation")
                     self._generate_prompts_sync(domain, current_generation_id)
+                    # If we have a progress tracker, we can't update it here in the sync context
+                    # Instead, we'll log that the generation is complete
+                    if progress_tracker:
+                        print(f"TRACE: Prompt generation completed synchronously, but can't update progress tracker in sync context")
+                        # We'll rely on the calling function to update the progress
             except RuntimeError:
-                # No event loop, we're in a synchronous context (like a thread pool)
-                print(f"TRACE: No running event loop, running prompt generation directly for db_id={self.db_id}, schema_id={self.schema_id}")
-                # Run synchronously since we can't create a task without an event loop
+                # No event loop, fall back to synchronous execution
+                print(f"TRACE: No event loop available, falling back to synchronous prompt generation")
                 self._generate_prompts_sync(domain, current_generation_id)
+                
+                # If we have a progress tracker, we can't update it here in the sync context
+                if progress_tracker:
+                    print(f"TRACE: Prompt generation completed synchronously, but can't update progress tracker in sync context")
             
             # Return early - prompts will be generated in the background or have been generated synchronously
             print(f"TRACE: Prompt generation initiated for db_id={self.db_id}, schema_id={self.schema_id}")
             return
             
+    async def _generate_prompts_async_with_tracking(self, domain, current_generation_id, progress_tracker=None):
+        """Generate prompts asynchronously with job progress tracking.
+        
+        This method is similar to _generate_prompts_async but includes job progress tracking
+        and will mark the job as complete when prompt generation is done.
+        
+        Args:
+            domain: The domain for the schema (used for domain-specific queries)
+            current_generation_id: The current generation ID from the schema record
+            progress_tracker: The JobProgressTracker instance to update job progress
+        """
+        prompt_file = PROMPT_DIR / f"prompt_{self.db_id}_{self.schema_id}.json"
+        query_file = QUERY_DIR / f"{self.schema_id}_queries.json"
+        
+        try:
+            print(f"TRACE: Starting async prompt generation with tracking for db_id={self.db_id}, schema_id={self.schema_id}")
+            
+            if progress_tracker:
+                await progress_tracker.update_stage("prompt_generation", 30, "Generating Cypher prompts")
+            
+            # Check if we should use domain-specific sample queries
+            use_domain_specific_queries = False
+            domain_specific_queries = []
+            domain_queries_file = None
+            
+            # Check if domain contains telecom_churn or foam_factory
+            if domain:
+                domain_lower = domain.lower()
+                if 'telecom_churn' in domain_lower:
+                    print(f"Using domain-specific sample queries for telecom_churn domain")
+                    domain_queries_file = os.path.join(os.path.dirname(__file__), 'domain_queries', 'telecom_churn_queries.json')
+                    use_domain_specific_queries = True
+                elif 'foam_factory' in domain_lower:
+                    print(f"Using domain-specific sample queries for foam_factory domain")
+                    domain_queries_file = os.path.join(os.path.dirname(__file__), 'domain_queries', 'foam_factory_queries.json')
+                    use_domain_specific_queries = True
+            
+            # Generate prompts - pass a flag indicating if domain-specific queries will be used
+            # Run the synchronous _generate_prompts in a thread pool to avoid blocking
+            from api.utils.thread_pool import run_in_threadpool
+            
+            if progress_tracker:
+                await progress_tracker.update_stage("prompt_generation", 50, "Running LLM to generate Cypher prompts")
+                
+            prompts = await run_in_threadpool(self._generate_prompts, skip_sample_queries_generation=use_domain_specific_queries)
+            
+            if progress_tracker:
+                await progress_tracker.update_stage("prompt_generation", 70, "Processing generated prompts")
+            
+            # If we should use domain-specific queries, load them from the JSON file
+            if use_domain_specific_queries and domain_queries_file and os.path.exists(domain_queries_file):
+                try:
+                    with open(domain_queries_file, 'r') as f:
+                        domain_data = json.load(f)
+                        domain_specific_queries = domain_data.get('queries', [])
+                    
+                    if domain_specific_queries:
+                        # Replace the LLM-generated sample queries with domain-specific ones
+                        print(f"Replacing LLM-generated sample queries with domain-specific queries for {domain}")
+                        prompts["sample_queries"] = domain_specific_queries
+                except Exception as e:
+                    print(f"Error loading domain-specific queries from {domain_queries_file}: {e}")
+                    print(f"TRACE: Exception details: {traceback.format_exc()}")
+                    # Continue with LLM-generated queries if there's an error
+            
+            # Add the current generation_id (if available and valid)
+            if current_generation_id:
+                prompts["generation_id"] = current_generation_id
+            else:
+                print(f"Warning: Could not retrieve valid current generation_id for schema {self.schema_id}. Saving prompts without generation_id.")
+                prompts.pop("generation_id", None)  # Ensure it's not stale
+            
+            if progress_tracker:
+                await progress_tracker.update_stage("prompt_generation", 80, "Saving generated prompts")
+            
+            # Save the prompts to file
+            try:
+                print(f"TRACE: Creating prompt directory: {PROMPT_DIR}")
+                PROMPT_DIR.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
+                print(f"TRACE: Saving prompts to file: {prompt_file}")
+                with open(prompt_file, "w") as f:
+                    json.dump(prompts, f, indent=2)
+                print(f"Prompts saved to {prompt_file}")
+
+                if progress_tracker:
+                    await progress_tracker.update_stage("prompt_generation", 90, "Saving sample queries")
+                    await progress_tracker.update_stage("qa_generation", 50, "Processing QA prompts")
+
+                print(f"TRACE: Creating query directory: {QUERY_DIR}")
+                QUERY_DIR.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
+                print(f"TRACE: Saving queries to file: {query_file}")
+                with open(query_file, "w") as f:
+                    # Format the sample queries to match what the API expects
+                    # The API expects a dictionary with categories as keys and lists of queries as values
+                    formatted_queries = {
+                        "general": [],
+                        "relationships": [],
+                        "domain": []
+                    }
+                    
+                    # Add each sample query to an appropriate category based on content analysis
+                    for i, query in enumerate(prompts["sample_queries"]):
+                        query_lower = query.lower()
+                        
+                        # Determine the best category based on query content
+                        if any(keyword in query_lower for keyword in ["relation", "connect", "link", "between", "path"]):
+                            category = "relationships"
+                        elif any(keyword in query_lower for keyword in ["domain", "specific", "industry", "field", "area"]):
+                            category = "domain"
+                        else:
+                            category = "general"  # Default category
+                        
+                        formatted_queries[category].append({
+                            "id": f"{category}_{len(formatted_queries[category])+1}",
+                            "query": query,
+                            "description": f"Sample query for {domain if domain else 'graph'} #{i+1}"
+                        })
+                    
+                    json.dump(formatted_queries, f, indent=2)
+                print(f"Queries saved to {query_file}")
+                
+                if progress_tracker:
+                    await progress_tracker.update_stage("prompt_generation", 100, "Cypher prompts generated successfully")
+                    await progress_tracker.update_stage("qa_generation", 100, "QA prompts generated successfully")
+                    await progress_tracker.update_stage("query_generation", 100, "Sample queries generated successfully")
+                    
+                    # Complete the job with success status
+                    result_data = {
+                        "prompt_file": str(prompt_file),
+                        "query_file": str(query_file),
+                        "generation_id": current_generation_id
+                    }
+                    await progress_tracker.complete_job(result_data)
+                    
+                print(f"TRACE: Successfully completed async prompt generation for db_id={self.db_id}, schema_id={self.schema_id}")
+
+            except Exception as e:
+                print(f"Error saving prompts to {prompt_file}: {e}")
+                print("Warning: Prompts generated but failed to save to file. Using in-memory prompts for this session.")
+                print(f"TRACE: Exception details: {traceback.format_exc()}")
+                
+                if progress_tracker:
+                    await progress_tracker.fail_job(f"Error saving prompts: {str(e)}")
+        
+        except Exception as e:
+            print(f"TRACE: Error in async prompt generation for db_id={self.db_id}, schema_id={self.schema_id}: {str(e)}")
+            print(f"TRACE: Exception details: {traceback.format_exc()}")
+            
+            if progress_tracker:
+                await progress_tracker.fail_job(f"Error generating prompts: {str(e)}")
+                
+    async def _update_progress_after_sync_generation(self, progress_tracker):
+        """Update job progress after synchronous prompt generation.
+        
+        Args:
+            progress_tracker: The JobProgressTracker instance to update job progress
+        """
+        if progress_tracker:
+            # Update all stages to 100% since generation is complete
+            await progress_tracker.update_stage("prompt_generation", 100, "Cypher prompts generated successfully")
+            await progress_tracker.update_stage("qa_generation", 100, "QA prompts generated successfully")
+            await progress_tracker.update_stage("query_generation", 100, "Sample queries generated successfully")
+            
+            # Complete the job with success status
+            prompt_file = PROMPT_DIR / f"prompt_{self.db_id}_{self.schema_id}.json"
+            query_file = QUERY_DIR / f"{self.schema_id}_queries.json"
+            
+            result_data = {
+                "prompt_file": str(prompt_file),
+                "query_file": str(query_file),
+                "generation_id": "completed_synchronously"
+            }
+            await progress_tracker.complete_job(result_data)
+    
     async def _generate_prompts_async(self, domain, current_generation_id):
         """Generate prompts asynchronously to avoid blocking the main thread.
         

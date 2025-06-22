@@ -26,55 +26,95 @@ async def generate_prompts_async(schema_id: int, job_id: str = None):
         schema_id: ID of the schema to generate prompts for
         job_id: ID of the job to update progress for
     """
-    from api.utils.thread_pool import run_in_threadpool
-    from api.utils.job_progress import JobProgressTracker
-    
-    # Create a new database session specifically for this background task
-    task_db = SessionLocal()
+    print(f"Starting async prompt generation for schema_id={schema_id}, job_id={job_id}")
     
     # Initialize progress tracker if job_id is provided
     progress_tracker = None
     if job_id:
-        progress_tracker = JobProgressTracker(job_id, task_db)
+        from api.utils.job_progress import JobProgressTracker
+        
+        # Get the schema record from the database
+        from api.db_config import SessionLocal
+        from api.models import Schema
+        import traceback
+        
+        db = SessionLocal()
+        
+        # Create the progress tracker with the database session
+        # The JobProgressTracker is already initialized with DATA_LOADING_STAGES from constants.py
+        progress_tracker = JobProgressTracker(job_id, db)
+        
+        # Initialize the job with the existing stages
+        await progress_tracker.initialize_job()
+        
+        # Mark data_loading stages as complete since we're only doing prompt generation
+        await progress_tracker.update_stage("schema_loading", 100, "Schema loading complete")
+        await progress_tracker.update_stage("data_validation", 100, "Data validation complete")
+        await progress_tracker.update_stage("csv_generation", 100, "CSV generation complete")
+        await progress_tracker.update_stage("neo4j_import", 100, "Neo4j import complete")
+        await progress_tracker.update_stage("neo4j_startup", 100, "Neo4j startup complete")
+        await progress_tracker.update_stage("stats_collection", 100, "Statistics collection complete")
+        await progress_tracker.update_stage("prompt_generation_prep", 100, "Prompt generation preparation complete")
+    
+    # We already have a database session if progress_tracker is initialized
+    # Otherwise, create a new one
+    from api.db_config import SessionLocal
+    from api.models import Schema
+    import traceback
+    
+    # Use the existing db session if we have a progress tracker, otherwise create a new one
+    db_session = db if progress_tracker else SessionLocal()
     
     try:
-        print(f"Starting async prompt generation for schema_id={schema_id}")
-        schema_db = task_db.query(Schema).filter(Schema.id == schema_id).first()
+        schema_db = db_session.query(Schema).filter(Schema.id == schema_id).first()
         
         if schema_db and schema_db.schema and schema_db.db_id:
             # Update progress to prompt generation stage
             if progress_tracker:
-                await progress_tracker.update_stage("prompt_generation", 0, "Starting Cypher prompt generation")
+                await progress_tracker.update_stage("prompt_generation", 10, "Starting Cypher prompt generation")
                 
             from api.kgdatainsights.data_insights_api import get_schema_aware_assistant
             assistant = get_schema_aware_assistant(schema_db.db_id, schema_id, schema_db.schema)
             
             # Generate prompts with progress updates
-            # Call _ensure_prompt directly since it now handles both sync and async contexts
-            assistant._ensure_prompt()
-            
-            if progress_tracker:
-                await progress_tracker.update_stage("prompt_generation", 100, "Cypher prompts generated")
-                await progress_tracker.update_stage("qa_generation", 0, "Starting QA prompt generation")
-                # Since we don't have separate steps for QA and query generation in the current implementation,
-                # we'll simulate progress through these stages
-                await progress_tracker.update_stage("qa_generation", 100, "QA prompts generated")
-                await progress_tracker.update_stage("query_generation", 0, "Starting sample query generation")
-                await progress_tracker.update_stage("query_generation", 100, "Sample queries generated")
+            try:
+                # Pass the progress tracker to _ensure_prompt
+                assistant._ensure_prompt(progress_tracker)
                 
-            print(f"Prompt templates and queries generated for schema_id={schema_id}")
+                # Update progress after initiating prompt generation
+                if progress_tracker:
+                    await progress_tracker.update_stage("prompt_generation", 50, "Cypher prompt generation in progress")
+                    await progress_tracker.update_stage("qa_generation", 50, "QA prompt generation in progress")
+                    await progress_tracker.update_stage("query_generation", 50, "Sample query generation in progress")
+                    
+                    # Mark the job as complete since prompt generation will continue in the background
+                    # The actual prompt generation will continue in the background
+                    result_data = {
+                        "schema_id": schema_id,
+                        "status": "Prompt generation continuing in background"
+                    }
+                    await progress_tracker.complete_job(result_data)
+                
+                print(f"Prompt generation initiated for schema_id={schema_id}")
+            except Exception as e:
+                print(f"Error during prompt generation: {e}")
+                print(f"Traceback: {traceback.format_exc()}")
+                if progress_tracker:
+                    await progress_tracker.fail_job(f"Error during prompt generation: {str(e)}")
         else:
             print(f"Could not generate prompts: Schema record not found or incomplete for schema_id={schema_id}")
             if progress_tracker:
-                await progress_tracker.fail_job("Schema record not found or incomplete for prompt generation")
+                await progress_tracker.fail_job("Schema record not found or incomplete")
     except Exception as e:
-        print(f"Error generating prompts after data load for schema_id={schema_id}: {e}")
-        print(traceback.format_exc())
+        print(f"Error generating prompts: {e}")
+        print(f"Traceback: {traceback.format_exc()}")
         if progress_tracker:
-            await progress_tracker.fail_job(f"Error generating prompts: {str(e)}")
+            await progress_tracker.fail_job(f"Error: {str(e)}")
     finally:
-        # Always close the database session when done
-        task_db.close()
+        # Only close the session if we created a new one (no progress_tracker)
+        if not progress_tracker and db_session:
+            db_session.close()
+        # Note: If we have a progress_tracker, its db session will be closed elsewhere
         print(f"Completed async prompt generation task for schema_id={schema_id}")
 
 from ..db_config import engine
