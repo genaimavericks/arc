@@ -388,7 +388,7 @@ async def process_clean_data_job(job_id: str, schema_id: int, graph_name: str, d
                 if schema_db:
                     schema_db.db_loaded = "no"
                     print(f"Updated schema record {schema_id} with db_loaded=no")
-                    schema_db.commit()
+                    db.commit()
                     
             driver.close()
         finally:
