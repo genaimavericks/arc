@@ -53,13 +53,13 @@ export default function Navbar() {
     
     // KGInsights section
     else if (pathname === '/kginsights/dashboard') {
-      return 'KGraph Dashboard'
+      return 'KGraff Dashboard'
     } else if (pathname === '/kginsights/insights') {
-      return 'KGraph Insights'
+      return 'KGraff Insights'
     } else if (pathname === '/kginsights/generate') {
       return 'Generate Graph'
     } else if (pathname === '/kginsights/manage') {
-      return 'Manage KGraph'
+      return 'Manage KGraff'
     } else if (pathname.startsWith('/kginsights/')) {
       return 'K-Graff'
     }
@@ -213,10 +213,10 @@ export default function Navbar() {
               <div className="border-t border-border pt-4 pb-4">
                 <h3 className="text-sm font-medium mb-2 px-3">K-Graff</h3>
                 <div className="space-y-1">
-                  <NavLink href="/kginsights/dashboard">KGraph Dashboard</NavLink>
-                  <NavLink href="/kginsights/insights">KGraph Insights</NavLink>
+                  <NavLink href="/kginsights/dashboard">KGraff Dashboard</NavLink>
+                  <NavLink href="/kginsights/insights">KGraff Insights</NavLink>
                   <NavLink href="/kginsights/generate">Generate Graph</NavLink>
-                  <NavLink href="/kginsights/manage">Manage KGraph</NavLink>
+                  <NavLink href="/kginsights/manage">Manage KGraff</NavLink>
                 </div>
               </div>
               

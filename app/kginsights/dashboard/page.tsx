@@ -419,8 +419,8 @@ function KGraphDashboardContent() {
 
         setError(null)
       } catch (err) {
-        console.error("Error fetching KGraph dashboard data:", err)
-        setError("Failed to load KGraph dashboard data. Using fallback data.")
+        console.error("Error fetching KGraff dashboard data:", err)
+        setError("Failed to load KGraff dashboard data. Using fallback data.")
       } finally {
         setLoading(false)
       }
@@ -459,7 +459,7 @@ function KGraphDashboardContent() {
             transition={{ duration: 0.5 }}
             className="text-2xl font-bold tracking-tight text-foreground"
           >
-            KGraph Dashboard
+            KGraff Dashboard
           </motion.h1>
 
           {/* Search Button */}

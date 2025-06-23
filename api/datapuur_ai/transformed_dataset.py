@@ -121,8 +121,8 @@ async def update_dataset_metadata(
         raise HTTPException(status_code=404, detail="Transformed dataset not found")
     
     # Update metadata fields
-    if metadata_update.dataset_metadata:
-        dataset.dataset_metadata = {**dataset.dataset_metadata, **metadata_update.dataset_metadata}
+    if metadata_update.metadata:
+        dataset.dataset_metadata = {**dataset.dataset_metadata, **metadata_update.metadata}
     
     if metadata_update.column_metadata:
         dataset.column_metadata = {**dataset.column_metadata, **metadata_update.column_metadata}

@@ -37,4 +37,4 @@ fi
 
 # Start the FastAPI server
 echo "Starting combined server on ${HOST}:${PORT}..."
-HOST=${HOST} PORT=${PORT} .venv/bin/python -m api.run
+HOST=${HOST} PORT=${PORT} python -m api.run

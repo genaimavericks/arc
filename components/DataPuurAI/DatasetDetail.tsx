@@ -129,11 +129,33 @@ export function DatasetDetail({ dataset }: DatasetDetailProps) {
       </CardHeader>
       
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid grid-cols-3 mb-4 mx-6">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="metadata">Metadata</TabsTrigger>
-          <TabsTrigger value="lineage">Lineage</TabsTrigger>
-        </TabsList>
+        <div className="flex justify-between items-center mb-4 mx-6">
+          <TabsList className="grid grid-cols-3">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="metadata">Metadata</TabsTrigger>
+            <TabsTrigger value="lineage">Lineage</TabsTrigger>
+          </TabsList>
+          
+          {activeTab === 'metadata' && (
+            <Button 
+              type="submit" 
+              disabled={isLoading}
+              onClick={form.handleSubmit(onSubmit)}
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  Save Metadata
+                </>
+              )}
+            </Button>
+          )}
+        </div>
         
         <TabsContent value="overview" className="px-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
@@ -301,19 +323,7 @@ export function DatasetDetail({ dataset }: DatasetDetailProps) {
                 </div>
               </div>
               
-              <Button type="submit" disabled={isLoading}>
-                {isLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <Save className="mr-2 h-4 w-4" />
-                    Save Metadata
-                  </>
-                )}
-              </Button>
+              {/* Save Metadata button moved to below the tabs bar */}
             </form>
           </Form>
         </TabsContent>

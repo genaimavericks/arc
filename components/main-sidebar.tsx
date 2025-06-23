@@ -261,7 +261,7 @@ export function MainSidebar() {
   const getActiveModelSubmenu = (model: string) => {
     let submenuItems = [
       { 
-        label: "KGraph Insights", 
+        label: "KGraff Insights", 
         href: "/djinni/kgraph-insights", 
         icon: NetworkIcon,
         // Using djinni:read instead of kginsights:read so it's always visible in Djinni menu
@@ -446,10 +446,10 @@ export function MainSidebar() {
       requiredPermission: "kginsights:read",
       key: "k-graff", // Add a key property for consistent identification
       subItems: [
-        { label: "KGraph Dashboard", href: "/kginsights/dashboard", icon: LayoutDashboard },
+        { label: "KGraff Dashboard", href: "/kginsights/dashboard", icon: LayoutDashboard },
         { label: "Generate Graph", href: "/kginsights/generate", icon: GitBranch },
-        { label: "Manage KGraph", href: "/kginsights/manage", icon: Settings },
-        { label: "KGraph Insights", href: "/kginsights/insights", icon: MessageSquare }
+        { label: "Manage KGraff", href: "/kginsights/manage", icon: Settings },
+        { label: "KGraff Insights", href: "/kginsights/insights", icon: MessageSquare }
       ]
     }
   ]
@@ -740,7 +740,7 @@ export function MainSidebar() {
                       <div className="ml-4 space-y-1 border-l border-border pl-3">
                         {section.subItems?.filter(item => {
                           // Special case for KGraph Insights in the Djinni menu - always show to users with djinni:read
-                          if (item.label === "KGraph Insights" && user?.permissions?.includes("djinni:read")) {
+                          if (item.label === "KGraff Insights" && user?.permissions?.includes("djinni:read")) {
                             return true;
                           }
                           
