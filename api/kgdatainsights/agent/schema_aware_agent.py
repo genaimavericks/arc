@@ -6,6 +6,7 @@ import threading
 import traceback
 import re
 import asyncio
+import glob
 from pathlib import Path
 from uuid import uuid4
 from typing import Dict, Any, Optional, Callable
@@ -130,8 +131,14 @@ class SchemaAwareGraphAssistant:
                 # Note: request_timeout is handled separately in _invoke_llm_with_retry
             )
             
-            # Load the custom prompts for this source
-            self._load_prompts()
+            # Load and process the custom prompts for this source
+            prompts = self._load_prompts()
+            if prompts:
+                # Process the loaded prompts
+                print(f"Processing loaded prompts for {self.db_id}...")
+                self._process_prompts(prompts)
+            else:
+                print(f"No prompts found for {self.db_id}, will generate them later if needed")
             
             # Initialize Neo4j Graph connection
             # Import the correct GraphStore implementation
@@ -954,28 +961,65 @@ class SchemaAwareGraphAssistant:
             
         return prompt_text
 
-    def _load_prompts(self) -> None:
-        """Load custom prompts for this source"""
-        # Use both db_id and schema_id in the prompt filename for better specificity
-        prompt_file = PROMPT_DIR / f"prompt_{self.db_id}_{self.schema_id}.json"
-        
+    def _load_prompts(self) -> Dict[str, Any]:
+        """Load prompts from a JSON file or use cached prompts."""
+        # Check if we have cached prompts for this schema_id
+        cached_prompts = PROMPT_CACHE.get(self.db_id)
+        if cached_prompts:
+            print(f"Using cached prompts for {self.db_id}")
+            return cached_prompts
+            
         try:
-            # Default to None initially to detect loading issues
-            self.cypher_prompt = None
-            self.qa_prompt = None
+            # Use a default prompt file based on the db_id
+            temp_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'temp')
+            prompt_pattern = f"prompt_{self.db_id}*.json"
+            matching_files = glob.glob(os.path.join(temp_dir, prompt_pattern))
             
-            print(f"DEBUG: Attempting to load prompts")
-            prompts = {}
+            prompts_path = None
             
-            # Try to load the specific prompt file first
-            if prompt_file.exists():
-                with open(prompt_file, "r") as f:
-                    prompts = json.load(f)
-                print(f"DEBUG: Loaded prompt file for db '{self.db_id}' and schema '{self.schema_id}'")
+            # Check for domain-specific prompt files first
+            domain_prompts_path = self._find_domain_prompt_file()
+            if domain_prompts_path:
+                prompts_path = domain_prompts_path
+                print(f"Using domain-specific prompt file: {prompts_path}")
+            elif len(matching_files) > 1:
+                print(f"WARNING: Multiple prompt files found for {self.db_id}: {matching_files}")
+                print(f"This may cause inconsistent behavior between environments")
+                # Use the first file alphabetically to ensure consistency
+                matching_files.sort()
+                prompts_path = matching_files[0]
+                print(f"Selected prompt file: {prompts_path}")
+            elif len(matching_files) == 1:
+                prompts_path = matching_files[0]
+                print(f"Using default prompt file path: {prompts_path}")
             else:
-                print(f"DEBUG: No prompt files found, will use default prompts")
+                prompts_path = os.path.join(temp_dir, f"prompt_{self.db_id}.json")
+                print(f"Using default prompt file path: {prompts_path}")
+            
+            # Load prompts from the file
+            if prompts_path and os.path.exists(prompts_path):
+                print(f"Loading prompts from {prompts_path}")
+                with open(prompts_path, 'r') as f:
+                    prompts = json.load(f)
+                    
+                # Cache the prompts for future use
+                PROMPT_CACHE[self.db_id] = prompts
+                return prompts
+            else:
+                print(f"Prompt file not found at {prompts_path}, generating prompts")
+                return {}
                 
-            # Convert string prompts to ChatPromptTemplate objects if needed
+        except Exception as e:
+            print(f"Error loading prompts: {str(e)}")
+            print(traceback.format_exc())
+            return {}
+            
+
+
+    def _process_prompts(self, prompts: Dict[str, Any]) -> None:
+        """Process loaded prompts and set up cypher_prompt, qa_prompt, and sample_queries."""
+        try:
+            # Process cypher prompt
             if "cypher_prompt" in prompts:
                 cypher_prompt_text = prompts.get("cypher_prompt")
                 # Check if it's already a structured object or a string
@@ -990,21 +1034,11 @@ class SchemaAwareGraphAssistant:
                     else:
                         template_text = cypher_prompt_text
                         
-                    # Fix all placeholder formats for compatibility with GraphCypherQAChain
-                    # The key parameter expected by the chain is 'query', not 'question'
-                    # if "{{query}}" in template_text:
-                    #     template_text = template_text.replace("{{query}}", "{query}")
-                    #     print(f"DEBUG: Fixed {{query}} placeholder format")
-                    
-                    # if "{{question}}" in template_text:
-                    #     # Replace 'question' with 'query' for compatibility
-                    #     template_text = template_text.replace("{{question}}", "{query}")
-                    #     print(f"DEBUG: Replaced {{question}} with {{query}} for compatibility")
-                    
                     self.cypher_prompt = ChatPromptTemplate.from_template(template_text)
                 else:
                     self.cypher_prompt = cypher_prompt_text
             
+            # Process QA prompt
             if "qa_prompt" in prompts:
                 qa_prompt_text = prompts.get("qa_prompt")
                 # Check if it's already a structured object or a string
@@ -1022,23 +1056,23 @@ class SchemaAwareGraphAssistant:
                     # Fix all placeholder formats for compatibility with GraphCypherQAChain
                     # QA prompt should use 'query' and 'context' parameters
                     # LangChain specifically expects 'query' not 'question'
-                    # if "{{question}}" in template_text:
-                    #     # Always replace 'question' with 'query' - this is critical
-                    #     template_text = template_text.replace("{{question}}", "{query}")
-                    #     print(f"DEBUG: Replaced {{question}} with {{query}} in QA prompt")
+                    if "{{question}}" in template_text:
+                        # Always replace 'question' with 'query' - this is critical
+                        template_text = template_text.replace("{{question}}", "{query}")
+                        print(f"DEBUG: Replaced {{question}} with {{query}} in QA prompt")
                         
-                    # if "{{query}}" in template_text:
-                    #     template_text = template_text.replace("{{query}}", "{query}")
-                    #     print(f"DEBUG: Fixed {{query}} format in QA prompt")
+                    if "{{query}}" in template_text:
+                        template_text = template_text.replace("{{query}}", "{query}")
+                        print(f"DEBUG: Fixed {{query}} format in QA prompt")
                         
-                    # if "{{context}}" in template_text:
-                    #     template_text = template_text.replace("{{context}}", "{context}")
-                    #     print(f"DEBUG: Fixed {{context}} format in QA prompt")
+                    if "{{context}}" in template_text:
+                        template_text = template_text.replace("{{context}}", "{context}")
+                        print(f"DEBUG: Fixed {{context}} format in QA prompt")
                         
-                    # if "{{response}}" in template_text:
-                    #     # Also replace 'response' with 'context' as needed
-                    #     template_text = template_text.replace("{{response}}", "{context}")
-                    #     print(f"DEBUG: Replaced {{response}} with {{context}} in QA prompt")
+                    if "{{response}}" in template_text:
+                        # Also replace 'response' with 'context' as needed
+                        template_text = template_text.replace("{{response}}", "{context}")
+                        print(f"DEBUG: Replaced {{response}} with {{context}} in QA prompt")
                             
                     print(f"DEBUG: Fixed placeholders in QA prompt")
                     self.qa_prompt = ChatPromptTemplate.from_template(template_text)
@@ -1049,13 +1083,13 @@ class SchemaAwareGraphAssistant:
             self.sample_queries = prompts.get("sample_queries", [])
             
         except Exception as e:
-            # Handle any errors in loading prompts
-            print(f"ERROR: Failed to load prompts: {str(e)}")
+            # Handle any errors in processing prompts
+            print(f"ERROR: Failed to process prompts: {str(e)}")
             print(f"DEBUG: {traceback.format_exc()}")
             
             # Instead of using fallback prompts, raise the exception to fail explicitly
             # This makes debugging easier by exposing the actual error
-            raise RuntimeError(f"Failed to load prompts for schema: {str(e)}") from e
+            raise RuntimeError(f"Failed to process prompts: {str(e)}") from e
             
     def _debug_print_prompts(self):
         """Print debug information about the loaded prompts"""
@@ -1497,14 +1531,21 @@ class SchemaAwareGraphAssistant:
                     # Fallback to standard chain invocation
                     print("DEBUG: Falling back to standard chain invocation")
                     try:
-                        result = self.chain.invoke({'question': question, 'query': question})
+                        # GraphCypherQAChain expects 'query' as the primary parameter
+                        # Let's try with just 'query' first since that's the standard parameter name
+                        result = self.chain.invoke({'query': question})
                     except Exception as chain_error:
-                        print(f"DEBUG: Standard chain invocation failed: {str(chain_error)}")
-                        # Check if error is related to None Cypher query
-                        if "Invalid input 'None'" in str(chain_error):
-                            return {"result": "Not able to prepare valid queries. Please update your question with specific data attributes or relationships."}
-                        # Otherwise, raise the error to be caught by the outer try-except
-                        raise
+                        print(f"DEBUG: Standard chain invocation with 'query' parameter failed: {str(chain_error)}")
+                        try:
+                            # Try with 'question' parameter as fallback
+                            result = self.chain.invoke({'question': question})
+                        except Exception as second_error:
+                            print(f"DEBUG: Standard chain invocation with 'question' parameter also failed: {str(second_error)}")
+                            # Check if error is related to None Cypher query
+                            if "Invalid input 'None'" in str(chain_error) or "Invalid input 'None'" in str(second_error):
+                                return {"result": "Not able to prepare valid queries. Please update your question with specific data attributes or relationships."}
+                            # Otherwise, raise the error to be caught by the outer try-except
+                            raise chain_error
             except Exception as e:
                 print(f"ERROR: Direct approach failed: {str(e)}")
                 print(f"DEBUG: {traceback.format_exc()}")
