@@ -13,11 +13,11 @@ from typing import Dict, Any, Optional, Callable
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from dotenv import load_dotenv
-from langchain.chains import GraphCypherQAChain
 from langchain.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_neo4j import (
     Neo4jChatMessageHistory,
-    Neo4jGraph
+    Neo4jGraph,
+    GraphCypherQAChain
 )
 
 from .cache import Cache
@@ -181,8 +181,7 @@ class SchemaAwareGraphAssistant:
             # Initialize QA chain with Neo4j optimizations using modular LangChain pattern
             debug_log(f"Initializing GraphCypherQAChain using langchain_community pattern", "DEBUG")
             
-            # Import the correct GraphCypherQAChain implementation
-            from langchain_community.chains.graph_qa.cypher import GraphCypherQAChain as CommunityGraphCypherQAChain
+            # Use GraphCypherQAChain from langchain_neo4j
             
             # Create a structured chain configuration dictionary
             chain_config = {
@@ -192,7 +191,7 @@ class SchemaAwareGraphAssistant:
                 "return_intermediate_steps": True,
                 "allow_dangerous_requests": True
             }
-            
+            '''
             # Ensure schema is properly parsed into a dict
             try:
                 # self.schema can be a dict (already parsed) or a string (needs parsing)
@@ -259,7 +258,7 @@ class SchemaAwareGraphAssistant:
                         
                         # For Cypher validation to work, the structured_schema needs to be 
                         # an attribute of the graph object itself
-                        # This is because CommunityGraphCypherQAChain accesses it via:
+                        # This is because GraphCypherQAChain accesses it via:
                         # kwargs["graph"].structured_schema
                         
                         # Attach the structured schema to the graph object
@@ -281,6 +280,8 @@ class SchemaAwareGraphAssistant:
                 debug_log(f"Error details: {traceback.format_exc()}", "DEBUG")
                 debug_log("Disabling Cypher validation due to schema processing error", "DEBUG")
                 chain_config["validate_cypher"] = False
+            
+            '''
             
             # Only add prompts if they are properly loaded
             if hasattr(self, 'cypher_prompt') and self.cypher_prompt:
@@ -313,9 +314,9 @@ class SchemaAwareGraphAssistant:
                     debug_log(f"Using original QA prompt - may cause errors", "DEBUG")
                     chain_config["qa_prompt"] = self.qa_prompt
             
-            # Initialize with the validated configuration using the community implementation
-            self.chain = CommunityGraphCypherQAChain.from_llm(**chain_config)
-            debug_log(f"Successfully initialized GraphCypherQAChain", "DEBUG")
+            # Initialize with the validated configuration using langchain_neo4j implementation
+            self.chain = GraphCypherQAChain.from_llm(**chain_config)
+            print(f"DEBUG: Successfully initialized GraphCypherQAChain")
             
             # Mark initialization as complete
             self.initialization_complete = True
