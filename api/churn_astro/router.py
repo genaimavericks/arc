@@ -103,11 +103,9 @@ def get_example_questions():
     ]
 
 @router.post("/predict")
-async def predict(query: Dict[str, str] = Body(...), user=Depends(get_current_user)):
+async def predict(query: Dict[str, str] = Body(...), user=Depends(has_any_permission(["datapuur:read", "djinni:read"]))):
     """Process a churn prediction query and return predictions"""
     try:
-        # Ensure the user has the required permissions
-        has_any_permission(["datapuur:read"])(user)
         
         # Extract the question from the request body
         question = ""
@@ -199,11 +197,9 @@ async def predict(query: Dict[str, str] = Body(...), user=Depends(get_current_us
         }
 
 @router.get("/examples")
-async def examples(user=Depends(get_current_user)):
+async def examples(user=Depends(has_any_permission(["datapuur:read", "djinni:read"]))):
     """Get example questions for churn prediction queries"""
     try:
-        # Ensure the user has the required permissions
-        has_any_permission(["datapuur:read"])(user)
         
         return {
             "status": "success",
