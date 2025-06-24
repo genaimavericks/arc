@@ -38,7 +38,7 @@ class ModelConfig(BaseModel):
 
 class GenAIConfig(BaseModel):
     """Main configuration for the Gen AI Layer."""
-    default_model: str = "gpt-4"
+    default_model: str = "gpt-4.1"
     default_provider: ModelProvider = ModelProvider.OPENAI
     models: Dict[str, ModelConfig] = Field(default_factory=dict)
     cache_enabled: bool = True
@@ -50,9 +50,9 @@ class GenAIConfig(BaseModel):
         # Default configuration with common models
         config = cls(
             models={
-                "gpt-4": ModelConfig(
+                "gpt-4.1": ModelConfig(
                     provider=ModelProvider.OPENAI,
-                    model_name="gpt-4",
+                    model_name="gpt-4.1",
                     api_key_env="OPENAI_API_KEY",
                 ),
                 "gpt-3.5-turbo": ModelConfig(
