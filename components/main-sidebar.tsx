@@ -431,12 +431,12 @@ export function MainSidebar() {
       requiredPermission: "datapuur:read",
       key: "datapuur", // Add a key property for consistent identification
       subItems: [
-        { label: "Dashboard", href: "/datapuur", icon: LayoutDashboard },
-        { label: "Ingestion", href: "/datapuur/ingestion", icon: FileInput },
-        { label: "AI Profile", href: "/datapuur/ai-profile", icon: Brain },
-        { label: "AI Transformation", href: "/datapuur/ai-transformation", icon: Zap },
-        { label: "Data Catalog", href: "/datapuur/data-catalog", icon: Database },
-        { label: "Export", href: "/datapuur/export", icon: Download }
+        { label: "Dashboard", href: "/datapuur", icon: LayoutDashboard, requiredPermission: "datapuur:read" },
+        { label: "Ingestion", href: "/datapuur/ingestion", icon: FileInput, requiredPermission: "datapuur:write" },
+        { label: "AI Profile", href: "/datapuur/ai-profile", icon: Brain, requiredPermission: "datapuur:write" },
+        { label: "AI Transformation", href: "/datapuur/ai-transformation", icon: Zap, requiredPermission: "datapuur:write" },
+        { label: "Data Catalog", href: "/datapuur/data-catalog", icon: Database, requiredPermission: "datapuur:read" },
+        { label: "Export", href: "/datapuur/export", icon: Download, requiredPermission: "datapuur:write" }
       ]
     },
     {
@@ -446,10 +446,10 @@ export function MainSidebar() {
       requiredPermission: "kginsights:read",
       key: "k-graff", // Add a key property for consistent identification
       subItems: [
-        { label: "KGraff Dashboard", href: "/kginsights/dashboard", icon: LayoutDashboard },
-        { label: "Generate Graph", href: "/kginsights/generate", icon: GitBranch },
-        { label: "Manage KGraff", href: "/kginsights/manage", icon: Settings },
-        { label: "KGraff Insights", href: "/kginsights/insights", icon: MessageSquare }
+        { label: "KGraff Dashboard", href: "/kginsights/dashboard", icon: LayoutDashboard, requiredPermission: "kginsights:read" },
+        { label: "Generate Graph", href: "/kginsights/generate", icon: GitBranch, requiredPermission: "kginsights:write" },
+        { label: "Manage KGraff", href: "/kginsights/manage", icon: Settings, requiredPermission: "kginsights:write" },
+        { label: "KGraff Insights", href: "/kginsights/insights", icon: MessageSquare, requiredPermission: "kginsights:read" }
       ]
     }
   ]
@@ -838,7 +838,16 @@ export function MainSidebar() {
                   
                   {Boolean(expandedSections[section.key || section.label.toLowerCase()]) && !collapsed && (
                     <div className="ml-4 space-y-1 border-l border-border pl-3">
-                      {section.subItems?.map((item) => (
+                      {section.subItems?.filter(item => {
+                        // If no required permission is specified, show the item
+                        if (!item.requiredPermission) return true;
+                        
+                        // If user doesn't exist or has no permissions, don't show the item
+                        if (!user || !user.permissions) return false;
+                        
+                        // Show the item if user has the required permission
+                        return user.permissions.includes(item.requiredPermission);
+                      }).map((item) => (
                         <SidebarMenuItem
                           key={item.href}
                           href={item.href}
