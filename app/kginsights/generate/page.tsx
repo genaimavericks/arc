@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react"
 import { useSearchParams } from "next/navigation"
 import { SparklesCore } from "@/components/sparkles"
+import { useAuth } from "@/lib/auth-context"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -78,11 +79,13 @@ export default function GenerateGraphPage() {
 }
 
 function GenerateGraphContent() {
+  const { user } = useAuth()
   const searchParams = useSearchParams()
   const [sources, setSources] = useState<DataSource[]>([])
   const [selectedSource, setSelectedSource] = useState<string>("")
   const [selectedSourceName, setSelectedSourceName] = useState<string>("")
   const [selectedDatasetType, setSelectedDatasetType] = useState<"source" | "transformed" | "">("")
+  const [hasRequiredPermissions, setHasRequiredPermissions] = useState<boolean>(false)
   const [loading, setLoading] = useState(false)
   const [loadingSources, setLoadingSources] = useState(true)
   const [schema, setSchema] = useState<Schema | null>(null)
@@ -107,6 +110,16 @@ function GenerateGraphContent() {
   const successMessageTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const chatRef = useRef<SchemaChatRef>(null)
   const { toast } = useToast()
+
+  // Check for required permissions
+  useEffect(() => {
+    // Check if user has the required permissions to save schemas
+    // User needs kginsights:write permission to save schemas
+    if (user && user.permissions) {
+      const hasWritePermission = user.permissions.includes("kginsights:write")
+      setHasRequiredPermissions(hasWritePermission)
+    }
+  }, [user])
 
   // Fetch data sources on component mount
   useEffect(() => {
@@ -763,36 +776,43 @@ function GenerateGraphContent() {
               </motion.div>
               
               <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.98 }}>
-                <Button
-                  className={`flex items-center gap-2 shadow-md transition-all duration-300 hover:shadow-lg px-6 h-11 font-medium
-                    ${savingStatus === 'error' ? 'bg-red-500 hover:bg-red-600 text-white' : 
-                      savingStatus === 'success' ? 'bg-green-500 hover:bg-green-600 text-white' : 
-                      'bg-accent hover:bg-accent/90 text-accent-foreground'}`}
-                  onClick={handleSaveSchema}
-                  disabled={loading || !schema || savingStatus === 'saving'}
-                >
-                  {savingStatus === 'saving' ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      Saving Schema...
-                    </>
-                  ) : savingStatus === 'success' ? (
-                    <>
-                      <CheckCircle className="w-5 h-5" />
-                      Saved!
-                    </>
-                  ) : savingStatus === 'error' ? (
-                    <>
-                      <XCircle className="w-5 h-5" />
-                      Failed
-                    </>
-                  ) : (
-                    <>
-                      <Save className="w-5 h-5" />
-                      Save Schema
-                    </>
+                <div className="relative group">
+                  <Button
+                    className={`flex items-center gap-2 shadow-md transition-all duration-300 hover:shadow-lg px-6 h-11 font-medium
+                      ${savingStatus === 'error' ? 'bg-red-500 hover:bg-red-600 text-white' : 
+                        savingStatus === 'success' ? 'bg-green-500 hover:bg-green-600 text-white' : 
+                        'bg-accent hover:bg-accent/90 text-accent-foreground'}`}
+                    onClick={handleSaveSchema}
+                    disabled={loading || !schema || savingStatus === 'saving' || !hasRequiredPermissions}
+                  >
+                    {savingStatus === 'saving' ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        Saving Schema...
+                      </>
+                    ) : savingStatus === 'success' ? (
+                      <>
+                        <CheckCircle className="w-5 h-5" />
+                        Saved!
+                      </>
+                    ) : savingStatus === 'error' ? (
+                      <>
+                        <XCircle className="w-5 h-5" />
+                        Failed
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-5 h-5" />
+                        Save Schema
+                      </>
+                    )}
+                  </Button>
+                  {!hasRequiredPermissions && (
+                    <div className="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 w-64 bg-black/80 text-white text-xs rounded p-2 hidden group-hover:block z-50">
+                      You need kginsights:write permission to save schemas.
+                    </div>
                   )}
-                </Button>
+                </div>
               </motion.div>
             </div>
           </div>
