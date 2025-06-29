@@ -25,7 +25,8 @@ import {
   Brain,
   Zap,
   Clock,
-  Factory
+  Factory,
+  Sparkles
 } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
 import { useDjinniStore } from "@/lib/djinni/store"
@@ -215,7 +216,7 @@ export function MainSidebar() {
   
   // Effect to keep track of model changes for dashboard filtering
   useEffect(() => {
-    // Function to check and update the active model
+    // Function to check and update the active model - defined inside the effect
     const checkActiveModel = () => {
       if (typeof window !== 'undefined') {
         const localModel = localStorage.getItem('djinni_active_model');
@@ -257,25 +258,8 @@ export function MainSidebar() {
     };
   }, [djinniStore, activeModelState]);
   
-  // Get submenu items based on active model
-  const getActiveModelSubmenu = (model: string) => {
-    let submenuItems = [
-      { 
-        label: "KGraff Insights", 
-        href: "/djinni/kgraph-insights", 
-        icon: NetworkIcon,
-        // Using djinni:read instead of kginsights:read so it's always visible in Djinni menu
-        requiredPermission: "djinni:read" 
-      }
-    ]
-    if (model === "factory_astro") {
-      submenuItems.push({ label: "Factory Astro", href: "/djinni/factory-astro", icon: Bot, requiredPermission: "djinni:read" });
-    } else if (model === "churn_astro") {
-      submenuItems.push({ label: "Churn Astro", href: "/djinni/churn-astro", icon: Bot, requiredPermission: "djinni:read" });
-    } 
-    return submenuItems;
-  };
-  
+  // Removed getActiveModelSubmenu function as we're no longer using submenu items for Djinni Assistant
+
   // Define all possible command centers
   const factoryDashboard: MenuSection = {
     label: "Factory Dashboard",
@@ -350,9 +334,6 @@ export function MainSidebar() {
     return user.permissions.includes(item.requiredPermission as string)
   })
   
-  // Prepare submenu items based on the active model
-  const submenuItems = getActiveModelSubmenu(activeModelState);
-  
   // Check for changes in localStorage and Zustand store
   useEffect(() => {
     const checkActiveModel = () => {
@@ -396,16 +377,14 @@ export function MainSidebar() {
     };
   }, [djinniStore, activeModelState]);
   
-  // Using submenuItems already generated earlier
-
+  // Define all possible djinni items
   const allDjinni: MenuSection[] = [
     {
       label: "Djinni Assistant",
       icon: Bot,
-      href: "/djinni",
+      href: "/djinni/assistant",
       key: "djinni-assistant",
-      requiredPermission: "djinni:read",
-      subItems: submenuItems
+      requiredPermission: "djinni:read"
     },
     {
       label: "Conversations",
@@ -896,10 +875,10 @@ export function MainSidebar() {
               <User size={16} />
             </div>
             
-            {!collapsed && (
+            {!collapsed && user && (
               <div className="flex-1 overflow-hidden">
-                <p className="text-sm font-medium truncate">{user.username}</p>
-                <p className="text-xs text-muted-foreground truncate capitalize">{user.role}</p>
+                <p className="text-sm font-medium truncate">{user?.username}</p>
+                <p className="text-xs text-muted-foreground truncate capitalize">{user?.role}</p>
               </div>
             )}
             

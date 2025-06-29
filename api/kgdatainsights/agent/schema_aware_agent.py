@@ -12,6 +12,18 @@ from uuid import uuid4
 from typing import Dict, Any, Optional, Callable
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
+# Configure LangChain detailed logging
+# This enables verbose output from LangChain components
+import langchain
+langchain.verbose = True
+
+# Set up detailed logging for LangChain components
+langchain_logger = logging.getLogger("langchain")
+langchain_logger.setLevel(logging.DEBUG)
+langchain_handler = logging.StreamHandler()
+langchain_handler.setLevel(logging.DEBUG)
+langchain_logger.addHandler(langchain_handler)
+
 from dotenv import load_dotenv
 from langchain.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_neo4j import (
@@ -19,6 +31,7 @@ from langchain_neo4j import (
     Neo4jGraph,
     GraphCypherQAChain
 )
+from langchain.callbacks import StdOutCallbackHandler, StreamingStdOutCallbackHandler
 
 from .cache import Cache
 from .cache import cacheable
@@ -147,8 +160,8 @@ class SchemaAwareGraphAssistant:
             
             # Initialize LLM
             self.llm = LLMProvider.get_llm(
-                provider_name=LLMConstants.Providers.OPENAI, 
-                model_name=LLMConstants.OpenAIModels.DEFAULT, 
+                provider_name=LLMConstants.Providers.ANTHROPIC, 
+                model_name=LLMConstants.AnthropicModels.DEFAULT, 
                 temperature=0.0
                 # Note: request_timeout is handled separately in _invoke_llm_with_retry
             )
@@ -178,18 +191,69 @@ class SchemaAwareGraphAssistant:
                 database=self.connection_params.get("database", "neo4j")
             )
             
+            # Wrap Neo4jChatMessageHistory methods to handle bookmark timeout issues
+            original_add_message = self.history.add_message
+            
+            def add_message_with_retry(message):
+                try:
+                    return original_add_message(message)
+                except Exception as e:
+                    if "BookmarkTimeout" in str(e) or "not up to the requested version" in str(e) or "AuthenticationRateLimit" in str(e):
+                        debug_log("Handling error in chat history: " + str(e), "DEBUG")
+                        # Just log the error but don't fail the whole operation
+                        # This ensures the conversation can continue even if history persistence fails
+                        return None
+                    raise e
+            
+            # Replace the add_message method with our wrapped version
+            self.history.add_message = add_message_with_retry
+            
             # Initialize QA chain with Neo4j optimizations using modular LangChain pattern
             debug_log(f"Initializing GraphCypherQAChain using langchain_community pattern", "DEBUG")
             
             # Use GraphCypherQAChain from langchain_neo4j
             
             # Create a structured chain configuration dictionary
+            # Create a wrapper for the graph.query method to handle bookmark timeout issues
+            original_query = self.graph.query
+            
+            def query_with_no_bookmarks(*args, **kwargs):
+                try:
+                    return original_query(*args, **kwargs)
+                except Exception as e:
+                    if "BookmarkTimeout" in str(e) or "not up to the requested version" in str(e):
+                        debug_log("Handling bookmark timeout error by retrying without bookmarks", "DEBUG")
+                        # Get access to the underlying driver and create a new session without bookmarks
+                        try:
+                            if hasattr(self.graph, '_driver'):
+                                # Use direct cypher execution with no bookmarks
+                                query = args[0] if args else kwargs.get('query')
+                                with self.graph._driver.session(database=self.graph._database) as session:
+                                    result = session.run(query)
+                                    return [dict(record) for record in result]
+                        except Exception as inner_e:
+                            debug_log(f"Failed to execute query without bookmarks: {inner_e}", "ERROR")
+                    # Re-raise the original exception if we couldn't handle it
+                    raise e
+            
+            # Replace the query method with our wrapped version
+            self.graph.query = query_with_no_bookmarks
+            
+            # Create detailed callback handlers for tracking all steps in the chain
+            handlers = [
+                StdOutCallbackHandler(),  # Standard output logging
+                StreamingStdOutCallbackHandler()  # Real-time streaming output
+            ]
+            
+            debug_log("Setting up GraphCypherQAChain with detailed logging and callbacks", "DEBUG")
+            
             chain_config = {
                 "llm": self.llm,
                 "graph": self.graph,
                 "verbose": True,
                 "return_intermediate_steps": True,
-                "allow_dangerous_requests": True
+                "allow_dangerous_requests": True,
+                "callbacks": handlers
             }
             '''
             # Ensure schema is properly parsed into a dict
@@ -1455,6 +1519,15 @@ class SchemaAwareGraphAssistant:
         start_time = time.time()
         debug_log(f"Processing query: {question}", "INFO")
         
+        # Create handlers for this specific query execution
+        query_handlers = [
+            StdOutCallbackHandler(),
+            StreamingStdOutCallbackHandler()
+        ]
+        
+        debug_log("=== DETAILED GRAPHCYPHERQACHAIN EXECUTION LOG ====", "INFO")
+        debug_log(f"Question: {question}", "INFO")
+        
         # Check if initialization is complete
         if not self.initialization_complete:
             # Wait for initialization to complete (with timeout)
@@ -1480,88 +1553,91 @@ class SchemaAwareGraphAssistant:
             # Try the direct approach with our custom prompts
             try:
                 # Step 1: Generate Cypher query using the cypher_prompt
-                print("DEBUG: Generating Cypher query")
+                debug_log("=== GENERATING CYPHER QUERY ====", "INFO")
                 cypher_inputs = {"query": question}
-                if hasattr(self.chain, "llm") and hasattr(self.chain, "cypher_prompt"):
-                    # Use the retry-enabled LLM invocation
-                    generated_cypher = self._invoke_llm_with_retry(
-                        self.chain.llm,
-                        self.chain.cypher_prompt.format(**cypher_inputs),
-                        timeout=30  # Standard timeout for Cypher generation
-                    )
-                    print(f"DEBUG: Generated Cypher: {generated_cypher}")
-                    
-                    # Step 2: Extract valid Cypher query with retry
-                    clean_cypher = self._extract_valid_cypher_with_retry(generated_cypher)
-                    
-                    if clean_cypher is None:
-                        print("DEBUG: Failed to extract a valid Cypher query after multiple retries")
-                        return {"result": "I couldn't generate a valid query for your question. Could you please rephrase or provide more specific details?"}
-                    
-                    print(f"DEBUG: Clean Cypher: {clean_cypher}")
-                    
-                    # Step 3: Execute the Cypher query
-                    print("DEBUG: Executing Cypher query")
-                    context = self.graph.query(clean_cypher)
-                    print(f"DEBUG: Query result: {context}")
-                    
-                    # Step 4: Generate the final answer using the qa_prompt
-                    qa_inputs = {"query": question, "context": context}
-                    if hasattr(self.chain, "qa_llm") and hasattr(self.chain, "qa_prompt"):
-                        print("DEBUG: Generating answer using QA prompt")
-                        # Use the retry-enabled QA response generation with validation
-                        try:
-                            answer = self._generate_qa_response_with_retry(
-                                self.chain.qa_llm,
-                                self.chain.qa_prompt.format(**qa_inputs),
-                                timeout=30  # Standard timeout for QA generation
-                            )
-                            result = {"result": answer}
-                        except (TimeoutError, ConnectionError, Exception) as e:
-                            print(f"Failed to generate answer after retries: {str(e)}")
-                            return {"result": f"I retrieved data from the database but had trouble generating a response. Here's the raw data: {str(context)}"}
-                    else:
-                        result = {"result": f"Query results: {context}"}
-                else:
-                    # Fallback to standard chain invocation
-                    print("DEBUG: Falling back to standard chain invocation")
+                
+                # Add detailed logging for the standard chain invocation
+                debug_log(f"Invoking chain with question: {question}", "DEBUG")
+                chain_start_time = time.time()
+                
+                # Add timeout handling for chain invocation
+                def invoke_chain_with_timeout():
+                    return self.chain.invoke({'question': question, 'query': question}, callbacks=query_handlers)
+                
+                # Set timeout for chain invocation (60 seconds)
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    # Submit the chain invocation to the executor with a timeout
+                    future = executor.submit(invoke_chain_with_timeout)
                     try:
-                        result = self.chain.invoke({'question': question, 'query': question})
-                    except Exception as chain_error:
-                        debug_log(f"Standard chain invocation failed: {str(chain_error)}", "DEBUG")
-                        # Check if error is related to None Cypher query
-                        if "Invalid input 'None'" in str(chain_error):
-                            return {"result": "Not able to prepare valid queries. Please update your question with specific data attributes or relationships."}
-                        # Otherwise, raise the error to be caught by the outer try-except
-                        raise
-            except Exception as e:
-                debug_log(f"Direct approach failed: {str(e)}", "ERROR")
-                debug_log(f"{traceback.format_exc()}", "DEBUG")
-                # Return an informative error message instead of using hardcoded fallback queries
-                result = {
-                    "result": "I encountered an error processing your query. The database might be unavailable or your question might be too complex. Could you please try a simpler question or check if the database is accessible?"
-                }
+                        debug_log("Waiting for chain response (timeout: 60s)...", "INFO")
+                        result = future.result(timeout=60)
+                        chain_time = time.time() - chain_start_time
+                        debug_log(f"Chain execution completed in {chain_time:.2f} seconds", "INFO")
+                        debug_log(f"Raw chain result: {json.dumps(result, default=str)[:500]}{'...' if len(json.dumps(result, default=str)) > 500 else ''}", "DEBUG")
+                    except concurrent.futures.TimeoutError:
+                        debug_log("Chain invocation timed out after 60 seconds", "ERROR")
+                        
+                        # Force close the Neo4j connection to free up resources
+                        try:
+                            if hasattr(self, 'graph') and self.graph is not None:
+                                debug_log("Forcefully closing Neo4j connection due to timeout", "WARNING")
+                                self.graph.close()
+                                debug_log("Neo4j connection closed successfully", "INFO")
+                                
+                                # Reinitialize the connection for future queries
+                                connection_params = self._get_connection_params()
+                                self.graph = Neo4jGraph(
+                                    url=connection_params.get("uri"),
+                                    username=connection_params.get("username"),
+                                    password=connection_params.get("password"),
+                                    database=connection_params.get("database", "neo4j")
+                                )
+                                debug_log("Neo4j connection reinitialized", "INFO")
+                        except Exception as close_error:
+                            debug_log(f"Error while closing Neo4j connection: {str(close_error)}", "ERROR")
+                        
+                        # Return immediately with a timeout message instead of raising an exception
+                        return {"result": "The query execution timed out. This might be due to a complex query or Neo4j database connectivity issues. Please try a simpler query or check your database connection."}
+                        
+                # Additional check for empty or None result
+                if not result:
+                    debug_log("Chain returned empty result", "WARNING")
+                    raise ValueError("Chain returned empty result")
+            except Exception as chain_error:
+                debug_log(f"Standard chain invocation failed: {str(chain_error)}", "DEBUG")
+                # Check if error is related to None Cypher query
+                if "Invalid input 'None'" in str(chain_error):
+                    return {"result": "Not able to prepare valid queries. Please update your question with specific data attributes or relationships."}
+                # Otherwise, raise the error to be caught by the outer try-except
+                raise
             
-            query_time = time.time() - start_time
-            debug_log(f"Query completed in {query_time:.2f} seconds", "INFO")
+            # Add the conversation to history
+            try:
+                if hasattr(self, 'history'):
+                    debug_log("Adding conversation to history", "DEBUG")
+                    self.history.add_user_message(question)
+                    self.history.add_ai_message(result["result"])
+                    debug_log("Successfully added conversation to history", "DEBUG")
+            except Exception as history_error:
+                debug_log(f"Failed to add conversation to history: {str(history_error)}", "ERROR")
+                debug_log(traceback.format_exc(), "DEBUG")
             
-            # Persist conversation
-            debug_log(f"Persisting conversation: {result}", "DEBUG")
-            self.history.add_user_message(question)
-            self.history.add_ai_message(result["result"])
-            
+            # Return the final result
+            elapsed_time = time.time() - start_time
+            debug_log(f"Query processed in {elapsed_time:.2f} seconds", "INFO")
+            debug_log("=== END OF GRAPHCYPHERQACHAIN EXECUTION ====", "INFO")
             return result
-        
+            
         except Exception as e:
-            print(f"Research error: {str(e)}")
-            print(f"Full error traceback: {traceback.format_exc()}")
+            debug_log(f"Research error: {str(e)}", "ERROR")
+            debug_log(f"Full error traceback: {traceback.format_exc()}", "DEBUG")
             return {"result": f"An error occurred while processing your query: {str(e)}. Please try again or contact support."}
 
     def __del__(self):
         # Close the cache connection when the object is garbage collected
         if hasattr(self, 'cache'):
             self.cache.close()
-
 # Singleton-like behavior with dict of assistants by db_id
 _assistants = {}
 _lock = threading.Lock()
@@ -1688,7 +1764,7 @@ def get_schema_aware_assistant(db_id: str, schema_id: str, schema: str, session_
             if key not in _assistants:
                 # Log connection attempt for debugging
                 print(f"DEBUG: Creating new schema-aware assistant for {db_id} with schema {schema_id}")
-                print(f"DEBUG: Schema: {schema}")
+                #print(f"DEBUG: Schema: {schema}")
                 _assistants[key] = SchemaAwareGraphAssistant(db_id, schema_id, schema, session_id)
                 print(f"DEBUG: Successfully created assistant for {db_id}")
             return _assistants[key]
