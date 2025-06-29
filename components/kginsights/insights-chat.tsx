@@ -370,6 +370,64 @@ export default function InsightsChat() {
     }
   }
 
+  // Function to check if message is a simple greeting or farewell
+  const isGreetingOrFarewell = (text: string): boolean => {
+    // Normalize text: trim, lowercase, and remove punctuation
+    const normalizedText = text.trim().toLowerCase().replace(/[.,!?;:]/g, '');
+    
+    // Check if the message is too short (likely a greeting)
+    if (normalizedText.length <= 5) {
+      // Very short messages are likely greetings
+      console.log("Detected greeting (short text):", normalizedText);
+      return true;
+    }
+    
+    // List of common greetings and farewells
+    const greetings = [
+      'hi', 'hello', 'hey', 'howdy', 'hiya', 'morning', 'afternoon', 'evening',
+      'greetings', 'sup', 'whats up', 'yo', 'hola', 'bonjour', 'ciao', 'namaste',
+      'bye', 'goodbye', 'see you', 'farewell', 'later', 'take care', 'cheers', 'adios',
+      'have a good day', 'have a nice day', 'good night', 'catch you later', 'ttyl',
+      'thanks', 'thank you', 'thx', 'ty', 'welcome', 'how are you', 'what can you do',
+      'help', 'test', 'testing', 'who are you', 'what are you', 'how do you work'
+    ];
+    
+    // Split the normalized text into words
+    const words = normalizedText.split(/\s+/);
+    
+    // If the message is just 1-3 words, check if any word is a greeting
+    if (words.length <= 3) {
+      for (const word of words) {
+        if (greetings.includes(word)) {
+          console.log("Detected greeting (word match):", word);
+          return true;
+        }
+      }
+      
+      // Check for common greeting phrases
+      if (greetings.some(greeting => normalizedText.includes(greeting))) {
+        console.log("Detected greeting (phrase match):", normalizedText);
+        return true;
+      }
+    }
+    
+    // For longer messages, check if they start with greetings
+    for (const greeting of greetings) {
+      if (normalizedText.startsWith(greeting + ' ')) {
+        console.log("Detected greeting (starts with):", greeting);
+        return true;
+      }
+    }
+    
+    // Check for exact matches with greetings
+    if (greetings.includes(normalizedText)) {
+      console.log("Detected greeting (exact match):", normalizedText);
+      return true;
+    }
+    
+    return false;
+  };
+
   // Handle sending a message
   const handleSendMessage = async (message: string) => {
     if (!message.trim() || loading) return
@@ -386,6 +444,26 @@ export default function InsightsChat() {
     
     // Add the user's message to the chat
     setMessages(prev => [...prev, newUserMessage])
+    
+    // Check if the message is a greeting or farewell
+    if (isGreetingOrFarewell(message)) {
+      console.log("Detected greeting/farewell, blocking backend call:", message);
+      
+      // Create assistant response without calling backend
+      const assistantMessage: ChatMessage = {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        content: "I'm your Knowledge Graph Assistant. Please ask me specific questions about your knowledge graph data. For example, you could ask about relationships between entities, query for specific data points, or explore patterns in your graph.",
+        timestamp: new Date(),
+      }
+      
+      // Add the assistant's response to the chat
+      setMessages(prev => [...prev, assistantMessage])
+      
+      // Reset loading state
+      setLoading(false)
+      return
+    }
     
     // Clear suggestions and autocomplete
     setShowSuggestions(false)

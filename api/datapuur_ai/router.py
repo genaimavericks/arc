@@ -2360,8 +2360,33 @@ async def execute_script(
         )
         
     except Exception as e:
-        logger.error(f"Error executing script: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        db.rollback()
+        error_traceback = traceback.format_exc()
+        
+        # Log detailed error information
+        logger.error(f"[BACKGROUND JOB] Error executing script: {str(e)}")
+        logger.error(f"[BACKGROUND JOB] Error traceback: {error_traceback}")
+        
+        # Log additional context
+        script_length = len(request.script) if request.script else 0
+        logger.error(f"[BACKGROUND JOB] Script length: {script_length} characters")
+        logger.error(f"[BACKGROUND JOB] Job type: {request.job_type}")
+        logger.error(f"[BACKGROUND JOB] Session ID: {request.session_id}")
+        logger.error(f"[BACKGROUND JOB] Plan ID: {request.plan_id}")
+        logger.error(f"[BACKGROUND JOB] File path: {file_path if 'file_path' in locals() else 'Not determined yet'}")
+        
+        # Include more details in the HTTP exception
+        error_detail = {
+            "message": f"Script execution failed: {str(e)}",
+            "error_type": type(e).__name__,
+            "context": {
+                "job_type": request.job_type,
+                "session_id": request.session_id,
+                "plan_id": request.plan_id
+            }
+        }
+        
+        raise HTTPException(status_code=500, detail=error_detail)
 
 
 @router.get("/jobs/{job_id}", response_model=JobStatus)
@@ -2407,17 +2432,20 @@ async def execute_script_background(job_id: str, script: str, file_path: str, jo
         job.started_at = datetime.utcnow()
         db.commit()
         
-        # Execute script
+        # Execute script with job_id for context and logging
         if job_type == "transformation":
+            logger.info(f"[BACKGROUND JOB {job_id}] Executing transformation script")
             result = await script_executor.execute_transformation(
                 script=script,
                 input_file=file_path,
                 job_id=job_id
             )
         else:
+            logger.info(f"[BACKGROUND JOB {job_id}] Executing regular script")
             result = await script_executor.execute_script(
                 script=script,
-                input_file_path=file_path
+                input_file_path=file_path,
+                job_id=job_id  # Pass job_id for context and logging
             )
         
         # Update job with results

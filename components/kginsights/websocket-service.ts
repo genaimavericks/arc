@@ -1,6 +1,7 @@
 /**
  * WebSocket Service for KG Insights
  * Handles WebSocket connections to the backend for real-time data
+ * Includes token expiration handling to redirect to login page
  */
 
 export type WebSocketMessageHandler = (message: any) => void;
@@ -10,6 +11,7 @@ export interface WebSocketServiceOptions {
   autoReconnect?: boolean;
   reconnectInterval?: number;
   maxReconnectAttempts?: number;
+  onAuthError?: () => void;
 }
 
 export enum ConnectionStatus {
@@ -17,7 +19,8 @@ export enum ConnectionStatus {
   CONNECTED = 'connected',
   DISCONNECTED = 'disconnected',
   RECONNECTING = 'reconnecting',
-  FAILED = 'failed'
+  FAILED = 'failed',
+  AUTH_ERROR = 'auth_error'
 }
 
 export class WebSocketService {
@@ -30,12 +33,14 @@ export class WebSocketService {
   private messageHandlers: Map<string, WebSocketMessageHandler[]> = new Map();
   private statusChangeHandlers: ((status: ConnectionStatus) => void)[] = [];
   private connectionStatus: ConnectionStatus = ConnectionStatus.DISCONNECTED;
+  private onAuthError?: () => void;
 
   constructor(options: WebSocketServiceOptions) {
     this.url = options.url;
     this.autoReconnect = options.autoReconnect ?? true;
     this.reconnectInterval = options.reconnectInterval ?? 3000;
     this.maxReconnectAttempts = options.maxReconnectAttempts ?? 5;
+    this.onAuthError = options.onAuthError;
   }
 
   /**
@@ -77,9 +82,32 @@ export class WebSocketService {
         this.socket.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            const { type } = data;
+            const { type, content } = data;
             
             console.log(`WebSocket received message of type: ${type}`, data);
+            
+            // Check for authentication errors
+            if (type === 'error' && typeof content === 'string' && 
+                (content.includes('Authentication failed') || 
+                 content.includes('Signature has expired') || 
+                 content.includes('Could not validate credentials'))) {
+              console.error('WebSocket authentication error:', content);
+              this.updateConnectionStatus(ConnectionStatus.AUTH_ERROR);
+              
+              // Call the auth error handler if provided
+              if (this.onAuthError) {
+                console.log('Calling onAuthError handler to redirect to login page');
+                this.onAuthError();
+              } else {
+                console.warn('No onAuthError handler provided, cannot redirect to login page');
+                // Fallback: redirect to login page directly
+                if (typeof window !== 'undefined') {
+                  console.log('Redirecting to login page due to token expiration');
+                  window.location.href = '/login?expired=true';
+                }
+              }
+              return;
+            }
             
             if (type && this.messageHandlers.has(type)) {
               const handlers = this.messageHandlers.get(type) || [];
