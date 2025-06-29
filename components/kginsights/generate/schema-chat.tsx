@@ -122,6 +122,64 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
 
+  // Function to check if message is a simple greeting or farewell
+  const isGreetingOrFarewell = (text: string): boolean => {
+    // Normalize text: trim, lowercase, and remove punctuation
+    const normalizedText = text.trim().toLowerCase().replace(/[.,!?;:]/g, '');
+    
+    // Check if the message is too short (likely a greeting)
+    if (normalizedText.length <= 5) {
+      // Very short messages are likely greetings
+      console.log("Detected greeting (short text):", normalizedText);
+      return true;
+    }
+    
+    // List of common greetings and farewells
+    const greetings = [
+      'hi', 'hello', 'hey', 'howdy', 'hiya', 'morning', 'afternoon', 'evening',
+      'greetings', 'sup', 'whats up', 'yo', 'hola', 'bonjour', 'ciao', 'namaste',
+      'bye', 'goodbye', 'see you', 'farewell', 'later', 'take care', 'cheers', 'adios',
+      'have a good day', 'have a nice day', 'good night', 'catch you later', 'ttyl',
+      'thanks', 'thank you', 'thx', 'ty', 'welcome', 'how are you', 'what can you do',
+      'help', 'test', 'testing', 'who are you', 'what are you', 'how do you work'
+    ];
+    
+    // Split the normalized text into words
+    const words = normalizedText.split(/\s+/);
+    
+    // If the message is just 1-3 words, check if any word is a greeting
+    if (words.length <= 3) {
+      for (const word of words) {
+        if (greetings.includes(word)) {
+          console.log("Detected greeting (word match):", word);
+          return true;
+        }
+      }
+      
+      // Check for common greeting phrases
+      if (greetings.some(greeting => normalizedText.includes(greeting))) {
+        console.log("Detected greeting (phrase match):", normalizedText);
+        return true;
+      }
+    }
+    
+    // For longer messages, check if they start with greetings
+    for (const greeting of greetings) {
+      if (normalizedText.startsWith(greeting + ' ')) {
+        console.log("Detected greeting (starts with):", greeting);
+        return true;
+      }
+    }
+    
+    // Check for exact matches with greetings
+    if (greetings.includes(normalizedText)) {
+      console.log("Detected greeting (exact match):", normalizedText);
+      return true;
+    }
+    
+    return false;
+  };
+
   // Handle sending message
   const handleSendMessage = async () => {
     console.log("handleSendMessage called with dataset type:", selectedDatasetType);
@@ -157,6 +215,26 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
     
     // Update messages with user message
     setMessages((prevMessages) => [...prevMessages, userMessage])
+    
+    // Check if the message is a greeting or farewell
+    if (isGreetingOrFarewell(message)) {
+      console.log("Detected greeting/farewell, blocking backend call:", message);
+      
+      // Add assistant response without sending to backend
+      const assistantMessage: ChatMessage = {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        content: "I'm your Schema Generation Assistant. To help you create an effective knowledge graph schema, please describe your dataset and what you want to model. For example, you could say 'I have customer transaction data and want to model relationships between customers and products' or 'I need a schema for my healthcare dataset that connects patients, treatments, and outcomes.' The more details you provide about your data and goals, the better schema I can generate.",
+        timestamp: new Date()
+      }
+      
+      // Update messages with assistant response
+      setMessages((prevMessages) => [...prevMessages, assistantMessage])
+      
+      // Reset loading state
+      setLoading(false)
+      return
+    }
     
     // Clear the input
     setMessage("")
