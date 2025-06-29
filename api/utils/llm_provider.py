@@ -37,7 +37,7 @@ class LLMConstants:
         ANTHROPIC = "anthropic"
 
     class OpenAIModels:
-        DEFAULT = "gpt-4"
+        DEFAULT = "gpt-4.1"
         # Add other OpenAI model constants here if needed
         # e.g., GPT_4_TURBO = "gpt-4-turbo"
 

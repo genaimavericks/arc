@@ -160,8 +160,8 @@ class SchemaAwareGraphAssistant:
             
             # Initialize LLM
             self.llm = LLMProvider.get_llm(
-                provider_name=LLMConstants.Providers.ANTHROPIC, 
-                model_name=LLMConstants.AnthropicModels.DEFAULT, 
+                provider_name=LLMConstants.Providers.OPENAI, 
+                model_name=LLMConstants.OpenAIModels.DEFAULT, 
                 temperature=0.0
                 # Note: request_timeout is handled separately in _invoke_llm_with_retry
             )
