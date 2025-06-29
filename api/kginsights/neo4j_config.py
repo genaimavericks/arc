@@ -18,7 +18,7 @@ DEFAULT_CONFIG = {
     "default_graph": {
         "username": "neo4j",
         "database": "neo4j",
-        "uri": "neo4j://localhost:7687",
+        "uri": "bolt://localhost:7687",
         "password": "neo4j123"
     }
 }

@@ -25,7 +25,8 @@ import {
   Brain,
   Zap,
   Clock,
-  Factory
+  Factory,
+  Sparkles
 } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
 import { useDjinniStore } from "@/lib/djinni/store"
@@ -215,7 +216,7 @@ export function MainSidebar() {
   
   // Effect to keep track of model changes for dashboard filtering
   useEffect(() => {
-    // Function to check and update the active model
+    // Function to check and update the active model - defined inside the effect
     const checkActiveModel = () => {
       if (typeof window !== 'undefined') {
         const localModel = localStorage.getItem('djinni_active_model');
@@ -257,25 +258,8 @@ export function MainSidebar() {
     };
   }, [djinniStore, activeModelState]);
   
-  // Get submenu items based on active model
-  const getActiveModelSubmenu = (model: string) => {
-    let submenuItems = [
-      { 
-        label: "KGraff Insights", 
-        href: "/djinni/kgraph-insights", 
-        icon: NetworkIcon,
-        // Using djinni:read instead of kginsights:read so it's always visible in Djinni menu
-        requiredPermission: "djinni:read" 
-      }
-    ]
-    if (model === "factory_astro") {
-      submenuItems.push({ label: "Factory Astro", href: "/djinni/factory-astro", icon: Bot, requiredPermission: "djinni:read" });
-    } else if (model === "churn_astro") {
-      submenuItems.push({ label: "Churn Astro", href: "/djinni/churn-astro", icon: Bot, requiredPermission: "djinni:read" });
-    } 
-    return submenuItems;
-  };
-  
+  // Removed getActiveModelSubmenu function as we're no longer using submenu items for Djinni Assistant
+
   // Define all possible command centers
   const factoryDashboard: MenuSection = {
     label: "Factory Dashboard",
@@ -350,9 +334,6 @@ export function MainSidebar() {
     return user.permissions.includes(item.requiredPermission as string)
   })
   
-  // Prepare submenu items based on the active model
-  const submenuItems = getActiveModelSubmenu(activeModelState);
-  
   // Check for changes in localStorage and Zustand store
   useEffect(() => {
     const checkActiveModel = () => {
@@ -396,16 +377,14 @@ export function MainSidebar() {
     };
   }, [djinniStore, activeModelState]);
   
-  // Using submenuItems already generated earlier
-
+  // Define all possible djinni items
   const allDjinni: MenuSection[] = [
     {
       label: "Djinni Assistant",
       icon: Bot,
-      href: "/djinni",
+      href: "/djinni/assistant",
       key: "djinni-assistant",
-      requiredPermission: "djinni:read",
-      subItems: submenuItems
+      requiredPermission: "djinni:read"
     },
     {
       label: "Conversations",
@@ -431,12 +410,12 @@ export function MainSidebar() {
       requiredPermission: "datapuur:read",
       key: "datapuur", // Add a key property for consistent identification
       subItems: [
-        { label: "Dashboard", href: "/datapuur", icon: LayoutDashboard },
-        { label: "Ingestion", href: "/datapuur/ingestion", icon: FileInput },
-        { label: "AI Profile", href: "/datapuur/ai-profile", icon: Brain },
-        { label: "AI Transformation", href: "/datapuur/ai-transformation", icon: Zap },
-        { label: "Data Catalog", href: "/datapuur/data-catalog", icon: Database },
-        { label: "Export", href: "/datapuur/export", icon: Download }
+        { label: "Dashboard", href: "/datapuur", icon: LayoutDashboard, requiredPermission: "datapuur:read" },
+        { label: "Ingestion", href: "/datapuur/ingestion", icon: FileInput, requiredPermission: "datapuur:write" },
+        { label: "AI Profile", href: "/datapuur/ai-profile", icon: Brain, requiredPermission: "datapuur:write" },
+        { label: "AI Transformation", href: "/datapuur/ai-transformation", icon: Zap, requiredPermission: "datapuur:write" },
+        { label: "Data Catalog", href: "/datapuur/data-catalog", icon: Database, requiredPermission: "datapuur:read" },
+        { label: "Export", href: "/datapuur/export", icon: Download, requiredPermission: "datapuur:write" }
       ]
     },
     {
@@ -446,10 +425,10 @@ export function MainSidebar() {
       requiredPermission: "kginsights:read",
       key: "k-graff", // Add a key property for consistent identification
       subItems: [
-        { label: "KGraff Dashboard", href: "/kginsights/dashboard", icon: LayoutDashboard },
-        { label: "Generate Graph", href: "/kginsights/generate", icon: GitBranch },
-        { label: "Manage KGraff", href: "/kginsights/manage", icon: Settings },
-        { label: "KGraff Insights", href: "/kginsights/insights", icon: MessageSquare }
+        { label: "KGraff Dashboard", href: "/kginsights/dashboard", icon: LayoutDashboard, requiredPermission: "kginsights:read" },
+        { label: "Generate Graph", href: "/kginsights/generate", icon: GitBranch, requiredPermission: "kginsights:write" },
+        { label: "Manage KGraff", href: "/kginsights/manage", icon: Settings, requiredPermission: "kginsights:write" },
+        { label: "KGraff Insights", href: "/kginsights/insights", icon: MessageSquare, requiredPermission: "kginsights:read" }
       ]
     }
   ]
@@ -838,7 +817,16 @@ export function MainSidebar() {
                   
                   {Boolean(expandedSections[section.key || section.label.toLowerCase()]) && !collapsed && (
                     <div className="ml-4 space-y-1 border-l border-border pl-3">
-                      {section.subItems?.map((item) => (
+                      {section.subItems?.filter(item => {
+                        // If no required permission is specified, show the item
+                        if (!item.requiredPermission) return true;
+                        
+                        // If user doesn't exist or has no permissions, don't show the item
+                        if (!user || !user.permissions) return false;
+                        
+                        // Show the item if user has the required permission
+                        return user.permissions.includes(item.requiredPermission);
+                      }).map((item) => (
                         <SidebarMenuItem
                           key={item.href}
                           href={item.href}
@@ -896,10 +884,10 @@ export function MainSidebar() {
               <User size={16} />
             </div>
             
-            {!collapsed && (
+            {!collapsed && user && (
               <div className="flex-1 overflow-hidden">
-                <p className="text-sm font-medium truncate">{user.username}</p>
-                <p className="text-xs text-muted-foreground truncate capitalize">{user.role}</p>
+                <p className="text-sm font-medium truncate">{user?.username}</p>
+                <p className="text-xs text-muted-foreground truncate capitalize">{user?.role}</p>
               </div>
             )}
             

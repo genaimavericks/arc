@@ -361,7 +361,7 @@ async def record_query_history(schema_id: str, response: QueryResponse):
     except Exception as e:
         print(f"Error saving query history: {str(e)}")
 
-@router.get("/{schema_id}/query/history", response_model=QueryHistoryResponse)
+@router.get("/{schema_id}/history", response_model=QueryHistoryResponse)
 async def get_query_history(
     schema_id: str, 
     limit: int = Query(5, ge=1, le=5),  # Enforcing a hard limit of 5

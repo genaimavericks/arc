@@ -268,14 +268,10 @@ export default function AIProfilePage() {
           recreate: profiles.length > 0  // Flag to indicate recreation
         })
       })
-
-      if (profile.status === 403) {
-        throw new Error('Failed to create profile. You do not have required permissions.')
-      }
       
-      if (!profile.ok) {
-        throw new Error('Failed to create profile')
-      }
+      // fetchWithAuth already throws errors for non-OK responses and returns parsed JSON
+      // No need to check profile.ok or profile.status as those are Response object properties
+      // that don't exist on the parsed JSON response
 
       
       
