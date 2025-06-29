@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { useAuth } from "@/lib/auth-context"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { PlusCircle, Search, Eye, BarChart2, Wand2, RefreshCw, Trash2, ChevronLeft, ChevronRight, FileDown } from "lucide-react"
 import { useRouter } from "next/navigation"
@@ -54,6 +55,7 @@ interface DashboardData {
 }
 
 export function DataDashboard() {
+  const { user } = useAuth()
   const [searchQuery, setSearchQuery] = useState("")
   const [datasets, setDatasets] = useState<DataSource[]>([])
   const [dataMetrics, setDataMetrics] = useState<DataMetrics | null>(null)
@@ -523,9 +525,11 @@ export function DataDashboard() {
               <Table className="w-5 h-5 mr-2 text-primary" />
               Datasets
             </h3>
-            <Button onClick={handleNewDataset} className="flex items-center gap-2 ml-4" size="sm">
-              <PlusCircle className="h-4 w-4" />
-            </Button>
+            {user?.permissions?.includes("datapuur:write") && (
+              <Button onClick={handleNewDataset} className="flex items-center gap-2 ml-4" size="sm">
+                <PlusCircle className="h-4 w-4" />
+              </Button>
+            )}
           </div>
           <div className="text-sm text-muted-foreground">Auto-refreshes every 30 seconds</div>
         </div>
