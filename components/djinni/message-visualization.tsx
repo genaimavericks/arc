@@ -152,12 +152,8 @@ export default function MessageVisualization({ message }: MessageVisualizationPr
 
 
   if (!predictionData) {
-    return (
-      <Alert className="mt-3">
-        <AlertTriangle className="h-4 w-4" />
-        <AlertDescription>No visualization data available.</AlertDescription>
-      </Alert>
-    );
+    console.log('No visualization data available for message:', message.id);
+    return null;
   }
 
   // Handle Churn Astro specific visualizations
@@ -171,12 +167,8 @@ export default function MessageVisualization({ message }: MessageVisualizationPr
       );
     }
     // Fallback for churn if data is not in the expected format
-    return (
-      <Alert className="mt-3">
-        <AlertTriangle className="h-4 w-4" />
-        <AlertDescription>Could not display Churn Astro visualization. Data format is incorrect.</AlertDescription>
-      </Alert>
-    );
+    console.log('Could not display Churn Astro visualization. Data format is incorrect for message:', message.id);
+    return null;
   }
 
   // Handle KG Insights and Factory Astro visualizations
@@ -185,12 +177,8 @@ export default function MessageVisualization({ message }: MessageVisualizationPr
     const formattedData = formatPredictionData(predictionData, queryForFormatting, source);
 
     if (!formattedData || formattedData.length === 0) {
-      return (
-        <Alert className="mt-3">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>No visualization data available or data could not be formatted.</AlertDescription>
-        </Alert>
-      );
+      console.log('No visualization data available or data could not be formatted for message:', message.id, 'source:', source);
+      return null;
     }
 
     const chartType = getChartType(queryForFormatting, formattedData);
@@ -239,12 +227,8 @@ export default function MessageVisualization({ message }: MessageVisualizationPr
   }
 
   // Fallback for any other source type
-  return (
-    <Alert className="mt-3">
-      <AlertTriangle className="h-4 w-4" />
-      <AlertDescription>This message type does not support visualization.</AlertDescription>
-    </Alert>
-  );
+  console.log('Message type does not support visualization:', message.id, 'source:', source);
+  return null;
 };
 
 // Function to render the appropriate chart based on type

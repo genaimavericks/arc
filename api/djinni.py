@@ -75,15 +75,16 @@ async def classify_query_llm(query: str) -> Dict[str, Any]:
             if 'query_type' not in result or 'confidence' not in result:
                 print(f"LLM response missing required fields: {result}")
                 return None
-                
+            
             # Return a standardized response
-            return {
+            response = {
                 "query_type": result["query_type"],
                 "confidence": float(result["confidence"]),
                 "llm_reasoning": result.get("reasoning", "No reasoning provided"),
                 "llm_provider": provider,
                 "classification_method": "llm"
             }
+            return response
         except (json.JSONDecodeError, KeyError) as e:
             print(f"Error parsing LLM response: {e}\nResponse: {response}")
             return None
@@ -172,13 +173,15 @@ def classify_query_rules(query: str) -> Dict[str, Any]:
 @router.post("/classify-query", response_model=Dict[str, Any])
 async def classify_user_query(
     request: Request,
-    query_data: Dict[str, str] = Body(...),
+    query_data: Dict[str, Any] = Body(...),
     current_user = Depends(get_current_user)
 ):
     """
     Classify a user query as either KG Insights or Astro (factory/churn) related.
     """
     query = query_data.get("query", "")
+    # source_id is optional and not used in classification but included in request
+    source_id = query_data.get("source_id", "default")
     if not query:
         raise HTTPException(status_code=400, detail="Query is required")
     

@@ -1,7 +1,6 @@
 {
   "queries": [
     "What is the gender of the customer with CustomerID '7590-VHVEG'?",
-    "What are the MonthlyCharges for customers who have 'TechSupport' set to 'Yes' and 'StreamingMovies' set to 'Yes'?",
     "churn analysis",
     "List customers with a tenure greater than 60 months and who use 'Electronic check' as their PaymentMethod",
     "internet service distribution"
