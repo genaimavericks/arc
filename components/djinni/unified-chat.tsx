@@ -52,6 +52,9 @@ export function UnifiedChatInterface() {
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
   const [showSidebar, setShowSidebar] = useState(true)
+  const [sidebarWidth, setSidebarWidth] = useState(320)
+  const [isResizing, setIsResizing] = useState(false)
+  const resizeRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const { clearSessionMessages } = useDjinniStore()
@@ -217,6 +220,35 @@ export function UnifiedChatInterface() {
   }
   
   const toggleSidebar = () => setShowSidebar(!showSidebar)
+  
+  const startResizing = useCallback((mouseDownEvent: React.MouseEvent) => {
+    mouseDownEvent.preventDefault()
+    setIsResizing(true)
+  }, [])
+
+  const stopResizing = useCallback(() => {
+    setIsResizing(false)
+  }, [])
+
+  const resize = useCallback(
+    (mouseMoveEvent: MouseEvent) => {
+      if (isResizing) {
+        const containerRect = document.querySelector('.flex.h-full')?.getBoundingClientRect()
+        if (!containerRect) return
+
+        // Calculate new width based on mouse position
+        const totalWidth = containerRect.width
+        const chatAreaMinWidth = 300 // Minimum width for the chat area
+        const newSidebarWidth = totalWidth - mouseMoveEvent.clientX + containerRect.left
+        
+        // Apply constraints to ensure sidebar width is reasonable
+        if (newSidebarWidth > 200 && newSidebarWidth < (totalWidth - chatAreaMinWidth)) {
+          setSidebarWidth(newSidebarWidth)
+        }
+      }
+    },
+    [isResizing]
+  )
 
   const deleteHistoryItem = async (id: string) => {
     if (!sourceId) return;
@@ -385,30 +417,26 @@ export function UnifiedChatInterface() {
     }
   }
 
+  useEffect(() => {
+    window.addEventListener('mousemove', resize)
+    window.addEventListener('mouseup', stopResizing)
+    return () => {
+      window.removeEventListener('mousemove', resize)
+      window.removeEventListener('mouseup', stopResizing)
+    }
+  }, [resize, stopResizing])
+
   return (
     <div className="flex h-full bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
-      {showSidebar && (
-        <KGInsightsSidebar
-          predefinedQueries={[...predefinedQueries, ...astroExamples]}
-          onPredefinedQuery={handlePredefinedQuery}
-          historyItems={historyItems}
-          loadHistoryItem={loadHistoryItem}
-          deleteHistoryItem={deleteHistoryItem}
-          deleteAllHistory={deleteAllHistory}
-          loadingHistory={loadingHistory}
-          availableSources={availableSources}
-          sourceId={sourceId}
-          setSourceId={setSourceId}
-        />
-      )}
-      <div className="flex-1 flex flex-col relative">
+      {/* Chat interface moved to the left side */}
+      <div className="flex-1 flex flex-col relative min-w-[300px]">
         <div className="flex justify-between items-center p-4 border-b border-gray-200 dark:border-gray-700">
-          <Button variant="ghost" size="icon" onClick={toggleSidebar}>
-            {showSidebar ? <ChevronLeft className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-          </Button>
-          <h2 className="text-xl font-semibold text-gray-800 dark:text-white">Djinni Unified Chat</h2>
           <Button variant="ghost" size="icon" onClick={handleClearChat}>
             <Trash2 className="h-5 w-5" />
+          </Button>
+          <h2 className="text-xl font-semibold text-gray-800 dark:text-white">Djinni Unified Chat</h2>
+          <Button variant="ghost" size="icon" onClick={toggleSidebar}>
+            {showSidebar ? <ChevronLeft className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
           </Button>
         </div>
         <ScrollArea className="flex-1 p-4">
@@ -484,6 +512,35 @@ export function UnifiedChatInterface() {
           </div>
         </div>
       </div>
+      {/* Resize handle */}
+      {showSidebar && (
+        <div
+          className="w-1 cursor-col-resize bg-gray-300 dark:bg-gray-600 hover:bg-blue-400 dark:hover:bg-blue-500 active:bg-blue-500 dark:active:bg-blue-600 transition-colors"
+          onMouseDown={startResizing}
+          ref={resizeRef}
+        />
+      )}
+      
+      {/* Queries section moved to the right side - now resizable */}
+      {showSidebar && (
+        <div 
+          style={{ width: `${sidebarWidth}px`, minWidth: '200px', maxWidth: '600px' }}
+          className={`${isResizing ? 'select-none' : ''} transition-width duration-150 ease-in-out`}
+        >
+          <KGInsightsSidebar
+            predefinedQueries={[...predefinedQueries, ...astroExamples]}
+            onPredefinedQuery={handlePredefinedQuery}
+            historyItems={historyItems}
+            loadHistoryItem={loadHistoryItem}
+            deleteHistoryItem={deleteHistoryItem}
+            deleteAllHistory={deleteAllHistory}
+            loadingHistory={loadingHistory}
+            availableSources={availableSources}
+            sourceId={sourceId}
+            setSourceId={setSourceId}
+          />
+        </div>
+      )}
     </div>
   )
 }
