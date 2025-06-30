@@ -129,7 +129,7 @@ export function KGInsightsSidebar({
             </TabsTrigger>
           </TabsList>
           
-          <TabsContent value="queries" className="mt-0 flex-1">
+          <TabsContent value="queries" className="mt-0 flex-1 h-[calc(100vh-150px)]">
             <ScrollArea className="h-full">
               <div className="p-4 space-y-4">
                 {Object.entries(groupedQueries).map(([category, queries]) => (
@@ -156,7 +156,7 @@ export function KGInsightsSidebar({
             </ScrollArea>
           </TabsContent>
           
-          <TabsContent value="history" className="mt-0 flex-1">
+          <TabsContent value="history" className="mt-0 flex-1 h-[calc(100vh-150px)]">
             <ScrollArea className="h-full">
               <div className="p-4">
                 {historyItems && historyItems.length > 0 ? (
@@ -254,7 +254,7 @@ export function KGInsightsSidebar({
             </ScrollArea>
           </TabsContent>
 
-          <TabsContent value="settings" className="mt-0 flex-1">
+          <TabsContent value="settings" className="mt-0 flex-1 h-[calc(100vh-150px)]">
             <ScrollArea className="h-full">
               <div className="p-4 space-y-4">
                 <div>
