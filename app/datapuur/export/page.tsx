@@ -677,15 +677,15 @@ export default function ExportPage() {
     const totalPages = previewData.total_pages || 1
 
     return (
-      <div className="space-y-4">
-        {/* Preview table */}
+      <div className="space-y-4 w-full overflow-hidden" style={{ maxWidth: 1170 }}>
+         {/* Preview table */}
         <div className="bg-card shadow-sm border border-border rounded-md overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-muted/50">
+          <div className="overflow-x-auto" style={{ maxWidth: '100%' }}>
+            <table className="w-full border-collapse whitespace-nowrap">
+              <thead className="bg-muted/50">
+                <tr>
                   {previewData.columns.map((column: string, index: number) => (
-                    <th key={index} className="px-4 py-2 text-left text-sm font-medium text-muted-foreground border-b">
+                    <th key={index} className="px-4 py-2 text-left text-sm font-medium text-muted-foreground border-b whitespace-nowrap">
                       {column}
                     </th>
                   ))}
@@ -695,7 +695,7 @@ export default function ExportPage() {
                 {previewData.data.map((row: any, rowIndex: number) => (
                   <tr key={rowIndex} className={rowIndex % 2 === 0 ? "bg-background" : "bg-muted/20"}>
                     {previewData.columns.map((column: string, colIndex: number) => (
-                      <td key={colIndex} className="px-4 py-2 text-sm border-b border-border truncate max-w-[200px]">
+                      <td key={colIndex} className="px-4 py-2 text-sm border-b border-border whitespace-nowrap overflow-hidden text-ellipsis">
                         {row[column] !== null && row[column] !== undefined ? (
                           typeof row[column] === "object" ? (
                             JSON.stringify(row[column])
@@ -912,7 +912,7 @@ export default function ExportPage() {
     const filterValue = filterValues[id] || ""
 
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 w-full overflow-hidden">
         {/* Filter form */}
         <div className="bg-card shadow-sm border border-border rounded-md p-4">
           <h4 className="text-sm font-medium mb-4">Filter Dataset</h4>
@@ -1073,7 +1073,7 @@ export default function ExportPage() {
         {/* Removed active filter indicator with download buttons section */}
 
         {/* Preview of filtered data */}
-        <div>
+        <div className="w-full overflow-hidden">
           <h4 className="text-sm font-medium mb-2">Preview with{hasActiveFilter ? " Applied Filter" : "out Filters"}</h4>
           {renderPreviewContent(dataset)}
         </div>
@@ -1083,7 +1083,7 @@ export default function ExportPage() {
 
   return (
     <DataPuurLayout>
-      <div className="flex-1 space-y-2 p-4 md:p-8 pt-6">
+      <div className="flex-1 space-y-2 p-4 md:p-8 pt-6 overflow-hidden" style={{ maxWidth: '1170px', margin: '0 auto' }}>
         <div className="flex w-full items-center justify-between pb-2">
           <h2 className="text-2xl font-bold tracking-tight">Export</h2>
           <div className="flex items-center space-x-2">
@@ -1184,7 +1184,7 @@ export default function ExportPage() {
                       className="border rounded-lg overflow-hidden bg-card/50 hover:bg-card/80 transition-colors"
                     >
                       {/* Header row */}
-                       <div
+                      <div
                         className="grid grid-cols-12 gap-4 p-4 cursor-pointer"
                         onClick={() => toggleExpand(dataset.id)}
                       >
@@ -1277,40 +1277,34 @@ export default function ExportPage() {
 
                       {/* Expanded content */}
                       {expandedItems[dataset.id] && (
-                        <div className="border-t border-border p-4">
+                        <div className="border-t border-border p-4 w-full overflow-hidden">
                           {/* Tabs for different views */}
-                          <div className="border-b border-border mb-4">
-                            <div className="flex space-x-4">
-                              <button
-                                className={`pb-2 px-1 text-sm font-medium ${
-                                  activeTabs[dataset.id] === "preview"
-                                    ? "text-primary border-b-2 border-primary"
-                                    : "text-muted-foreground hover:text-foreground"
-                                }`}
+                          <Tabs value={activeTabs[dataset.id] || "preview"} className="w-full">
+                            <TabsList className="bg-muted/30 mb-4">
+                              <TabsTrigger 
+                                value="preview" 
                                 onClick={() => setActiveTab(dataset.id, "preview")}
                               >
-                                <Eye className="h-4 w-4 inline mr-1" />
+                                <Eye className="h-4 w-4 mr-1" />
                                 Preview
-                              </button>
-                              <button
-                                className={`pb-2 px-1 text-sm font-medium ${
-                                  activeTabs[dataset.id] === "filter"
-                                    ? "text-primary border-b-2 border-primary"
-                                    : "text-muted-foreground hover:text-foreground"
-                                }`}
+                              </TabsTrigger>
+                              <TabsTrigger 
+                                value="filter" 
                                 onClick={() => setActiveTab(dataset.id, "filter")}
                               >
-                                <Filter className="h-4 w-4 inline mr-1" />
+                                <Filter className="h-4 w-4 mr-1" />
                                 Filter
-                              </button>
-                            </div>
-                          </div>
+                              </TabsTrigger>
+                            </TabsList>
 
-                          {/* Tab content */}
-                          <div className="py-2">
-                            {activeTabs[dataset.id] === "preview" && renderPreviewContent(dataset)}
-                            {activeTabs[dataset.id] === "filter" && renderFilterContent(dataset)}
-                          </div>
+                            {/* Tab content */}
+                            <TabsContent value="preview" className="w-full overflow-hidden">
+                              {renderPreviewContent(dataset)}
+                            </TabsContent>
+                            <TabsContent value="filter" className="w-full overflow-hidden">
+                              {renderFilterContent(dataset)}
+                            </TabsContent>
+                          </Tabs>
                         </div>
                       )}
                     </motion.div>
