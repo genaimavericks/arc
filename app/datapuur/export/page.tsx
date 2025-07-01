@@ -43,7 +43,7 @@ interface Dataset {
 }
 
 // Constant for maximum preview rows
-const MAX_PREVIEW_ROWS = 2000;
+const MAX_PREVIEW_ROWS = 500;
 
 export default function ExportPage() {
   // Helper function to strip file extensions
