@@ -16,6 +16,7 @@ import copy
 import uuid
 from datetime import datetime, timedelta
 from pydantic import BaseModel, Field, validator, root_validator, create_model
+import os
 
 from api.models import User, get_db, SessionLocal, UploadedFile
 from api.auth import has_any_permission, log_activity
@@ -1635,11 +1636,25 @@ async def create_transformation_plan(
 ):
     print("====== TRANSFORMATION PLAN CREATE ENDPOINT CALLED ======")
     print(f"Request received from user: {current_user.username}")
-    print(f"Request data: {request.dict()}")
+    print(f"Request data: {request.model_dump()}")
     import sys
     sys.stdout.flush()  # Force immediate output
     """Create a complete transformation plan with script using the agent"""
     session = None
+    file_path = None
+    uploaded_file = None
+    
+    # Check if source ID is provided
+    if request.source_id:
+        # Try to get uploaded file details
+        uploaded_file = db.query(UploadedFile).filter(
+            UploadedFile.id == request.source_id,
+            UploadedFile.uploaded_by == current_user.username
+        ).first()
+        
+        if uploaded_file:
+            print(f"[Transformation] Found source file: {uploaded_file.filename}")
+            file_path = str(DATA_DIR / f'{uploaded_file.id}.parquet')
     
     # Only try to find the profile session if an ID was provided
     if request.profile_session_id:
@@ -1691,22 +1706,16 @@ async def create_transformation_plan(
         transformation_steps = plan_data.get("steps", [])
         for step in transformation_steps:
             # Ensure each step has a valid parameters dictionary
-            parameters = step.get("parameters")
-            
-            # Check if parameters is None or not a dictionary
-            if parameters is None or not isinstance(parameters, dict):
-                # If it's a list, convert it to a dictionary with numeric keys
-                if isinstance(parameters, list):
-                    param_dict = {}
-                    for i, item in enumerate(parameters):
-                        param_dict[f"item_{i}"] = item
-                    step["parameters"] = param_dict
-                else:
-                    # For None or any other type, use empty dictionary
-                    step["parameters"] = {}
-                    
-                # Log the conversion for debugging
-                logger.debug(f"Converted parameters from {type(parameters).__name__} to dict in step: {step.get('operation')}")
+            if "parameters" not in step or step["parameters"] is None:
+                step["parameters"] = {}  # Set default empty dict if missing or None
+                
+            # If parameters is not a dictionary but a list, convert it
+            elif isinstance(step["parameters"], list):
+                param_dict = {}
+                for i, item in enumerate(step["parameters"]):
+                    param_dict[f"item_{i}"] = item
+                step["parameters"] = param_dict
+                logger.debug(f"Converted parameters from list to dict in step: {step.get('operation')}")
                 
         # Create new plan record with optional profile_session_id
         plan_kwargs = {
@@ -1722,92 +1731,162 @@ async def create_transformation_plan(
         
         # Create the plan and add it to the database
         plan = TransformationPlan(**plan_kwargs)
+        plan.username = current_user.username
         db.add(plan)
         print(f"[Transformation] Created new plan")
         print(f"[Transformation] Plan added to database with ID: {plan.id}")
         
         # Always generate a transformation script for the plan
-        if plan.transformation_steps:
-            # Generate initial script if we have a session with file path
-            if session and session.file_path:
-                print(f"[Transformation] Generating script using file path: {session.file_path}")
+        try:
+            if file_path:
+                # We have a file path from the data source, use it for script generation
+                print(f"[Transformation] Generating script using file path from data source: {file_path}")
                 try:
-                    # Extract filename and prepare output path
+                    # Extract filename from input path and construct output path in the data folder
                     import os
-                    base_filename = os.path.basename(session.file_path)
-                    filename_no_ext = os.path.splitext(base_filename)[0]
-                    output_file_path = os.path.join('api/datapuur_ai/data', base_filename)
-                    
+                    input_filename = os.path.basename(file_path)
+                    # Get absolute project root directory
+                    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                    output_file_path = os.path.join(project_root, 'api', 'datapuur_ai', 'data', input_filename)
+                    input_file_path = os.path.join(project_root, 'api', 'data', input_filename)
+
                     # Ensure the output directory exists
                     os.makedirs(os.path.dirname(output_file_path), exist_ok=True)
                     
+                    # Retrieve profile data if available
+                    profile_result = None
+                    # Extract schema information if profile data is available
+                    schema_info = {}
+                    profile_summary = {}
                     
+                    # Try to access profile data if uploaded_file exists
+                    try:
+                        if uploaded_file and hasattr(uploaded_file, 'id'):
+                            # Try to get profile data from the database
+                            profile_result = db.query(ProfileResult).filter(
+                                ProfileResult.file_id == uploaded_file.id
+                            ).first()
+                            
+                            if profile_result:
+                                # Extract column schema information from column_profiles
+                                if hasattr(profile_result, 'column_profiles') and profile_result.column_profiles:
+                                    try:
+                                        # Handle column_profiles if it's a dictionary
+                                        if isinstance(profile_result.column_profiles, dict):
+                                            for col_name, col_info in profile_result.column_profiles.items():
+                                                schema_info[col_name] = {
+                                                    'type': col_info.get('type', 'unknown'),
+                                                    'nullable': col_info.get('missing_count', 0) > 0,
+                                                    'unique_count': col_info.get('unique_count', 0),
+                                                    'stats': col_info.get('statistics', {})
+                                                }
+                                        # Handle column_profiles if it's a list
+                                        elif isinstance(profile_result.column_profiles, list):
+                                            for col_item in profile_result.column_profiles:
+                                                if isinstance(col_item, dict) and 'name' in col_item:
+                                                    col_name = col_item.get('name')
+                                                    schema_info[col_name] = {
+                                                        'type': col_item.get('type', 'unknown'),
+                                                        'nullable': col_item.get('missing_count', 0) > 0,
+                                                        'unique_count': col_item.get('unique_count', 0),
+                                                        'stats': col_item.get('statistics', {})
+                                                    }
+                                    except Exception as e:
+                                        print(f"[Transformation] Error processing column profiles: {str(e)}")
+                                        logger.error(f"Error processing column profiles: {str(e)}")
+                                        # Continue with empty schema_info if we can't process the profiles
+                                    
+                                # Extract profile summary information from direct fields
+                                profile_summary = {
+                                    'total_rows': profile_result.total_rows if hasattr(profile_result, 'total_rows') else 0,
+                                    'total_columns': profile_result.total_columns if hasattr(profile_result, 'total_columns') else 0,
+                                    'exact_duplicates_count': profile_result.exact_duplicates_count if hasattr(profile_result, 'exact_duplicates_count') else 0,
+                                    'fuzzy_duplicates_count': profile_result.fuzzy_duplicates_count if hasattr(profile_result, 'fuzzy_duplicates_count') else 0
+                                }
+                                
+                                print(f"[Transformation] Successfully extracted profile data for file ID: {uploaded_file.id}")
+                            else:
+                                print(f"[Transformation] Profile result not found for file ID: {uploaded_file.id}")
+                    except Exception as profile_error:
+                        # Log the error but continue without failing the whole transformation process
+                        logger.error(f"Error processing profile data: {str(profile_error)}")
+                        print(f"[Transformation] Could not process profile data: {str(profile_error)}")
+                    
+                    # Generate transformation script with schema and profile information
                     script = transformation_agent.generate_transformation_script(
-                        input_file_path=session.file_path,
+                        input_file_path=input_file_path,
                         transformation_steps=plan.transformation_steps,
-                        output_file_path=output_file_path
+                        output_file_path=output_file_path,
+                        schema_info=schema_info,
+                        profile_summary=profile_summary
                     )
                     plan.transformation_script = script
-                    plan.source_id = filename_no_ext
+                    print(f"[Transformation] Script generated successfully with output to {output_file_path}, length: {len(script)}")
+                    # Save the output path in the plan for reference
                     plan.output_file_path = output_file_path
-                    print(f"[Transformation] Script generation successful with output to {output_file_path} from session, length: {len(script)}")
-                    print(session.file_path)
-                    
                 except Exception as script_error:
                     logger.error(f"Error generating script: {str(script_error)}")
                     plan.transformation_script = "# Error generating transformation script\n# Please try regenerating the script or contact support"
             else:
-                # No file path available, use best-effort generic script
-                print(f"[Transformation] No file path available, generating generic script")
-                try:
-                    # Generate a generic script with assumptions about the data format
-                    generic_input = "input.parquet"
-                    generic_output = "api/datapuur_ai/data/output.parquet"
-                    
-                    # Ensure the output directory exists
-                    import os
-                    os.makedirs(os.path.dirname(generic_output), exist_ok=True)
-                    
-                    # For generic scripts, we may not have a real input file to extract schema from
-                    # but we should still try if the generic_input exists
-                    schema_info = {}
-                    if os.path.exists(generic_input):
-                        print(f"[Transformation] Extracting schema info from generic input file: {generic_input}")
-                        schema_info = extract_schema_from_file(generic_input)
-                        print(f"[Transformation] Schema info extracted with {len(schema_info)} columns")
+                # No source file path available, try session or use generic script
+                if session and hasattr(session, 'file_path') and session.file_path:
+                    print(f"[Transformation] Using file path from session: {session.file_path}")
+                    try:
+                        # Extract filename from session path and construct output path in the data folder
+                        import os
+                        input_filename = os.path.basename(session.file_path)
+                        # Get absolute project root directory
+                        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                        output_file_path = os.path.join(project_root, 'api', 'datapuur_ai', 'data', input_filename)
+                        input_file_path = os.path.join(project_root, 'api', 'data', input_filename)
+                        
+                        # Ensure the output directory exists
+                        os.makedirs(os.path.dirname(output_file_path), exist_ok=True)
+                        
+                        # Extract schema info from file if we don't have it from a profile
+                        schema_info = {}
+                        if session.file_path:
+                            print(f"[Transformation] Extracting schema info from session file: {input_file_path}")
+                            schema_info = extract_schema_from_file(input_file_path)
+                            print(f"[Transformation] Schema info extracted with {len(schema_info)} columns")
 
-                    script = transformation_agent.generate_transformation_script(
-                        input_file_path=generic_input,
-                        transformation_steps=plan.transformation_steps,
-                        output_file_path=generic_output,
-                        schema_info=schema_info
-                    )
-                    plan.transformation_script = script
-                    plan.output_file_path = generic_output
-                    print(f"[Transformation] Generic script generated with output to {generic_output}")
-                    
-                except Exception:
-                    plan.transformation_script = "# Transformation plan\n# Add a data source to generate a complete script tailored to your data"
-        else:
-            # Just add a placeholder script for drafts
-            plan.transformation_script = "# Draft transformation plan\n# Edit this script or use the AI assistant to generate transformations"
-        
-        # First commit the plan to get a valid ID
+                        script = transformation_agent.generate_transformation_script(
+                            input_file_path=input_file_path,
+                            transformation_steps=plan.transformation_steps,
+                            output_file_path=output_file_path,
+                            schema_info=schema_info
+                        )
+                        plan.transformation_script = script
+                        print(f"[Transformation] Script generated successfully with output to {output_file_path} from session, length: {len(script)}")
+                        # Save the output path in the plan for reference
+                        plan.output_file_path = output_file_path
+                    except Exception as script_error:
+                        logger.error(f"Error generating script from session: {str(script_error)}")
+                        plan.transformation_script = "# Error generating transformation script\n# Please try regenerating the script"
+                else:
+                    # No file path available, generate a generic script
+                    print(f"[Transformation] No file path available, generating generic script")
+                    try:
+                        generic_input = "input.parquet (assumed format)"
+                        script = transformation_agent.generate_transformation_script(
+                            input_file_path=generic_input,
+                            transformation_steps=plan.transformation_steps
+                        )
+                        plan.transformation_script = script
+                        print(f"[Transformation] Generic script generated successfully")
+                    except Exception as e:
+                        logger.error(f"Error generating generic script: {str(e)}")
+                        plan.transformation_script = "# Transformation plan\n# Add a data source to generate a complete script tailored to your data"
+        except Exception as e:
+            logger.error(f"Unexpected error in script generation: {str(e)}")
+            plan.transformation_script = "# Draft transformation plan\n# Error occurred during script generation"
+            
+        # Add the plan to the database and commit the transaction
         db.add(plan)
         db.commit()
         db.refresh(plan)
         
-        # Store the chat instructions as user message if provided
-        if request.input_instructions:
-            user_message = TransformationMessage(
-                plan_id=plan.id,
-                role="user",
-                content=request.input_instructions,
-                message_metadata={"source": "chat"}
-            )
-            db.add(user_message)
-            
-        # Now add initial message with the valid plan.id
+        # Create initial message for the transformation plan
         initial_message = TransformationMessage(
             plan_id=plan.id,  # Now plan.id is valid
             role="assistant",
@@ -1829,19 +1908,16 @@ async def create_transformation_plan(
             details=f"Created transformation plan: {plan.name}"
         )
         
-        print(f"[Transformation] Plan creation completed successfully")
-        print(f"[Transformation] Returning plan with ID: {plan.id}, Steps: {len(plan.transformation_steps)}")
-        
-        # Return the transformation plan
+        # Return the transformation plan response
         return TransformationPlanResponse(
             id=plan.id,
-            profile_session_id=plan.profile_session_id,
             name=plan.name,
             description=plan.description,
-            status=plan.status,
+            profile_session_id=plan.profile_session_id,
             transformation_steps=plan.transformation_steps,
             expected_improvements=plan.expected_improvements,
             transformation_script=plan.transformation_script,
+            status=plan.status,
             created_at=plan.created_at,
             updated_at=plan.updated_at
         )
@@ -2321,12 +2397,23 @@ async def execute_script(
             ).first()
             if session:
                 file_path = session.file_path
+                # Make it absolute path using data dir path
+                file_path = os.path.join(DATA_DIR, file_path)
         elif request.plan_id:
             plan = db.query(TransformationPlan).filter(
                 TransformationPlan.id == request.plan_id
             ).first()
-            if plan :
-                file_path = str(DATA_DIR / f'{plan.source_id}.parquet')
+            if plan:
+                # Check if plan has a source_id
+                if plan.source_id:
+                    file_path = str(DATA_DIR / f'{plan.source_id}.parquet')
+                elif plan.profile_session_id:
+                    # Get the file path from the profile session
+                    session = db.query(ProfileSession).filter(
+                        ProfileSession.id == plan.profile_session_id
+                    ).first()
+                    if session and session.file_path:
+                        file_path = os.path.join(DATA_DIR, session.file_path)
         
         if not file_path:
             raise HTTPException(status_code=400, detail="Could not determine input file")
@@ -2516,12 +2603,14 @@ async def execute_script_background(job_id: str, script: str, file_path: str, jo
                     import pandas as pd
                     # Calculate statistics from the output file
                     output_path = result.get("full_output_path")
+                    # if name contains 'transformed_' then remove it
+                    if output_path and 'transformed_' in output_path:
+                        output_path = output_path.replace('transformed_', '')
                     if output_path and os.path.exists(output_path):
                         try:
                             # Calculate file size in bytes
                             file_size = os.path.getsize(output_path)
                             transformed_dataset.file_size_bytes = file_size
-                            
                             # Determine file type and read
                             if str(output_path).endswith('.parquet'):
                                 df_output = pd.read_parquet(output_path)
