@@ -411,7 +411,7 @@ export function DataDashboard() {
   }
 
   const handleTransform = (datasetId: string) => {
-    router.push(`/datapuur/transformation/${datasetId}`)
+    router.push(`/datapuur/ai-transformation?datasetId=${datasetId}`)
   }
 
   const handleExport = (datasetId: string) => {
