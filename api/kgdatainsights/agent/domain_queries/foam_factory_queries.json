@@ -2,6 +2,6 @@
   "queries": [
     "compare machine utilization percentage among all factories",
     "compare machine downtime for all factories",
-    "compare energy consumption between factory 2 and factory 5"
+    "Compare production volume against downtime"
   ]
 }
