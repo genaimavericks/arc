@@ -32,7 +32,7 @@ export function FactoryAstro() {
   
   // Default example questions in case API fails
   const defaultExamples = [
-    "What will the revenue for factory 3 be over the next 6 months?",
+    "What will the revenue for factory 3 be over the next 4 months?",
     "What will the profit margin of factory 1 for next quarter?",
     "What will the production volume be over the next 2 months?",
     "What will the revenue over the next 2 months for factory 3?"
