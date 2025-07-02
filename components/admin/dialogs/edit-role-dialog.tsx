@@ -60,9 +60,29 @@ export function EditRoleDialog({ open, onOpenChange, role }: EditRoleDialogProps
 
   const togglePermission = (permission: string) => {
     setEditedRole((prev) => {
-      const updatedPermissions = prev.permissions.includes(permission)
-        ? prev.permissions.filter((p) => p !== permission)
-        : [...prev.permissions, permission];
+      let updatedPermissions = [...prev.permissions];
+      const permissionType = permission.split(':')[1];
+      const modulePrefix = permission.split(':')[0];
+      
+      // Handle toggling the permission on/off
+      if (updatedPermissions.includes(permission)) {
+        // If removing a permission
+        updatedPermissions = updatedPermissions.filter(p => p !== permission);
+        
+        // If removing write permission, we don't automatically remove read
+        // This allows users to downgrade from write to read
+      } else {
+        // If adding a permission
+        updatedPermissions.push(permission);
+        
+        // If adding 'write' permission, automatically add the corresponding 'read' permission
+        if (permissionType === 'write' || permissionType === 'manage') {
+          const readPermission = `${modulePrefix}:read`;
+          if (!updatedPermissions.includes(readPermission)) {
+            updatedPermissions.push(readPermission);
+          }
+        }
+      }
       
       return { 
         ...prev, 
@@ -241,7 +261,7 @@ export function EditRoleDialog({ open, onOpenChange, role }: EditRoleDialogProps
                           id={`permission-edit-${permission}`}
                           checked={editedRole.permissions.includes(permission)}
                           onCheckedChange={() => togglePermission(permission)}
-                          disabled={editedRole.is_system_role}
+                          disabled={editedRole.is_system_role || (permission.endsWith(':read') && editedRole.permissions.includes(permission.replace(':read', ':write')))}
                         />
                         <Label 
                           htmlFor={`permission-edit-${permission}`} 
