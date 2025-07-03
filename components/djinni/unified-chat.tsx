@@ -11,6 +11,7 @@ import { KGInsightsSidebar } from './kg-insights-sidebar'
 import { useDjinniStore } from '@/lib/djinni/store'
 import MessageVisualization from './message-visualization'
 import { getApiBaseUrl } from '@/lib/config'
+import { fetchWithAuth } from '@/lib/auth-utils'
 
 // Helper function to format timestamp
 const formatTime = (date: Date) => {
@@ -73,11 +74,7 @@ export function UnifiedChatInterface() {
 
   const fetchKnowledgeGraphSources = useCallback(async () => {
     try {
-      const response = await fetch(`/api/graph/schema`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      })
-      if (!response.ok) throw new Error("Failed to fetch graph schemas")
-      const data = await response.json()
+      const data = await fetchWithAuth(`/api/graph/schema`)
 
       if (data.schemas && data.schemas.length > 0 && data.schemas[0].id !== -100) {
         const schemaNames = data.schemas.map((s: { name: string }) => s.name)
@@ -103,11 +100,7 @@ export function UnifiedChatInterface() {
 
   const fetchAstroExamples = useCallback(async () => {
     try {
-      const response = await fetch(`/api/djinni/astro-examples`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (!response.ok) throw new Error('Failed to fetch Astro examples');
-      const data = await response.json();
+      const data = await fetchWithAuth(`/api/djinni/astro-examples`);
       
       // Convert examples to PredefinedQuery format
       const formattedExamples = data.examples.map((example: string, index: number) => ({
@@ -127,11 +120,7 @@ export function UnifiedChatInterface() {
     const schemaId = schemaIdMap.current[currentSourceId];
     if (!schemaId) return;
     try {
-      const response = await fetch(`/api/datainsights/${schemaId}/query/canned`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (!response.ok) throw new Error('Failed to fetch predefined queries');
-      const data = await response.json();
+      const data = await fetchWithAuth(`/api/datainsights/${schemaId}/query/canned`);
       setPredefinedQueries(data.queries || []);
     } catch (error) {
       console.error("Failed to fetch predefined queries:", error);
@@ -143,11 +132,7 @@ export function UnifiedChatInterface() {
     if (!schemaId) return;
     setLoadingHistory(true);
     try {
-      const response = await fetch(`/api/datainsights/${schemaId}/history`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (!response.ok) throw new Error('Failed to fetch history');
-      const data = await response.json();
+      const data = await fetchWithAuth(`/api/datainsights/${schemaId}/history`);
       setHistoryItems(data.queries.map((item: any) => ({ ...item, timestamp: new Date(item.timestamp) })));
     } catch (error) {
       console.error("Failed to fetch history:", error);
@@ -160,7 +145,28 @@ export function UnifiedChatInterface() {
   useEffect(() => {
     fetchKnowledgeGraphSources()
     fetchAstroExamples()
-  }, [fetchKnowledgeGraphSources]);
+  }, [fetchKnowledgeGraphSources, fetchAstroExamples]);
+  
+  // Add polling mechanism to retry fetching schemas when none are initially available
+  useEffect(() => {
+    let pollingInterval: NodeJS.Timeout | null = null;
+    
+    // Only set up polling if no sources are available
+    if (availableSources.length === 0) {
+      console.log('No knowledge graph sources available, setting up polling mechanism');
+      pollingInterval = setInterval(() => {
+        console.log('Polling for knowledge graph sources availability...');
+        fetchKnowledgeGraphSources();
+      }, 10000); // Poll every 10 seconds
+    }
+    
+    // Clean up interval on unmount or when sources become available
+    return () => {
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+      }
+    };
+  }, [availableSources.length, fetchKnowledgeGraphSources]);
 
   useEffect(() => {
     if (sourceId) {
@@ -255,9 +261,8 @@ export function UnifiedChatInterface() {
     const schemaId = schemaIdMap.current[sourceId];
     if (!schemaId) return;
     try {
-      await fetch(`/api/datainsights/${schemaId}/history/${id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` },
+      await fetchWithAuth(`/api/datainsights/${schemaId}/history/${id}`, {
+        method: 'DELETE'
       });
       fetchQueryHistory(sourceId);
     } catch (error) {
@@ -270,9 +275,8 @@ export function UnifiedChatInterface() {
     const schemaId = schemaIdMap.current[sourceId];
     if (!schemaId) return;
     try {
-      await fetch(`/api/datainsights/${schemaId}/history`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` },
+      await fetchWithAuth(`/api/datainsights/${schemaId}/history`, {
+        method: 'DELETE'
       });
       fetchQueryHistory(sourceId);
     } catch (error) {
@@ -301,17 +305,11 @@ export function UnifiedChatInterface() {
     setInput("")
 
     try {
-      const classifyResponse = await fetch(`${apiBaseUrl}/api/djinni/classify-query`, {
+      const classification = await fetchWithAuth(`${apiBaseUrl}/api/djinni/classify-query`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: messageText, source_id: sourceId }),
       });
-
-      if (!classifyResponse.ok) {
-        throw new Error(await classifyResponse.text());
-      }
-
-      const classification = await classifyResponse.json();
       const queryType = classification.query_type;
 
       setMessages(prev => prev.map(msg => msg.id === newMessage.id ? { ...msg, source: queryType } : msg));
@@ -347,18 +345,11 @@ export function UnifiedChatInterface() {
     }
 
     try {
-        const response = await fetch(`/api/datainsights/${schemaId}/query`, {
+        const result = await fetchWithAuth(`/api/datainsights/${schemaId}/query`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ query: message }),
         });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.detail || 'Failed to get query result');
-        }
-
-        const result = await response.json();
         const assistantMessage: UnifiedChatMessage = {
             id: `kg-response-${Date.now()}`,
             role: "assistant",
@@ -376,18 +367,11 @@ export function UnifiedChatInterface() {
 
   const handleAstroMessage = async (message: string, astroType: string) => {
     try {
-      const astroResponse = await fetch(`${apiBaseUrl}/api/djinni/astro-query`, {
+      const result = await fetchWithAuth(`${apiBaseUrl}/api/djinni/astro-query`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: message, astro_type: astroType }),
       });
-
-      if (!astroResponse.ok) {
-        const errorData = await astroResponse.json().catch(() => ({ detail: 'Astro query failed' }));
-        throw new Error(errorData.detail);
-      }
-
-      const result = await astroResponse.json();
       let predictionData = null;
       if (astroType === 'churn_astro') {
         predictionData = result.data;

@@ -113,9 +113,9 @@ class FactoryAstro:
             list: A list of example questions
         """
         return [
-            "What will the revenue for factory 3 be over the next 4 months?",
+            "What will the revenue for factory 3 be over the next 3 months?",
             "What will the profit margin of factory 1 over the next quarter?",
-            "What will the production volume for factory 3 be over the next 4 months?",
+            "What will the production volume for factory 3 be over the next 3 months?",
             "What will the revenue over the next 2 months for factory 3?",
             "What will the production volume for factory 3 be over the next 2 months?"
         ]
