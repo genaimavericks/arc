@@ -410,42 +410,70 @@ async def filter_dataset(
         
         # Apply filter based on operator
         col_data = df[column]
+        logger.debug(f"Filtering column {column} with operator {operator} and value {value}")
+        logger.debug(f"Column data type: {col_data.dtype}")
         
-        # Determine the data type for comparison
-        if pd.api.types.is_numeric_dtype(col_data) and not pd.api.types.is_bool_dtype(col_data):
+        # For any column, first attempt numeric comparison if the operator requires it
+        numeric_operators = ["gt", "lt", "gte", "lte"]
+        
+        # Special handling for numeric comparison operators
+        if operator in numeric_operators:
+            # First, try to convert the column to numeric if it's not already
+            try:
+                # Check if we can convert column values to numeric
+                # This will work even for string columns containing numbers
+                numeric_col = pd.to_numeric(col_data, errors='coerce')
+                # Convert the filter value to numeric
+                numeric_value = float(value)
+                
+                # Log successful conversion
+                logger.debug(f"Successfully converted to numeric. Column: {column}, Value: {value}")
+                
+                # Apply the appropriate comparison operator
+                if operator == "gt":
+                    mask = numeric_col > numeric_value
+                elif operator == "lt":
+                    mask = numeric_col < numeric_value
+                elif operator == "gte":
+                    mask = numeric_col >= numeric_value
+                elif operator == "lte":
+                    mask = numeric_col <= numeric_value
+                
+                # Handle NaN values that resulted from the conversion
+                mask = mask.fillna(False)
+                filtered_df = df[mask]
+                
+                logger.debug(f"Numeric comparison applied. Result count: {len(filtered_df)}")
+                
+            except (ValueError, TypeError) as e:
+                logger.error(f"Error performing numeric comparison: {str(e)}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot perform {operator} comparison on column '{column}' with value '{value}'. This operator requires numeric values."
+                )
+        
+        # For non-numeric operators or if the column is already processed as numeric above
+        elif pd.api.types.is_numeric_dtype(col_data) and not pd.api.types.is_bool_dtype(col_data):
             try:
                 # Try to convert value to numeric for comparison
                 numeric_value = pd.to_numeric(value)
+                logger.debug(f"Using numeric comparison for {operator} on numeric column {column}")
+                
                 # Apply filter based on operator with numeric comparison
                 if operator == "eq":
                     filtered_df = df[col_data == numeric_value]
                 elif operator == "neq":
                     filtered_df = df[col_data != numeric_value]
-                elif operator == "gt":
-                    filtered_df = df[col_data > numeric_value]
-                elif operator == "lt":
-                    filtered_df = df[col_data < numeric_value]
-                elif operator == "gte":
-                    filtered_df = df[col_data >= numeric_value]
-                elif operator == "lte":
-                    filtered_df = df[col_data <= numeric_value]
                 elif operator == "contains":
-                    # For numeric columns, contains is treated as equality
-                    filtered_df = df[col_data == numeric_value]
-                
-                # Check if we got any results
-                if len(filtered_df) == 0:
-                    # If no results, try string comparison as fallback
+                    # For numeric columns, contains is treated as string contains on the string representation
                     str_col_data = col_data.astype(str)
                     str_value = str(value)
-                    
-                    if operator == "eq":
-                        filtered_df = df[str_col_data == str_value]
-                    elif operator == "neq":
-                        filtered_df = df[str_col_data != str_value]
-                    elif operator == "contains":
-                        filtered_df = df[str_col_data.str.contains(str_value, na=False)]
-            except (ValueError, TypeError):
+                    filtered_df = df[str_col_data.str.contains(str_value, na=False)]
+                
+                logger.debug(f"Operation result count: {len(filtered_df)}")
+                
+            except (ValueError, TypeError) as e:
+                logger.debug(f"Falling back to string comparison due to error: {str(e)}")
                 # Fall back to string comparison
                 str_col_data = col_data.astype(str)
                 str_value = str(value)
@@ -456,12 +484,9 @@ async def filter_dataset(
                     filtered_df = df[str_col_data != str_value]
                 elif operator == "contains":
                     filtered_df = df[str_col_data.str.contains(str_value, na=False)]
-                else:
-                    # For other operators, we can't do meaningful string comparison
-                    # so we'll return an empty DataFrame
-                    filtered_df = df.head(0)
         else:
             # For non-numeric columns, do string comparison
+            logger.debug(f"Using string comparison for {operator} on column {column}")
             str_col_data = col_data.astype(str)
             str_value = str(value)
             
@@ -471,12 +496,15 @@ async def filter_dataset(
                 filtered_df = df[str_col_data != str_value]
             elif operator == "contains":
                 filtered_df = df[str_col_data.str.contains(str_value, na=False)]
-            else:
-                # For other operators with non-numeric data, return error
+            elif operator in numeric_operators:
+                # This block shouldn't be reached due to the first check, but just in case
+                logger.warning(f"Attempted numeric comparison on non-numeric column {column}")
                 raise HTTPException(
                     status_code=400, 
-                    detail=f"Operator '{operator}' not supported for non-numeric column '{column}'"
+                    detail=f"Operator '{operator}' not supported for non-numeric column '{column}'. Please use a numeric column for this comparison."
                 )
+            
+            logger.debug(f"String comparison result count: {len(filtered_df)}")
         
         # Calculate pagination
         total_rows = len(filtered_df)
@@ -512,8 +540,10 @@ async def filter_dataset(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error filtering dataset: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to filter dataset: {str(e)}")
+        logger.error(f"Error filtering dataset: {str(e)}", exc_info=True)
+        # Include more helpful information in the error message for frontend
+        error_detail = f"Failed to filter dataset with {operator} on column '{column}' with value '{value}': {str(e)}"
+        raise HTTPException(status_code=500, detail=error_detail)
 
 @router.get("/datasets/{dataset_id}/download")
 async def download_dataset(
