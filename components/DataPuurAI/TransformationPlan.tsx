@@ -123,6 +123,16 @@ export function TransformationPlan({ sessionId, onClose, transformationPlan }: T
         })
       })
 
+      // Handle permission denied errors
+      if (response.status === 403) {
+        toast({
+          title: "Permission Denied",
+          description: "You don't have access to execute transformation scripts.",
+          variant: "destructive"
+        })
+        return
+      }
+      
       if (!response.ok) throw new Error('Failed to execute script')
       
       const data = await response.json()

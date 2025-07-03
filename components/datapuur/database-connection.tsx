@@ -145,6 +145,12 @@ export function DatabaseConnection({
       })
 
       if (!response.ok) {
+        // Handle permission denied errors
+        if (response.status === 403) {
+          showDatabaseToast("Permission Denied", "You don't have access to test database connections.", "destructive")
+          throw new Error("Permission denied: You don't have access to test database connections")
+        }
+        
         const errorData = await response.json()
         throw new Error(errorData.detail || "Failed to connect to database")
       }
@@ -200,6 +206,12 @@ export function DatabaseConnection({
       })
 
       if (!response.ok) {
+        // Handle permission denied errors
+        if (response.status === 403) {
+          showDatabaseToast("Permission Denied", "You don't have access to fetch database schema.", "destructive")
+          throw new Error("Permission denied: You don't have access to fetch database schema")
+        }
+        
         const errorData = await response.json()
         throw new Error(errorData.detail || "Failed to fetch schema")
       }
@@ -261,6 +273,13 @@ export function DatabaseConnection({
       })
 
       if (!response.ok) {
+        // Handle permission denied errors specifically
+        if (response.status === 403) {
+          const errorMessage = "Permission denied: You don't have access to start database ingestion"
+          showDatabaseToast("Permission Denied", errorMessage, "destructive")
+          throw new Error(errorMessage)
+        }
+        
         const errorData = await response.json()
         let errorMessage = errorData.detail || "Failed to start database ingestion"
         

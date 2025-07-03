@@ -29,6 +29,9 @@ interface KGInsightsJobContextType {
   jobs: KGJob[]
   isLoading: boolean
   error: string | null
+  errorMessage: string
+  showError: boolean
+  setShowError: (show: boolean) => void
   
   // Actions
   refreshJobs: () => Promise<void>
@@ -72,6 +75,8 @@ export function KGInsightsJobProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<KGJob[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [errorMessage, setErrorMessage] = useState('')
+  const [showError, setShowError] = useState(false)
   const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null)
   const { toast } = useToast()
 
@@ -272,7 +277,20 @@ export function KGInsightsJobProvider({ children }: { children: ReactNode }) {
       if (!response.ok) {
         // Remove the temporary job if the request failed
         setJobs(prevJobs => prevJobs.filter(job => job.id !== tempJobId))
-        throw new Error(`Failed to start load data job: ${response.statusText}`)
+        
+        // Handle specific 403 error with a permission-specific message
+        if (response.status === 403) {
+          const msg = "Permission denied: You don't have sufficient permissions to load data."
+          setErrorMessage(msg)
+          setShowError(true)
+          
+          // Auto-dismiss after 5 seconds
+          setTimeout(() => setShowError(false), 5000)
+          
+          throw new Error(msg)
+        } else {
+          throw new Error(`Failed to start load data job: ${response.statusText}`)
+        }
       }
       
       const data = await response.json()
@@ -351,7 +369,20 @@ export function KGInsightsJobProvider({ children }: { children: ReactNode }) {
       if (!response.ok) {
         // Remove the temporary job if the request failed
         setJobs(prevJobs => prevJobs.filter(job => job.id !== tempJobId))
-        throw new Error(`Failed to start clean data job: ${response.statusText}`)
+        
+        // Handle specific 403 error with a permission-specific message
+        if (response.status === 403) {
+          const msg = "Permission denied: You don't have sufficient permissions to clean data."
+          setErrorMessage(msg)
+          setShowError(true)
+          
+          // Auto-dismiss after 5 seconds
+          setTimeout(() => setShowError(false), 5000)
+          
+          throw new Error(msg)
+        } else {
+          throw new Error(`Failed to start clean data job: ${response.statusText}`)
+        }
       }
       
       const data = await response.json()
@@ -478,6 +509,9 @@ export function KGInsightsJobProvider({ children }: { children: ReactNode }) {
     jobs,
     isLoading,
     error,
+    errorMessage,
+    showError,
+    setShowError,
     refreshJobs,
     startLoadDataJob,
     startCleanDataJob,

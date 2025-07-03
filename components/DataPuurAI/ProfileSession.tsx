@@ -392,7 +392,7 @@ export function ProfileSession({ sessionId, onClose }: ProfileSessionProps) {
 
   return (
     <>
-      <Card className="h-full flex flex-col">
+      <Card className="h-full flex flex-col max-h-[calc(100vh-200px)] overflow-hidden">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
@@ -408,16 +408,16 @@ export function ProfileSession({ sessionId, onClose }: ProfileSessionProps) {
           </div>
         </CardHeader>
         
-        <CardContent className="flex-1 flex flex-col">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+        <CardContent className="flex-1 flex flex-col overflow-hidden">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
             <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="chat">Chat</TabsTrigger>
               <TabsTrigger value="issues">Quality Issues</TabsTrigger>
               <TabsTrigger value="suggestions">Suggestions</TabsTrigger>
             </TabsList>
             
-            <TabsContent value="chat" className="flex-1 flex flex-col">
-              <ScrollArea className="flex-1 pr-4 mb-4">
+            <TabsContent value="chat" className="flex-1 flex flex-col overflow-hidden h-full">
+              <ScrollArea className="flex-1 pr-4 mb-4 max-h-[calc(100%-60px)] overflow-y-auto">
                 <div className="space-y-4">
                   {messages.map((message) => (
                     <div
@@ -496,7 +496,7 @@ export function ProfileSession({ sessionId, onClose }: ProfileSessionProps) {
               </div>
             </TabsContent>
             
-            <TabsContent value="issues" className="flex-1 space-y-4">
+            <TabsContent value="issues" className="flex-1 pt-4">
               {qualityIssues.length > 0 ? (
                 <>
                   <div className="flex justify-between items-center">
@@ -549,14 +549,14 @@ export function ProfileSession({ sessionId, onClose }: ProfileSessionProps) {
                   </ScrollArea>
                 </>
               ) : (
-                <Alert>
+                <Alert className="mt-0">
                   <CheckCircle2 className="h-4 w-4" />
                   <AlertDescription>No quality issues detected</AlertDescription>
                 </Alert>
               )}
             </TabsContent>
             
-            <TabsContent value="suggestions" className="flex-1 space-y-4">
+            <TabsContent value="suggestions" className="flex-1 space-y-2">
               {suggestions.length > 0 ? (
                 <>
                   <div className="flex justify-between items-center">

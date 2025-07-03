@@ -188,10 +188,9 @@ class DataProfiler:
             # Process non-null values
             non_null_chunk = chunk.dropna()
             
-            # Count empty strings for string columns
-            if data_type == "string":
-                empty_string_mask = (non_null_chunk.astype(str).str.strip() == "")
-                empty_string_count += empty_string_mask.sum()
+            # Count empty strings for ALL column types, not just string columns
+            empty_string_mask = (non_null_chunk.astype(str).str.strip() == "")
+            empty_string_count += empty_string_mask.sum()
             
             # Update value counts (limit to most frequent values)
             chunk_value_counts = non_null_chunk.value_counts().head(20).to_dict()
@@ -215,8 +214,42 @@ class DataProfiler:
             del non_null_chunk
             gc.collect()
         
-        # Calculate metrics
+        # Check if potentially numeric column
+        is_potential_numeric = data_type in ['integer', 'float']
+        
+        # Enhanced missing value detection for potentially numeric columns
+        numeric_conversion_nan_count = 0
+        
+        if is_potential_numeric:
+            # Process in chunks to detect numeric missing values
+            for i in range(0, self.total_rows, chunk_size):
+                chunk_end = min(i + chunk_size, self.total_rows)
+                chunk = self.df.iloc[i:chunk_end][column_name]
+                
+                try:
+                    # Convert to numeric to detect additional missing values
+                    numeric_chunk = pd.to_numeric(chunk, errors='coerce')
+                    numeric_conversion_nan_count += numeric_chunk.isna().sum()
+                except Exception as e:
+                    logger.debug(f"Error in numeric conversion for column {column_name} chunk {i}-{chunk_end}: {str(e)}")
+                
+                # Free memory
+                del chunk
+                gc.collect()
+            
+            # Log only if we find additional missing values
+            additional_missing = numeric_conversion_nan_count - (null_count + empty_string_count)
+            if additional_missing > 0:
+                logger.debug(f"Column {column_name}: Detected {additional_missing} additional missing values after numeric conversion")
+        
+        # Calculate total missing - take max of standard count and numeric conversion count
         total_missing = null_count + empty_string_count
+        if is_potential_numeric and numeric_conversion_nan_count > total_missing:
+            logger.debug(f"Column {column_name}: Using numeric conversion missing count={numeric_conversion_nan_count} "
+                        f"instead of standard missing count={total_missing}")
+            total_missing = numeric_conversion_nan_count
+        
+        # Calculate metrics
         completeness = float(1 - (total_missing / self.total_rows)) if self.total_rows > 0 else 0.0
         
         # Calculate uniqueness (capped by our unique value collection)
@@ -235,6 +268,7 @@ class DataProfiler:
             "data_type": data_type,
             "count": self.total_rows - total_missing,
             "null_count": null_count,
+            "missing_count": total_missing,  # Explicitly include missing_count for frontend
             "unique_count": unique_count,
             "frequent_values": dict(sorted(value_counts.items(), key=lambda x: x[1], reverse=True)[:10]),
             "quality_score": quality_score,
@@ -295,19 +329,127 @@ class DataProfiler:
         # Use cached data type instead of detecting it multiple times
         data_type = self.column_data_types[column_name]
         
-        # Identify empty strings for string columns using vectorized operations
-        empty_string_count = 0
-        has_empty_string = False
-        if data_type == "string":
-            # Use vectorized string operations instead of apply+lambda
-            non_null_series = series.dropna()
-            if len(non_null_series) > 0:
-                empty_string_mask = (non_null_series.astype(str).str.strip() == "")
-                empty_string_count = empty_string_mask.sum()
-                has_empty_string = empty_string_count > 0
+        # Check if this is a potentially numeric column based on data type or content
+        is_potential_numeric = data_type in ['integer', 'float']
         
-        # Calculate quality metrics - include empty strings as missing values for completeness
-        total_missing = series.isnull().sum() + empty_string_count
+        # Only perform additional checks if not already identified as numeric by data type
+        if not is_potential_numeric and not series.empty:
+            # Sample up to 10 non-null values to check if they appear to be numeric
+            sample_values = series.dropna().head(10).astype(str)
+            if not sample_values.empty:
+                # Check if all sampled values could be numeric
+                # A truly numeric column should have values that are mostly convertible to numbers
+                # Text with numbers like "Factory 1" should not match this pattern
+                numeric_pattern = r'^[-+]?[0-9]*\.?[0-9]+$'
+                is_potential_numeric = (sample_values.str.match(numeric_pattern).mean() > 0.5)
+                
+                logger.debug(f"Column {column_name}: Sampled {len(sample_values)} values, {is_potential_numeric=}")
+                
+                # If type is string but appears numeric, log for visibility
+                if is_potential_numeric:
+                    logger.info(f"Column {column_name} has string data type but appears to contain numeric values")
+                elif data_type == 'string' and is_potential_numeric:
+                    logger.info(f"Column {column_name} detected as not numeric despite having numeric data type")
+        
+        
+        # Identify empty strings and common placeholder values for ALL column types
+        empty_string_count = 0
+        placeholder_count = 0
+        has_empty_string = False
+        non_null_series = series.dropna()
+        
+        if len(non_null_series) > 0:
+            # Enhanced check for empty strings and whitespace-only strings
+            # Convert to string first to handle any data type
+            str_series = non_null_series.astype(str)
+            
+            # Check for completely empty strings or strings with only whitespace
+            empty_string_mask = (str_series.str.strip() == "")
+            empty_string_count = empty_string_mask.sum()
+            
+            # Also check for strings that are just spaces, tabs, or other whitespace characters
+            whitespace_only_mask = str_series.str.match(r'^\s+$')
+            whitespace_count = whitespace_only_mask.sum()
+            
+            # Combine both counts
+            empty_string_count += whitespace_count
+            has_empty_string = empty_string_count > 0
+            
+            if empty_string_count > 0:
+                logger.info(f"Column {column_name}: Detected {empty_string_count} empty or whitespace-only values")
+
+            
+            # Check for common placeholder values that indicate missing data
+            # Case-insensitive check for common placeholder strings like 'n/a', 'NA', 'NULL', etc.
+            placeholder_values = ['n/a', 'na', 'null', 'none', 'missing', '?', '-']
+            
+            # Convert to lowercase for case-insensitive comparison
+            str_series = non_null_series.astype(str).str.lower().str.strip()
+            
+            # Create mask for placeholder values
+            placeholder_mask = str_series.isin(placeholder_values)
+            placeholder_count = placeholder_mask.sum()
+            
+            if placeholder_count > 0:
+                logger.info(f"Column {column_name}: Detected {placeholder_count} values matching common placeholder patterns like 'n/a'")
+        
+        
+        # Enhanced missing value detection for potentially numeric columns
+        numeric_conversion_nan_count = 0
+        numeric_series = series
+        is_numeric = pd.api.types.is_numeric_dtype(series)
+        
+        if is_potential_numeric:
+            try:
+                # Convert to numeric to detect additional missing values
+                numeric_series = pd.to_numeric(series, errors='coerce')
+                numeric_conversion_nan_count = numeric_series.isna().sum()
+                
+                # Log more detailed information about missing values detection
+                logger.info(f"Column {column_name}: Original null count={series.isnull().sum()}, empty strings={empty_string_count}, numeric conversion NaN count={numeric_conversion_nan_count}")
+                
+                # Log only if we find additional missing values
+                additional_missing = numeric_conversion_nan_count - (series.isnull().sum() + empty_string_count)
+                if additional_missing > 0:
+                    logger.info(f"Column {column_name}: Detected {additional_missing} additional missing values after numeric conversion")
+            except Exception as e:
+                logger.error(f"Error in numeric conversion for column {column_name}: {str(e)}")
+                numeric_conversion_nan_count = 0
+        
+        # Calculate quality metrics - include empty strings and placeholder values as missing values for all column types
+        total_missing = series.isnull().sum() + empty_string_count + placeholder_count
+        
+        if placeholder_count > 0:
+            logger.info(f"Column {column_name}: Including {placeholder_count} placeholder values in total missing count (new total: {total_missing})")
+        
+        
+        # For potentially numeric columns, use the higher of calculated missing counts
+        # This ensures we catch non-numeric entries in numeric columns
+        original_missing = total_missing
+        
+        # ONLY use numeric conversion for truly numeric columns to avoid misclassifying text with numbers as missing
+        if is_potential_numeric and numeric_conversion_nan_count > total_missing:
+            # Extra validation: If the difference is extremely large (>90% of total rows), 
+            # this is likely a text column being misclassified as numeric
+            additional_missing = numeric_conversion_nan_count - total_missing
+            total_rows = len(series)
+            if additional_missing > (0.9 * total_rows):
+                logger.warning(f"Column {column_name}: Rejecting numeric conversion due to excessive missing values. "
+                             f"This appears to be a text column with numbers rather than a true numeric column. "
+                             f"Missing: {total_missing}, Numeric conversion missing: {numeric_conversion_nan_count}, Total rows: {total_rows}")
+            else:
+                logger.info(f"Column {column_name}: Using numeric conversion missing count={numeric_conversion_nan_count} "
+                          f"instead of standard missing count={total_missing}")
+                total_missing = numeric_conversion_nan_count
+            
+        # Log the final decision on missing count
+        if original_missing != total_missing:
+            logger.info(f"Column {column_name}: FINAL missing count={total_missing} (updated from {original_missing})")
+        else:
+            logger.debug(f"Column {column_name}: FINAL missing count={total_missing} (unchanged)")
+        
+        
+        # Calculate completeness based on total missing values
         completeness = float(1 - (total_missing / len(series))) if len(series) > 0 else 0.0
         
         # Calculate uniqueness (ratio of unique values to total values)
@@ -327,8 +469,9 @@ class DataProfiler:
         profile = {
             "column_name": column_name,
             "data_type": data_type,  # Use cached data type
-            "count": len(series) - series.isnull().sum() - empty_string_count,  # Count of valid values only
+            "count": len(series) - total_missing,  # Count of valid values using our enhanced missing detection
             "null_count": series.isnull().sum(),
+            "missing_count": total_missing,  # Explicitly include the missing_count for the frontend
             "unique_count": unique_count,  # Unique count excluding empty strings
             "frequent_values": self._get_frequent_values(series),
             "invalid_values": self._get_invalid_values(series, data_type),  # Use cached data type
@@ -345,40 +488,33 @@ class DataProfiler:
             profile["outliers"] = self._detect_outliers(series)
         else:
             profile["outliers"] = {"z_score": {}, "iqr": {}}
+            
+        # Add enhanced debug logging to track missing values detection
+        if total_missing > 0:
+            logger.debug(f"Column {column_name}: Final profile - missing_count={total_missing}, count={len(series) - total_missing}")
+            if is_potential_numeric and numeric_conversion_nan_count > 0:
+                logger.debug(f"Column {column_name}: Numeric conversion helped identify {numeric_conversion_nan_count - series.isnull().sum()} additional missing values")
+            logger.debug(f"Column {column_name} completeness: {completeness}")
         
-        # Try to convert string columns to numeric if they contain numeric data
-        numeric_series = series
-        is_numeric = pd.api.types.is_numeric_dtype(series)
-        
-        if not is_numeric and series.dtype == 'object':
-            # Try to convert string to numeric
+        # Numeric statistics using already converted numeric_series if available
+        if is_numeric or (is_potential_numeric and numeric_conversion_nan_count > 0):
             try:
-                numeric_series = pd.to_numeric(series, errors='coerce')
-                # If we have at least 80% of values that could be converted to numeric, consider it numeric
-                if numeric_series.notna().mean() >= 0.8:
-                    is_numeric = True
-            except:
-                pass
-
-        # Numeric statistics if applicable
-        if is_numeric:
-            try:
-                profile.update({
-                    "min_value": str(numeric_series.min()) if not pd.isna(numeric_series.min()) else None,
-                    "max_value": str(numeric_series.max()) if not pd.isna(numeric_series.max()) else None,
-                    "mean_value": float(numeric_series.mean()) if not pd.isna(numeric_series.mean()) else None,
-                    "median_value": float(numeric_series.median()) if not pd.isna(numeric_series.median()) else None,
-                    "mode_value": str(numeric_series.mode().iloc[0]) if not numeric_series.empty and len(numeric_series.mode()) > 0 else None,
-                    "std_dev": float(numeric_series.std()) if not pd.isna(numeric_series.std()) else None,
-                })
-            except:
-                # Fallback if any calculation fails
+                non_null_numeric = numeric_series.dropna()
+                if len(non_null_numeric) > 0:
+                    profile.update({
+                        "min_value": str(float(non_null_numeric.min())) if not pd.isna(non_null_numeric.min()) else None,
+                        "max_value": str(float(non_null_numeric.max())) if not pd.isna(non_null_numeric.max()) else None,
+                        "mean_value": float(non_null_numeric.mean()) if not pd.isna(non_null_numeric.mean()) else None,
+                        "median_value": float(non_null_numeric.median()) if not pd.isna(non_null_numeric.median()) else None,
+                        "std_dev": float(non_null_numeric.std()) if len(non_null_numeric) > 1 and not pd.isna(non_null_numeric.std()) else 0.0,
+                    })
+            except Exception as e:
+                logger.debug(f"Error calculating numeric statistics for {column_name}: {str(e)}")
                 profile.update({
                     "min_value": None,
                     "max_value": None,
                     "mean_value": None,
                     "median_value": None,
-                    "mode_value": None,
                     "std_dev": None,
                 })
         else:
@@ -387,7 +523,6 @@ class DataProfiler:
                 "max_value": None,
                 "mean_value": None,
                 "median_value": None,
-                "mode_value": None,
                 "std_dev": None,
             })
 
@@ -689,19 +824,6 @@ class DataProfiler:
         else:
             return 0.0
 
-    def generate_profile(self) -> Tuple[Dict, List[Dict]]:
-        column_profiles = []
-        for column in self.df.columns:
-            profile = self.profile_column(column)
-            column_profiles.append(profile)
-
-        quality_score = self.calculate_data_quality_score()
-
-        return {
-            "total_rows": self.total_rows,
-            "total_columns": self.total_columns,
-            "data_quality_score": quality_score
-        }, column_profiles
 
     def detect_exact_duplicates(self, sample_size: int = 100000) -> Dict:
         """Detect exact duplicate rows in the DataFrame.

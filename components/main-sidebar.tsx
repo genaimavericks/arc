@@ -25,7 +25,8 @@ import {
   Brain,
   Zap,
   Clock,
-  Factory
+  Factory,
+  Sparkles
 } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
 import { useDjinniStore } from "@/lib/djinni/store"
@@ -162,8 +163,8 @@ export function MainSidebar() {
   const [collapsed, setCollapsed] = useState(false)
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     "datapuur": pathname.startsWith("/datapuur"),
-    "kginsights": pathname.startsWith("/kginsights"),
-    "k-graff": pathname.startsWith("/kginsights"),
+    "kginsights": pathname.startsWith("/kginsights") && !pathname.startsWith("/kginsights/insights"),
+    "k-graff": pathname.startsWith("/kginsights") && !pathname.startsWith("/djinni/kgraph-insights"),
     "factory-dashboard": pathname === "/" || pathname.includes("?tab=") || pathname.startsWith("/factory_dashboard"),
     "djinni-assistant": pathname.startsWith("/djinni")
   })
@@ -193,8 +194,8 @@ export function MainSidebar() {
     setExpandedSections(prev => ({
       ...prev,
       "datapuur": pathname.startsWith("/datapuur"),
-      "kginsights": pathname.startsWith("/kginsights"),
-      "k-graff": pathname.startsWith("/kginsights"),
+      "kginsights": pathname.startsWith("/kginsights") && !pathname.startsWith("/kginsights/insights"),
+      "k-graff": pathname.startsWith("/kginsights") && !pathname.startsWith("/djinni/kgraph-insights"),
       "factory-dashboard": pathname === "/" || pathname.startsWith("/factory_dashboard"),
       "churn-dashboard": pathname.startsWith("/churn_dashboard"),
       "sales-overview": pathname === "/" || pathname.startsWith("/sales-performance"),
@@ -202,129 +203,20 @@ export function MainSidebar() {
     }))
   }, [pathname])
 
-  // Group menu sections by category
-  const allCommandCenters: MenuSection[] = [
-    // {
-    //   label: "Sales Overview",
-    //   icon: LayoutDashboard,
-    //   href: "/",
-    //   key: "sales-overview",
-    //   requiredPermission: "command:read",
-    //   subItems: [
-    //     {
-    //       label: "Sales Performance",
-    //       icon: BarChart2,
-    //       href: "/sales-performance",
-    //     }
-    //   ]
-    // },
-    // {
-    //   label: "Inventory Overview",
-    //   icon: Database,
-    //   href: "/inventory",
-    //   requiredPermission: "command:read"
-    // },
-    // {
-    //   label: "Financial Overview",
-    //   icon: BarChart2,
-    //   href: "/financial",
-    //   requiredPermission: "command:read"
-    // },
-    {
-      label: "Factory Dashboard",
-      icon: Factory,
-      href: "/",
-      key: "factory-dashboard",
-      requiredPermission: "command:read",
-      subItems: [
-        { 
-          label: "Performance Overview", 
-          href: "/", 
-          icon: LayoutDashboard,
-          requiredPermission: "command:read" 
-        },
-        {
-          label: "Operations & Maintenance",
-          icon: BarChart2,
-          href: "/factory_dashboard/operations",
-          requiredPermission: "command:read"
-        },
-        {
-          label: "Workforce & Resources",
-          icon: BarChart2,
-          href: "/factory_dashboard/workforce",
-          requiredPermission: "command:read"
-        }
-      ]
-    },
-    {
-      label: "Churn Dashboard",
-      icon: BarChart2,
-      href: "/churn_dashboard",
-      key: "churn-dashboard",
-      requiredPermission: "command:read",
-      subItems: [
-        {
-          label: "Summary",
-          icon: LayoutDashboard,
-          href: "/churn_dashboard",
-          requiredPermission: "command:read"
-        },
-        {
-          label: "Customer Profile",
-          icon: BarChart2,
-          href: "/churn_dashboard/customer",
-          requiredPermission: "command:read"
-        },
-        {
-          label: "Churner Profile",
-          icon: BarChart2,
-          href: "/churn_dashboard/churner",
-          requiredPermission: "command:read"
-        }
-      ]
-    }
-  ]
-  
-  // Filter command centers based on user permissions
-  const commandCenters = allCommandCenters.filter(item => {
-    if (!user || !user.permissions || !item.requiredPermission) return false
-    return user.permissions.includes(item.requiredPermission as string)
-  })
-  
-  // Track the active model from both Zustand store and localStorage
+  // Track the active model from both Zustand store and localStorage for dashboard filtering
   const djinniStore = useDjinniStore();
   const [activeModelState, setActiveModelState] = useState<string>(() => {
     // Initialize from localStorage if available, otherwise use store
     if (typeof window !== 'undefined') {
       const localModel = localStorage.getItem('djinni_active_model');
-      return localModel || djinniStore.activeModel;
+      return localModel || djinniStore.activeModel || "factory_astro"; // Default to factory_astro if not set
     }
-    return djinniStore.activeModel;
+    return djinniStore.activeModel || "factory_astro";
   });
   
-  // Get submenu items based on active model
-  const getActiveModelSubmenu = (model: string) => {
-    console.log(`Generating submenu for model: ${model}`);
-    let submenuItems = [
-      { 
-        label: "KGraph Insights", 
-        href: "/kginsights/insights", 
-        icon: NetworkIcon,
-        requiredPermission: "kginsights:read" 
-      }
-    ]
-    if (model === "factory_astro") {
-      submenuItems.push({ label: "Factory Astro", href: "/djinni/factory-astro", icon: Bot, requiredPermission: "djinni:read" });
-    } else if (model === "churn_astro") {
-      submenuItems.push({ label: "Churn Astro", href: "/djinni/churn-astro", icon: Bot, requiredPermission: "djinni:read" });
-    } 
-    return submenuItems;
-  };
-  
-  // Check for changes in localStorage and Zustand store
+  // Effect to keep track of model changes for dashboard filtering
   useEffect(() => {
-    // Function to check and update the active model
+    // Function to check and update the active model - defined inside the effect
     const checkActiveModel = () => {
       if (typeof window !== 'undefined') {
         const localModel = localStorage.getItem('djinni_active_model');
@@ -366,17 +258,133 @@ export function MainSidebar() {
     };
   }, [djinniStore, activeModelState]);
   
-  // Generate submenu items based on active model
-  const submenuItems = getActiveModelSubmenu(activeModelState);
+  // Removed getActiveModelSubmenu function as we're no longer using submenu items for Djinni Assistant
 
+  // Define all possible command centers
+  const factoryDashboard: MenuSection = {
+    label: "Factory Dashboard",
+    icon: Factory,
+    href: "/",
+    key: "factory-dashboard",
+    requiredPermission: "command:read",
+    subItems: [
+      { 
+        label: "Performance Overview", 
+        href: "/", 
+        icon: LayoutDashboard,
+        requiredPermission: "command:read" 
+      },
+      {
+        label: "Operations & Maintenance",
+        icon: BarChart2,
+        href: "/factory_dashboard/operations",
+        requiredPermission: "command:read"
+      },
+      {
+        label: "Workforce & Resources",
+        icon: BarChart2,
+        href: "/factory_dashboard/workforce",
+        requiredPermission: "command:read"
+      }
+    ]
+  };
+  
+  const churnDashboard: MenuSection = {
+    label: "Churn Dashboard",
+    icon: BarChart2,
+    href: "/churn_dashboard",
+    key: "churn-dashboard",
+    requiredPermission: "command:read",
+    subItems: [
+      {
+        label: "Summary",
+        icon: LayoutDashboard,
+        href: "/churn_dashboard",
+        requiredPermission: "command:read"
+      },
+      {
+        label: "Customer Profile",
+        icon: BarChart2,
+        href: "/churn_dashboard/customer",
+        requiredPermission: "command:read"
+      },
+      {
+        label: "Churner Profile",
+        icon: BarChart2,
+        href: "/churn_dashboard/churner",
+        requiredPermission: "command:read"
+      }
+    ]
+  };
+  
+  // Conditionally include dashboards based on active model
+  const allCommandCenters: MenuSection[] = [];
+  
+  // Add the appropriate dashboard based on active model
+  if (activeModelState === "churn_astro") {
+    allCommandCenters.push(churnDashboard);
+  } else {
+    // Default to factory dashboard for any other model or factory_astro
+    allCommandCenters.push(factoryDashboard);
+  }
+  
+  // Filter command centers based on user permissions
+  const commandCenters = allCommandCenters.filter(item => {
+    if (!user || !user.permissions || !item.requiredPermission) return false
+    return user.permissions.includes(item.requiredPermission as string)
+  })
+  
+  // Check for changes in localStorage and Zustand store
+  useEffect(() => {
+    const checkActiveModel = () => {
+      if (typeof window !== 'undefined') {
+        const localModel = localStorage.getItem('djinni_active_model');
+        const storeModel = djinniStore.activeModel;
+        
+        // Prioritize localStorage value as it's updated by the admin settings
+        const newModel = localModel || storeModel;
+        
+        if (newModel !== activeModelState) {
+          console.log(`Model changed: ${activeModelState} -> ${newModel}`);
+          setActiveModelState(newModel);
+          
+          // Also update the Zustand store to keep it in sync
+          if (localModel && localModel !== storeModel) {
+            djinniStore.setActiveModel(localModel as any);
+          }
+        }
+      }
+    };
+    
+    // Check immediately
+    checkActiveModel();
+    
+    // Set up an interval to check for changes
+    const intervalId = setInterval(checkActiveModel, 1000);
+    
+    // Set up storage event listener for immediate updates
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'djinni_active_model') {
+        checkActiveModel();
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [djinniStore, activeModelState]);
+  
+  // Define all possible djinni items
   const allDjinni: MenuSection[] = [
     {
       label: "Djinni Assistant",
       icon: Bot,
-      href: "/djinni",
+      href: "/djinni/assistant",
       key: "djinni-assistant",
-      requiredPermission: "djinni:read",
-      subItems: submenuItems
+      requiredPermission: "djinni:read"
     },
     {
       label: "Conversations",
@@ -402,12 +410,12 @@ export function MainSidebar() {
       requiredPermission: "datapuur:read",
       key: "datapuur", // Add a key property for consistent identification
       subItems: [
-        { label: "Dashboard", href: "/datapuur", icon: LayoutDashboard },
-        { label: "Ingestion", href: "/datapuur/ingestion", icon: FileInput },
-        { label: "AI Profile", href: "/datapuur/ai-profile", icon: Brain },
-        { label: "AI Transformation", href: "/datapuur/ai-transformation", icon: Zap },
-        { label: "Data Catalog", href: "/datapuur/data-catalog", icon: Database },
-        { label: "Export", href: "/datapuur/export", icon: Download }
+        { label: "Dashboard", href: "/datapuur", icon: LayoutDashboard, requiredPermission: "datapuur:read" },
+        { label: "Ingestion", href: "/datapuur/ingestion", icon: FileInput, requiredPermission: "datapuur:write" },
+        { label: "AI Profile", href: "/datapuur/ai-profile", icon: Brain, requiredPermission: "datapuur:write" },
+        { label: "AI Transformation", href: "/datapuur/ai-transformation", icon: Zap, requiredPermission: "datapuur:write" },
+        { label: "Data Catalog", href: "/datapuur/data-catalog", icon: Database, requiredPermission: "datapuur:read" },
+        { label: "Export", href: "/datapuur/export", icon: Download, requiredPermission: "datapuur:write" }
       ]
     },
     {
@@ -417,16 +425,22 @@ export function MainSidebar() {
       requiredPermission: "kginsights:read",
       key: "k-graff", // Add a key property for consistent identification
       subItems: [
-        { label: "KGraph Dashboard", href: "/kginsights/dashboard", icon: LayoutDashboard },
-        { label: "Generate Graph", href: "/kginsights/generate", icon: GitBranch },
-        { label: "Manage KGraph", href: "/kginsights/manage", icon: Settings },
-        { label: "KGraph Insights", href: "/kginsights/insights", icon: MessageSquare }
+        { label: "KGraff Dashboard", href: "/kginsights/dashboard", icon: LayoutDashboard, requiredPermission: "kginsights:read" },
+        { label: "Generate Graph", href: "/kginsights/generate", icon: GitBranch, requiredPermission: "kginsights:write" },
+        { label: "Manage KGraff", href: "/kginsights/manage", icon: Settings, requiredPermission: "kginsights:write" },
+        { label: "KGraff Insights", href: "/kginsights/insights", icon: MessageSquare, requiredPermission: "kginsights:read" }
       ]
     }
   ]
   
   // Filter tools based on user permissions
   const tools = allTools.filter(tool => {
+    // Special case for K-Graff menu - only show if user explicitly has kginsights:read permission
+    // This ensures users with only djinni:read don't see the K-Graff menu
+    if (tool.key === "k-graff") {
+      return user?.permissions?.includes("kginsights:read");
+    }
+    
     if (!user || !user.permissions || !tool.requiredPermission) return false
     
     // Check if user has the required permission for this tool
@@ -704,7 +718,12 @@ export function MainSidebar() {
                     {Boolean(expandedSections[section.key || section.label.toLowerCase()]) && !collapsed && (
                       <div className="ml-4 space-y-1 border-l border-border pl-3">
                         {section.subItems?.filter(item => {
-                          // Filter sub-items based on permissions if they have requiredPermission
+                          // Special case for KGraph Insights in the Djinni menu - always show to users with djinni:read
+                          if (item.label === "KGraff Insights" && user?.permissions?.includes("djinni:read")) {
+                            return true;
+                          }
+                          
+                          // Standard permission filtering for other items
                           if (!item.requiredPermission) return true;
                           if (!user || !user.permissions) return false;
                           return user.permissions.includes(item.requiredPermission);
@@ -798,7 +817,16 @@ export function MainSidebar() {
                   
                   {Boolean(expandedSections[section.key || section.label.toLowerCase()]) && !collapsed && (
                     <div className="ml-4 space-y-1 border-l border-border pl-3">
-                      {section.subItems?.map((item) => (
+                      {section.subItems?.filter(item => {
+                        // If no required permission is specified, show the item
+                        if (!item.requiredPermission) return true;
+                        
+                        // If user doesn't exist or has no permissions, don't show the item
+                        if (!user || !user.permissions) return false;
+                        
+                        // Show the item if user has the required permission
+                        return user.permissions.includes(item.requiredPermission);
+                      }).map((item) => (
                         <SidebarMenuItem
                           key={item.href}
                           href={item.href}
@@ -856,10 +884,10 @@ export function MainSidebar() {
               <User size={16} />
             </div>
             
-            {!collapsed && (
+            {!collapsed && user && (
               <div className="flex-1 overflow-hidden">
-                <p className="text-sm font-medium truncate">{user.username}</p>
-                <p className="text-xs text-muted-foreground truncate capitalize">{user.role}</p>
+                <p className="text-sm font-medium truncate">{user?.username}</p>
+                <p className="text-xs text-muted-foreground truncate capitalize">{user?.role}</p>
               </div>
             )}
             

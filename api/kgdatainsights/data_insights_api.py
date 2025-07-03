@@ -144,7 +144,7 @@ async def get_status():
 async def analyze_data_visualization(
     schema_id: str, 
     data: Dict[str, Any],
-    current_user: User = Depends(has_any_permission(["kginsights:read"]))
+    current_user: User = Depends(has_any_permission(["kginsights:read", "djinni:read"]))
 ):
     """
     Analyze data and suggest appropriate visualization.
@@ -181,7 +181,7 @@ async def process_query(
     schema_id: str, 
     request: QueryRequest,
     use_schema_aware: bool = Query(True, description="Use the schema-aware agent instead of default agent"),
-    current_user: User = Depends(has_any_permission(["kginsights:read"]))
+    current_user: User = Depends(has_any_permission(["kginsights:read", "djinni:read"]))
 ):
     """
     Process a query against the knowledge graph and record it in the query history.
@@ -361,11 +361,11 @@ async def record_query_history(schema_id: str, response: QueryResponse):
     except Exception as e:
         print(f"Error saving query history: {str(e)}")
 
-@router.get("/{schema_id}/query/history", response_model=QueryHistoryResponse)
+@router.get("/{schema_id}/history", response_model=QueryHistoryResponse)
 async def get_query_history(
     schema_id: str, 
     limit: int = Query(5, ge=1, le=5),  # Enforcing a hard limit of 5
-    current_user: User = Depends(has_any_permission(["kginsights:read"]))
+    current_user: User = Depends(has_any_permission(["kginsights:read", "djinni:read"]))
 ):
     """
     Get the query history for a specific schema_id.
@@ -520,7 +520,7 @@ async def delete_all_history(
 async def get_predefined_queries(
     schema_id: str, 
     category: Optional[str] = None,
-    current_user: User = Depends(has_any_permission(["kginsights:read"]))
+    current_user: User = Depends(has_any_permission(["kginsights:read", "djinni:read"]))
 ):
     """
     Get a list of predefined (canned) queries for a specific schema_id.

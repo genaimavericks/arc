@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { useAuth } from "@/lib/auth-context"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { PlusCircle, Search, Eye, BarChart2, Wand2, RefreshCw, Trash2, ChevronLeft, ChevronRight, FileDown } from "lucide-react"
 import { useRouter } from "next/navigation"
@@ -54,6 +55,7 @@ interface DashboardData {
 }
 
 export function DataDashboard() {
+  const { user } = useAuth()
   const [searchQuery, setSearchQuery] = useState("")
   const [datasets, setDatasets] = useState<DataSource[]>([])
   const [dataMetrics, setDataMetrics] = useState<DataMetrics | null>(null)
@@ -61,6 +63,7 @@ export function DataDashboard() {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [permissionError, setPermissionError] = useState<string | null>(null)
   const [previewModalOpen, setPreviewModalOpen] = useState(false)
   const [selectedDataset, setSelectedDataset] = useState<{ id: string; name: string } | null>(null)
   const [previewData, setPreviewData] = useState<any>(null)
@@ -83,7 +86,20 @@ export function DataDashboard() {
   const fetchWithAuthWrapper = useCallback(async (url: string, options?: RequestInit) => {
     try {
       // Use the centralized fetchWithAuth function
-      return await fetchWithAuth(url, options)
+      const response = await fetchWithAuth(url, options)
+      
+      // Handle permission errors (403 Forbidden)
+      if (response.status === 403) {
+        // Show error in the UI instead of toast
+        setPermissionError("Permission denied: You don't have access to perform this action")
+        
+        // Auto-dismiss the error after 5 seconds
+        setTimeout(() => {
+          setPermissionError(null)
+        }, 5000)
+      }
+      
+      return response
     } catch (error) {
       // Set local error state for UI feedback
       if (error instanceof Error && error.message === "Authentication failed") {
@@ -308,19 +324,50 @@ export function DataDashboard() {
     try {
       setIsDeleting(true)
       
-      // Use the new delete-file endpoint with fetchWithAuthWrapper
-      const response = await fetchWithAuthWrapper(`/api/datapuur/delete-file/${datasetToDelete.id}`, {
-        method: "DELETE",
-      })
-
-      if (response.success) {
-        // Remove the dataset from the state
-        setDatasets((prevDatasets) => prevDatasets.filter((d) => d.id !== datasetToDelete.id))
+      try {
+        // Use fetchWithAuth from lib/auth-utils.ts
+        await fetchWithAuth(`/api/datapuur/delete-file/${datasetToDelete.id}`, {
+          method: "DELETE",
+          headers: {
+            "Content-Type": "application/json"
+          }
+        })
+        
+        // If we get here, the deletion was successful
+        setDeleteDialogOpen(false)
+        
+        // Update local state to reflect the deletion
+        setDatasets((prevDatasets) => prevDatasets.filter((d) => d.id !== datasetToDelete?.id))
+        
+        setDatasetToDelete(null)
+        
+        // Refresh the dataset list
+        fetchData()
         
         toast({
           title: "Dataset deleted",
-          description: `${datasetToDelete.name} has been successfully deleted.`,
+          description: `File has been successfully deleted.`,
         })
+      } catch (error) {
+        // Check if this is a 403 error
+        if ((error as Error).message.includes("403") || 
+            (error as Error).message.includes("Forbidden")) {
+          setPermissionError("Permission denied: You don't have access to delete files")
+          
+          // Auto-dismiss the error after 5 seconds
+          setTimeout(() => {
+            setPermissionError(null)
+          }, 5000)
+          return
+        } else {
+          // Handle other errors
+          console.error("Error deleting dataset:", error)
+          toast({
+            title: "Error",
+            description: "Failed to delete dataset. Please try again.",
+            variant: "destructive",
+          })
+        }
       }
     } catch (error) {
       console.error("Error deleting dataset:", error)
@@ -364,7 +411,7 @@ export function DataDashboard() {
   }
 
   const handleTransform = (datasetId: string) => {
-    router.push(`/datapuur/transformation/${datasetId}`)
+    router.push(`/datapuur/ai-transformation?datasetId=${datasetId}`)
   }
 
   const handleExport = (datasetId: string) => {
@@ -442,6 +489,11 @@ export function DataDashboard() {
 
   return (
     <div className="w-full space-y-2 mx-6 max-w-[calc(100%-3rem)]">
+      {permissionError && (
+        <div className="bg-destructive text-white p-4 mb-4 rounded-md flex items-center justify-between">
+          <span>{permissionError}</span>
+        </div>
+      )}
       <div className="flex w-full items-center justify-between pb-2 pt-2">
         <h2 className="text-2xl font-bold tracking-tight ml-3">Dashboard</h2>
         <div className="flex items-center space-x-2 mr-3">
@@ -473,9 +525,11 @@ export function DataDashboard() {
               <Table className="w-5 h-5 mr-2 text-primary" />
               Datasets
             </h3>
-            <Button onClick={handleNewDataset} className="flex items-center gap-2 ml-4" size="sm">
-              <PlusCircle className="h-4 w-4" />
-            </Button>
+            {user?.permissions?.includes("datapuur:write") && (
+              <Button onClick={handleNewDataset} className="flex items-center gap-2 ml-4" size="sm">
+                <PlusCircle className="h-4 w-4" />
+              </Button>
+            )}
           </div>
           <div className="text-sm text-muted-foreground">Auto-refreshes every 30 seconds</div>
         </div>

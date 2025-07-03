@@ -88,11 +88,7 @@ app.add_middleware(ActivityLoggerMiddleware)
 app.include_router(auth_router)
 #app.include_router(ingestion_router)
 app.include_router(datapuur_router)
-print("DEBUG: Including kginsights_router in main app with prefix /api")
 app.include_router(kginsights_router, prefix="/api")
-print(f"DEBUG: kginsights_router routes: {[route.path for route in kginsights_router.routes]}")
-print(f"DEBUG: Full application routes: {[route.path for route in app.routes]}")
-# The graphschema router should be included with just /api prefix since it already has /graphschema in its routes
 app.include_router(graphschema_router, prefix="/api")
 app.include_router(kgdatainsights_router, prefix="/api")
 app.include_router(profiler_router)
@@ -139,6 +135,14 @@ try:
     print("Churn Astro router included successfully")
 except ImportError as e:
     print(f"Could not import Churn Astro router: {e}")
+
+# Include the Djinni assistant router
+try:
+    from api.djinni import router as djinni_router
+    app.include_router(djinni_router)
+    print("Djinni router included successfully")
+except ImportError as e:
+    print(f"Could not import Djinni router: {e}")
 
 # Add additional admin routes that map to datapuur admin endpoints
 app.add_api_route("/api/admin/jobs", get_all_jobs_admin, methods=["GET"])
@@ -258,6 +262,16 @@ async def startup_event():
     # Include WebSocket API router
     app.include_router(websocket_router, prefix="/api")
     print("Included WebSocket API router")
+    
+    # Initialize all schema-aware agents at startup to avoid cold-start delays
+    try:
+        from api.kgdatainsights.agent.schema_aware_agent import initialize_all_agents
+        initialization_results = initialize_all_agents(db)
+        success_count = sum(1 for v in initialization_results.values() if v)
+        print(f"Pre-initialized {success_count}/{len(initialization_results)} schema-aware agents at startup")
+    except Exception as e:
+        print(f"Error initializing schema-aware agents: {str(e)}")
+        # Non-fatal error - continue application startup
 
 # Mount static files after all API routes are registered
 # Mount static files directory if it exists

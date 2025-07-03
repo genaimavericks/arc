@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from .agent.graph_schema_agent import GraphSchemaAgent
+from ..kgdatainsights.agent.schema_aware_agent import remove_schema_aware_assistant
 # Using only Google Generative AI
 import os
 import json
@@ -13,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from sqlalchemy.orm import Session
 from ..models import get_db, IngestionJob, UploadedFile, Schema
-from ..auth import has_any_permission
+from ..auth import has_any_permission, has_permissions
 from ..models import User
 from ..db_config import SessionLocal
 from neo4j import GraphDatabase
@@ -189,6 +190,7 @@ class SaveSchemaInput(BaseModel):
     output_path: str = None  # Optional output path, if not provided will use default location
     csv_file_path: str = None  # Path to the original CSV file used to generate the schema
     dataset_type: str = "source"  # Type of dataset: "source" or "transformed"
+    domain: str = None  # Data domain (e.g., 'telecom_churn', 'foam_factory')
 
 class SaveSchemaResponse(BaseModel):
     message: str
@@ -201,6 +203,7 @@ class RefineSchemaInput(BaseModel):
     file_path: str = None  # Optional file path, similar to SourceIdInput
     domain: str = None  # Data domain (e.g., 'telecom_churn', 'foam_factory')
     custom_domain_file: str = None
+    dataset_type: str = "source"  # Can be 'source' or 'transformed'
 
 class ApplySchemaInput(BaseModel):
     schema_id: int
@@ -404,7 +407,7 @@ async def build_schema_from_path(file_input: FilePathInput):
 @router.post('/build-schema-from-source', response_model=SchemaResult)
 async def build_schema_from_source(
     source_input: SourceIdInput,
-    current_user: User = Depends(has_any_permission(["kginsights:read", "datapuur:read"])),
+    current_user: User = Depends(has_permissions(["kginsights:write", "datapuur:read"])),
     db: SessionLocal = Depends(get_db)
 ):
     """Generate Neo4j schema from a source ID and return the results."""
@@ -668,7 +671,7 @@ async def build_schema_from_source(
 @router.post('/refine-schema', response_model=SchemaResult)
 async def refine_schema(
     refine_input: RefineSchemaInput,
-    current_user: User = Depends(has_any_permission(["kginsights:read", "datapuur:read"])),
+    current_user: User = Depends(has_any_permission(["kginsights:write", "datapuur:read", "djinni:read"])),
     db: SessionLocal = Depends(get_db)
 ):
     """Refine an existing Neo4j schema based on user feedback."""
@@ -677,10 +680,27 @@ async def refine_schema(
         source_id = refine_input.source_id
         temp_json_file = None
         
+        # Import required modules for data directory access
+        import os.path
+        from pathlib import Path
+        # Get the path to the datapuur_ai data directory
+        api_dir = Path(__file__).parent.parent  # api directory
+        data_dir = os.path.join(api_dir, "datapuur_ai", "data")
+        
         # Check if file_path is provided directly in the request
         if refine_input.file_path:
             print(f"DEBUG: Using provided file path: {refine_input.file_path}")
-            file_path = refine_input.file_path
+            raw_file_path = refine_input.file_path
+            
+            # Handle dataset type-specific path construction
+            dataset_type = refine_input.dataset_type
+            if dataset_type == "transformed" and raw_file_path.endswith('.parquet'):
+                # For transformed datasets, construct absolute path in the data directory
+                file_path = os.path.join(data_dir, os.path.basename(raw_file_path))
+                print(f"DEBUG: Mapped transformed dataset path to: {file_path}")
+            else:
+                # For source datasets or if not a parquet file, use as-is
+                file_path = raw_file_path
             
             # Validate file exists
             if not os.path.exists(file_path):
@@ -1420,6 +1440,14 @@ async def save_schema(
             if hasattr(save_input, 'dataset_type') and save_input.dataset_type:
                 dataset_type = save_input.dataset_type
                 print(f"DEBUG: Using explicitly provided dataset_type: {dataset_type}")
+            
+            # Get domain if provided
+            domain = None
+            if hasattr(save_input, 'domain') and save_input.domain:
+                domain = save_input.domain
+                print(f"DEBUG: Using explicitly provided domain: {domain}")
+                # Also add domain to schema_data for file storage
+                schema_data['domain'] = domain
                 
             schema_record = Schema(
                 name=schema_data.get('name', f"schema_{datetime.now().isoformat()}"),
@@ -1427,7 +1455,8 @@ async def save_schema(
                 description=schema_data.get('description', ''),
                 schema=json.dumps(save_input.schema),
                 csv_file_path=save_input.csv_file_path,
-                dataset_type=dataset_type  # Set the dataset type
+                dataset_type=dataset_type,  # Set the dataset type
+                domain=domain  # Set the domain
                 # created_at and updated_at have default values
             )
             db.add(schema_record)
@@ -1451,7 +1480,7 @@ async def save_schema(
 
 @router.get('/schemas', response_model=list)
 async def get_schemas(
-    current_user: User = Depends(has_any_permission(["kginsights:read", "datapuur:read"])),
+    current_user: User = Depends(has_any_permission(["kginsights:read", "datapuur:read", "djinni:read"])),
     db: SessionLocal = Depends(get_db)
 ):
     """Get all saved schemas from the database."""
@@ -1489,7 +1518,7 @@ async def get_schemas(
 @router.get('/schemas/{schema_id}', response_model=dict)
 async def get_schema(
     schema_id: int,
-    current_user: User = Depends(has_any_permission(["kginsights:read", "datapuur:read"])),
+    current_user: User = Depends(has_any_permission(["kginsights:read", "datapuur:read", "djinni:read"])),
     db: SessionLocal = Depends(get_db)
 ):
     """Get a specific schema by ID."""
@@ -1613,6 +1642,9 @@ async def delete_schema(
                 print(f"DEBUG: Deleting related job with ID: {job.id}")
                 db.delete(job)
         
+        print(f"DEBUG: Cleaning up schema-aware assistant for schema_id={schema.id}")
+        remove_schema_aware_assistant(schema.id)
+        
         # Flush to ensure related records are deleted before deleting the schema
         print(f"DEBUG: Flushing session to apply related job deletions")
         db.flush()
@@ -1651,53 +1683,6 @@ async def delete_schema(
             detail=f"Error deleting schema: {str(e)}"
         )
 
-@router.post("/cleanup-schemas")
-async def cleanup_schemas(
-    current_user: User = Depends(has_any_permission(["kginsights:manage"])),
-    db: SessionLocal = Depends(get_db)
-):
-    """
-    Clean up the schemas table by removing entries where the associated CSV files don't exist.
-    
-    Args:
-        current_user: Current authenticated user with manage permissions
-        db: Database session
-        
-    Returns:
-        Dict with cleanup results
-    """
-    try:
-        # Get all schemas
-        schemas = db.query(Schema).all()
-        removed_count = 0
-        preserved_count = 0
-        
-        for schema in schemas:
-            # Check if CSV file exists
-            # Normalize path for cross-platform compatibility
-            csv_path = Path(schema.csv_file_path).resolve() if schema.csv_file_path else None
-            if csv_path and not csv_path.exists():
-                print(f"Removing schema {schema.id}: CSV file not found at {csv_path}")
-                db.delete(schema)
-                removed_count += 1
-            else:
-                preserved_count += 1
-                
-        # Commit changes
-        db.commit()
-        
-        return {
-            "message": f"Schema cleanup completed",
-            "removed": removed_count,
-            "preserved": preserved_count
-        }
-        
-    except Exception as e:
-        db.rollback()
-        print(f"Error in cleanup_schemas: {str(e)}")
-        print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Error cleaning up schemas: {str(e)}")
-
 
 @router.post("/clean-neo4j-database")
 async def clean_neo4j_database(
@@ -1725,6 +1710,20 @@ async def clean_neo4j_database(
             
         # Clean the database
         result = await neo4j_loader.clean_database()
+        
+        # Find schemas associated with this graph before resetting them
+        print(f"DEBUG: Cleaning up schemas for graph {graph_name}")
+        schemas_to_clean = []
+        with SessionLocal() as session:
+            schemas_to_clean = session.query(Schema).filter(Schema.name == graph_name).all()
+            schema_ids = [schema.id for schema in schemas_to_clean]
+            if schema_ids:
+                print(f"DEBUG: Found schemas to clean: {schema_ids}")
+                
+                # Clean up schema-aware agents for all affected schemas
+                for schema_id in schema_ids:
+                    print(f"DEBUG: Cleaning up schema-aware assistant for schema_id={schema_id}")
+                    remove_schema_aware_assistant(schema_id)
         
         # Update schema record to mark database as cleaned
         reset_schemas_for_db_id(graph_name)
@@ -1880,6 +1879,18 @@ async def load_data_to_neo4j(
             schema_id=load_input.schema_id,
             db_loaded='yes'
         )
+        
+        # Clean up schema-aware agents for schemas that will be marked as 'db_loaded=no'
+        other_schemas = db.query(Schema).filter(Schema.id != load_input.schema_id).all()
+        for other_schema in other_schemas:
+            if other_schema.db_loaded == 'yes':
+                print(f"DEBUG: Cleaning up schema-aware assistant for schema_id={other_schema.id}")
+                remove_schema_aware_assistant(other_schema.id)
+        
+        # Now that data load is complete, set db_loaded to 'no' for all other schemas
+        db.query(Schema).filter(Schema.id != load_input.schema_id).update({"db_loaded": "no"})
+        db.commit()
+        print(f"DEBUG: Set db_loaded='no' for all schemas except schema_id={load_input.schema_id}")
             
         return {
             "message": "Data loaded successfully",
@@ -1941,7 +1952,7 @@ async def upload_custom_domain(
 
 @router.get('/list-custom-domains', response_model=dict)
 async def list_custom_domains(
-    current_user: User = Depends(has_any_permission(["kginsights:read", "datapuur:read"]))
+    current_user: User = Depends(has_any_permission(["kginsights:read", "datapuur:read", "djinni:read"]))
 ):
     """
     List all available custom domain files in the custom-domains directory.
@@ -2066,6 +2077,18 @@ async def load_data_from_schema(
             schema_generated='yes',
             db_loaded='yes'
         )
+        
+        # Clean up schema-aware agents for schemas that will be marked as 'db_loaded=no'
+        other_schemas = db.query(Schema).filter(Schema.id != schema_id).all()
+        for other_schema in other_schemas:
+            if other_schema.db_loaded == 'yes':
+                print(f"DEBUG: Cleaning up schema-aware assistant for schema_id={other_schema.id}")
+                remove_schema_aware_assistant(other_schema.id)
+        
+        # Now that data load is complete, set db_loaded to 'no' for all other schemas
+        db.query(Schema).filter(Schema.id != schema_id).update({"db_loaded": "no"})
+        db.commit()
+        print(f"DEBUG: Set db_loaded='no' for all schemas except schema_id={schema_id}")
             
         return {
             "message": "Data loaded successfully",

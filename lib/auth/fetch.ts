@@ -43,6 +43,15 @@ export async function fetchWithAuth(url: string, options: RequestInit = {}) {
         window.location.href = '/login';
       }
     }
+    
+    // Handle permission errors (403 Forbidden)
+    if (response.status === 403) {
+      // Log the permission error
+      console.error('Permission denied:', url);
+      
+      // We don't redirect here, just return the response
+      // The calling component should handle showing appropriate error messages
+    }
 
     return response;
   } catch (error) {

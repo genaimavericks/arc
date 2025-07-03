@@ -15,6 +15,7 @@ from ..auth import has_any_permission
 from .graphschemaapi import load_data_from_schema as graphschema_load_data
 from .neo4j_config import get_neo4j_connection_params
 from ..db_config import SessionLocal
+from ..kgdatainsights.agent.schema_aware_agent import remove_schema_aware_assistant
 
 
 async def generate_prompts_async(schema_id: int):
@@ -358,6 +359,11 @@ async def process_clean_data_job(job_id: str, schema_id: int, graph_name: str, d
             
             # Close Neo4j connection
             driver.close()
+
+             # Find schemas associated with this graph before resetting them
+            
+            print(f"DEBUG: Cleaning up schema-aware assistant for schema_id={schema.id}")
+            remove_schema_aware_assistant(schema.id)
             
             # Update job with success
             job = task_db.query(GraphIngestionJob).filter(GraphIngestionJob.id == job_id).first()
@@ -382,7 +388,8 @@ async def process_clean_data_job(job_id: str, schema_id: int, graph_name: str, d
                 if schema_db:
                     schema_db.db_loaded = "no"
                     print(f"Updated schema record {schema_id} with db_loaded=no")
-            
+                    db.commit()
+                    
             driver.close()
         finally:
             # Make sure to close the new session

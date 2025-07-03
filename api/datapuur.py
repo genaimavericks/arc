@@ -4374,14 +4374,13 @@ async def cancel_chunked_upload(
 @router.delete("/delete-file/{file_id}")
 def delete_file_endpoint(
     file_id: str,
-    current_user: User = Depends(has_permission("datapuur:manage")),
+    current_user: User = Depends(has_permission("datapuur:write")),
     db: Session = Depends(get_db)
 ):
     """
     Delete a file and its associated datasets by file_id.
     
-    This endpoint requires the 'datapuur:manage' permission, which is restricted
-    to admin role.
+    This endpoint requires the 'datapuur:write' permission.
     """
     try:
         # Find the job associated with this file_id
@@ -4451,14 +4450,13 @@ def delete_file_endpoint(
 @router.delete("/delete-dataset/{dataset_id}")
 def delete_dataset_endpoint(
     dataset_id: str,
-    current_user: User = Depends(has_permission("datapuur:manage")),  # Updated permission
+    current_user: User = Depends(has_permission("datapuur:write")),  # Changed from manage to write
     db: Session = Depends(get_db)
 ):
     """
     Delete a dataset and all its associated data.
     
-    This endpoint requires the 'datapuur:manage' permission, which is restricted
-    to admin role.
+    This endpoint requires the 'datapuur:write' permission.
     """
     # Log the activity
     log_activity(

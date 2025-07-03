@@ -1,7 +1,7 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 
-export type DjinniModelType = "factory_astro" | "churn_astro";
+export type DjinniModelType = "factory_astro" | "churn_astro" | "kg_insights" | "kginsights";
 
 export interface DjinniState {
   // Selected model configuration
@@ -19,6 +19,7 @@ export interface DjinniState {
       role: "user" | "assistant";
       content: string;
       timestamp: number;
+      predictionData?: any; // To store structured data for visualizations
     }>;
   }[];
   
@@ -29,10 +30,11 @@ export interface DjinniState {
       role: "user" | "assistant";
       content: string;
       timestamp: number;
+      predictionData?: any; // To store structured data for visualizations
     }>;
   }[];
   
-  addMessage: (model: DjinniModelType, role: "user" | "assistant", content: string) => void;
+    addMessage: (model: DjinniModelType, role: "user" | "assistant", content: string, predictionData?: any) => void;
   clearChatHistory: (model?: DjinniModelType) => void;
   clearSessionMessages: (model?: DjinniModelType) => void;
 }
@@ -40,100 +42,79 @@ export interface DjinniState {
 export const useDjinniStore = create<DjinniState>()(
   persist(
     (set, get) => ({
-      // Default to factory_astro as the active model
       activeModel: "factory_astro",
-      setActiveModel: (model) => {
-        // Only update if the model has actually changed
+      setActiveModel: (model: DjinniModelType) => {
         if (model !== get().activeModel) {
           console.log(`Djinni store: Setting active model to ${model}`);
           set({ activeModel: model });
         }
       },
       
-      // Session management
       isNewSession: true,
-      startNewSession: (model) => {
+      startNewSession: (model?: DjinniModelType) => {
         console.log(`Starting new session${model ? ` for ${model}` : ''}`);
-        set((state) => ({
+        set((state: DjinniState) => ({
           isNewSession: true,
-          // Clear session messages for the specified model or all models
           sessionMessages: model
             ? state.sessionMessages.filter(chat => chat.model !== model)
-            : []
+            : [],
         }));
       },
       
-      // Initialize empty chat history
       chatHistory: [],
-      
-      // Initialize empty session messages
       sessionMessages: [],
       
-      // Add a message to both chat history and current session
-      addMessage: (model, role, content) => 
-        set((state) => {
-          // Create the new message
+      addMessage: (model: DjinniModelType, role: "user" | "assistant", content: string, predictionData?: any) =>
+        set((state: DjinniState) => {
           const newMessage = {
             role,
             content,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            predictionData,
           };
-          
-          // Update persistent chat history
-          const existingModelChat = state.chatHistory.find(chat => chat.model === model);
-          const updatedChatHistory = existingModelChat
-            ? state.chatHistory.map(chat => 
-                chat.model === model 
+
+          const findAndUpdate = (
+            chatList: typeof state.chatHistory, // Can use chatHistory type for both
+            modelToUpdate: DjinniModelType
+          ) => {
+            const existingChat = chatList.find(chat => chat.model === modelToUpdate);
+            if (existingChat) {
+              return chatList.map(chat =>
+                chat.model === modelToUpdate
                   ? { ...chat, messages: [...chat.messages, newMessage] }
                   : chat
-              )
-            : [
-                ...state.chatHistory,
+              );
+            } else {
+              return [
+                ...chatList,
                 {
-                  model,
-                  messages: [newMessage]
-                }
+                  model: modelToUpdate,
+                  messages: [newMessage],
+                },
               ];
-          
-          // Update current session messages
-          const existingSessionChat = state.sessionMessages.find(chat => chat.model === model);
-          const updatedSessionMessages = existingSessionChat
-            ? state.sessionMessages.map(chat => 
-                chat.model === model 
-                  ? { ...chat, messages: [...chat.messages, newMessage] }
-                  : chat
-              )
-            : [
-                ...state.sessionMessages,
-                {
-                  model,
-                  messages: [newMessage]
-                }
-              ];
-          
-          // Set isNewSession to false once we add a message
+            }
+          };
+
           return {
             isNewSession: false,
-            chatHistory: updatedChatHistory,
-            sessionMessages: updatedSessionMessages
+            chatHistory: findAndUpdate(state.chatHistory, model),
+            sessionMessages: findAndUpdate(state.sessionMessages, model),
           };
         }),
       
-      // Clear chat history for a specific model or all models
-      clearChatHistory: (model) => 
-        set((state) => ({
+      clearChatHistory: (model?: DjinniModelType) => 
+        set((state: DjinniState) => ({
           chatHistory: model 
             ? state.chatHistory.filter(chat => chat.model !== model)
-            : []
+            : [],
         })),
         
-      // Clear session messages for a specific model or all models
-      clearSessionMessages: (model) => 
-        set((state) => ({
+      clearSessionMessages: (model?: DjinniModelType) => 
+        set((state: DjinniState) => ({
           sessionMessages: model 
             ? state.sessionMessages.filter(chat => chat.model !== model)
-            : []
-        }))
+            : [],
+        })),
     }),
     {
       name: "djinni-storage",

@@ -34,6 +34,7 @@ export function TransformationPlansList() {
   const [isLoading, setIsLoading] = useState(false)
   const [isDeleting, setIsDeleting] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [permissionError, setPermissionError] = useState<string | null>(null)
   const [hasMore, setHasMore] = useState(true)
   const itemsPerPage = 10 // Number of items per page
   const router = useRouter()
@@ -109,7 +110,16 @@ export function TransformationPlansList() {
 
   // Navigate to plan details page
   const handleViewPlan = (planId: string | number) => {
-    router.push(`/datapuur/ai-transformation/${planId}`)
+    // Store the plan ID in localStorage for access in the Create Transformation tab
+    localStorage.setItem('current_transformation_id', planId.toString())
+    
+    // Redirect to the Create Transformation tab with the plan ID as a query parameter
+    router.push(`/datapuur/ai-transformation?tab=create&draft_plan_id=${planId}`)
+    
+    // After navigation, wait a moment and force page reload to ensure tab changes
+    setTimeout(() => {
+      window.location.reload()
+    }, 100)
   }
 
   // Handle creating a new plan
@@ -167,6 +177,12 @@ export function TransformationPlansList() {
         },
       })
       
+      // Handle permission denied errors
+      if (response.status === 403) {
+        setPermissionError("Permission denied: You don't have access to delete transformation plans")
+        return
+      }
+      
       if (!response.ok) {
         throw new Error(`Failed to delete transformation plan: ${response.status}`)
       }
@@ -181,11 +197,7 @@ export function TransformationPlansList() {
       })
     } catch (err) {
       console.error('Error deleting transformation plan:', err)
-      toast({
-        title: "Error",
-        description: err instanceof Error ? err.message : 'Failed to delete transformation plan',
-        variant: "destructive"
-      })
+      setError(err instanceof Error ? err.message : 'Failed to delete transformation plan')
     } finally {
       setIsDeleting(null)
     }
@@ -230,7 +242,12 @@ export function TransformationPlansList() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 w-full">
+      {permissionError && (
+        <div className="bg-destructive text-white p-4 mb-4 rounded-md flex items-center justify-between">
+          <span>{permissionError}</span>
+        </div>
+      )}
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-semibold">Transformation Plans</h2>
       </div>
@@ -260,7 +277,7 @@ export function TransformationPlansList() {
                   size="sm" 
                   onClick={() => handleViewPlan(plan.id)}
                 >
-                  <ArrowRight className="h-4 w-4 mr-1" /> View
+                  <ArrowRight className="h-4 w-4 mr-1" /> Edit
                 </Button>
                 
                 <AlertDialog>

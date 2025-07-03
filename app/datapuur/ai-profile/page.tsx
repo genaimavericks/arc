@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { DataPuurLayout } from '@/components/datapuur/datapuur-layout'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { fetchWithAuth } from '@/lib/auth-utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -118,8 +119,9 @@ export default function AIProfilePage() {
   const [loading, setLoading] = useState(false)
   const [loadingProfiles, setLoadingProfiles] = useState(false)
   const [loadingSessions, setLoadingSessions] = useState(false)
+  const [permissionError, setPermissionError] = useState<string | null>(null)
   const [creatingSession, setCreatingSession] = useState(false)
-  const [activeTab, setActiveTab] = useState('new')
+  const [activeTab, setActiveTab] = useState('history')
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null)
   const [creatingProfile, setCreatingProfile] = useState(false)
@@ -203,28 +205,25 @@ export default function AIProfilePage() {
   const fetchProfiles = async (fileId: string) => {
     setLoadingProfiles(true)
     try {
-      const token = localStorage.getItem('token')
-      
       // Check if AI profile exists for this data source
-      const response = await fetch(`/api/datapuur-ai/profiles?file_id=${fileId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      })
-
-      if (response.ok) {
-        const data = await response.json()
+      // Using try/catch since fetchWithAuth will throw on error status codes
+      try {
+        // fetchWithAuth automatically parses JSON response
+        const data = await fetchWithAuth(`/api/datapuur-ai/profiles?file_id=${fileId}`)
         setProfiles(data.profiles || [])
         
         // Auto-select if only one profile
         if (data.profiles && data.profiles.length === 1) {
           setSelectedProfile(data.profiles[0].id)
         }
-      } else if (response.status === 404) {
-        // No profile exists yet
-        setProfiles([])
-      } else {
-        throw new Error('Failed to fetch profiles')
+      } catch (apiError: any) {
+        // Check if it's a 404 error (no profiles exist yet)
+        if (apiError.message && apiError.message.includes('404')) {
+          setProfiles([])
+        } else {
+          console.error('Error in API call:', apiError)
+          throw apiError
+        }
       }
     } catch (error) {
       console.error('Error fetching profiles:', error)
@@ -248,7 +247,6 @@ export default function AIProfilePage() {
     })
 
     try {
-      const token = localStorage.getItem('token')
       const sourceData = dataSources.find(s => s.id === selectedSource)
       
       if (!sourceData) {
@@ -256,11 +254,11 @@ export default function AIProfilePage() {
       }
 
       // Create or recreate profile
-      const response = await fetch('/api/datapuur-ai/profiles', {
+      // fetchWithAuth already parses JSON and handles errors
+      const profile = await fetchWithAuth('/api/datapuur-ai/profiles', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           file_id: selectedSource,
@@ -270,12 +268,12 @@ export default function AIProfilePage() {
           recreate: profiles.length > 0  // Flag to indicate recreation
         })
       })
+      
+      // fetchWithAuth already throws errors for non-OK responses and returns parsed JSON
+      // No need to check profile.ok or profile.status as those are Response object properties
+      // that don't exist on the parsed JSON response
 
-      if (!response.ok) {
-        throw new Error('Failed to create profile')
-      }
-
-      const profile = await response.json()
+      
       
       // If profile already exists and is completed, just update the UI
       if (profile.status === 'completed') {
@@ -297,14 +295,9 @@ export default function AIProfilePage() {
       while (!completed && pollCount < maxPolls) {
         await new Promise(resolve => setTimeout(resolve, 5000)) // Poll every 5 seconds
         
-        const statusResponse = await fetch(`/api/datapuur-ai/profiles/${profile.id}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        })
-
-        if (statusResponse.ok) {
-          const statusData = await statusResponse.json()
+        try {
+          // fetchWithAuth already parses JSON response
+          const statusData = await fetchWithAuth(`/api/datapuur-ai/profiles/${profile.id}`)
           
           if (statusData.status === 'completed') {
             completed = true
@@ -322,6 +315,9 @@ export default function AIProfilePage() {
             setProfileProgress(progress)
             setProfileStatus(statusData.message || 'Processing data...')
           }
+        } catch (error) {
+          console.error('Error checking profile status:', error)
+          // Don't throw here, just continue polling
         }
         
         pollCount++
@@ -458,6 +454,17 @@ export default function AIProfilePage() {
         }
       })
 
+      // Handle permission denied errors
+      if (response.status === 403) {
+        setPermissionError("Permission denied: You don't have access to delete profile sessions")
+        
+        // Auto-dismiss the error after 5 seconds
+        setTimeout(() => {
+          setPermissionError(null)
+        }, 5000)
+        return
+      }
+      
       if (!response.ok) {
         throw new Error('Failed to delete session')
       }
@@ -476,11 +483,14 @@ export default function AIProfilePage() {
         setActiveTab('new')
       }
     } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to delete session",
-        variant: "destructive"
-      })
+      // Only show toast for non-permission errors
+      if (!permissionError) {
+        toast({
+          title: "Error",
+          description: "Failed to delete session",
+          variant: "destructive"
+        })
+      }
     } finally {
       setShowDeleteDialog(false)
       setSessionToDelete(null)
@@ -523,19 +533,25 @@ export default function AIProfilePage() {
   return (
     <DataPuurLayout>
       <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
+        {permissionError && (
+          <div className="bg-destructive text-white p-4 mb-4 rounded-md flex items-center justify-between">
+            <span>{permissionError}</span>
+          </div>
+        )}
+        
         <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-bold tracking-tight">AI Profile Analysis</h2>
+          <h2 className="text-2xl font-bold tracking-tight">AI Profile</h2>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
           <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="new">
-              <Brain className="mr-2 h-4 w-4" />
-              New Analysis
-            </TabsTrigger>
             <TabsTrigger value="history">
               <History className="mr-2 h-4 w-4" />
-              AI Sessions 
+              Profile Sessions 
+            </TabsTrigger>
+            <TabsTrigger value="new">
+              <Brain className="mr-2 h-4 w-4" />
+              Analyze Data
             </TabsTrigger>
             <TabsTrigger value="profile-list">
               <BarChart2 className="mr-2 h-4 w-4" />
@@ -644,7 +660,7 @@ export default function AIProfilePage() {
                             variant="outline"
                           >
                             <Plus className="mr-2 h-4 w-4" />
-                            Create AI Profile
+                            Create Profile
                           </Button>
                         ) : (
                           <div className="space-y-3">
@@ -673,7 +689,7 @@ export default function AIProfilePage() {
                                 <p className="font-medium">{profile.file_name}</p>
                                 <div className="flex items-center gap-4 mt-1">
                                   <Badge variant="secondary" className="text-xs">
-                                    AI Profile Ready
+                                    Profile Ready
                                   </Badge>
                                   <span className="text-xs text-muted-foreground">
                                     Created {formatDate(profile.created_at)}

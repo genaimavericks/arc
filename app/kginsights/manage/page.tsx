@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils"
 
 export default function ManageKGraphPage() {
   return (
-    <KGInsightsLayout requiredPermission="kginsights:manage">
+    <KGInsightsLayout requiredPermission="kginsights:read">
       <SchemaSelectionProvider>
         <ClientSideJobProvider>
           <GraphVisualizationProvider>

@@ -53,6 +53,9 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
   loading,
   setLoading
 }, ref) {
+  // Error message state
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showError, setShowError] = useState(false);
   // Debug initial props
   console.log("SchemaChat initialized with:", {
     selectedSource,
@@ -119,6 +122,64 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
 
+  // Function to check if message is a simple greeting or farewell
+  const isGreetingOrFarewell = (text: string): boolean => {
+    // Normalize text: trim, lowercase, and remove punctuation
+    const normalizedText = text.trim().toLowerCase().replace(/[.,!?;:]/g, '');
+    
+    // Check if the message is too short (likely a greeting)
+    if (normalizedText.length <= 5) {
+      // Very short messages are likely greetings
+      console.log("Detected greeting (short text):", normalizedText);
+      return true;
+    }
+    
+    // List of common greetings and farewells
+    const greetings = [
+      'hi', 'hello', 'hey', 'howdy', 'hiya', 'morning', 'afternoon', 'evening',
+      'greetings', 'sup', 'whats up', 'yo', 'hola', 'bonjour', 'ciao', 'namaste',
+      'bye', 'goodbye', 'see you', 'farewell', 'later', 'take care', 'cheers', 'adios',
+      'have a good day', 'have a nice day', 'good night', 'catch you later', 'ttyl',
+      'thanks', 'thank you', 'thx', 'ty', 'welcome', 'how are you', 'what can you do',
+      'help', 'test', 'testing', 'who are you', 'what are you', 'how do you work'
+    ];
+    
+    // Split the normalized text into words
+    const words = normalizedText.split(/\s+/);
+    
+    // If the message is just 1-3 words, check if any word is a greeting
+    if (words.length <= 3) {
+      for (const word of words) {
+        if (greetings.includes(word)) {
+          console.log("Detected greeting (word match):", word);
+          return true;
+        }
+      }
+      
+      // Check for common greeting phrases
+      if (greetings.some(greeting => normalizedText.includes(greeting))) {
+        console.log("Detected greeting (phrase match):", normalizedText);
+        return true;
+      }
+    }
+    
+    // For longer messages, check if they start with greetings
+    for (const greeting of greetings) {
+      if (normalizedText.startsWith(greeting + ' ')) {
+        console.log("Detected greeting (starts with):", greeting);
+        return true;
+      }
+    }
+    
+    // Check for exact matches with greetings
+    if (greetings.includes(normalizedText)) {
+      console.log("Detected greeting (exact match):", normalizedText);
+      return true;
+    }
+    
+    return false;
+  };
+
   // Handle sending message
   const handleSendMessage = async () => {
     console.log("handleSendMessage called with dataset type:", selectedDatasetType);
@@ -154,6 +215,26 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
     
     // Update messages with user message
     setMessages((prevMessages) => [...prevMessages, userMessage])
+    
+    // Check if the message is a greeting or farewell
+    if (isGreetingOrFarewell(message)) {
+      console.log("Detected greeting/farewell, blocking backend call:", message);
+      
+      // Add assistant response without sending to backend
+      const assistantMessage: ChatMessage = {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        content: "I'm your Schema Generation Assistant. To help you create an effective knowledge graph schema, please describe your dataset and what you want to model. For example, you could say 'I have customer transaction data and want to model relationships between customers and products' or 'I need a schema for my healthcare dataset that connects patients, treatments, and outcomes.' The more details you provide about your data and goals, the better schema I can generate.",
+        timestamp: new Date()
+      }
+      
+      // Update messages with assistant response
+      setMessages((prevMessages) => [...prevMessages, assistantMessage])
+      
+      // Reset loading state
+      setLoading(false)
+      return
+    }
     
     // Clear the input
     setMessage("")
@@ -196,6 +277,13 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
       }
       
       if (!sourceResponse.ok) {
+        if (sourceResponse.status === 403) {
+          const msg = `Permission denied: You don't have sufficient permissions to access ${selectedDatasetType} details.`;
+          setErrorMessage(msg);
+          setShowError(true);
+          setTimeout(() => setShowError(false), 5000); // Hide after 5 seconds
+          throw new Error(msg);
+        }
         throw new Error(`Failed to fetch ${selectedDatasetType} details: ${sourceResponse.status}`);
       }
       
@@ -269,6 +357,13 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
       })
       
       if (!response.ok) {
+        if (response.status === 403) {
+          const msg = "Permission denied: You don't have sufficient permissions to generate schemas.";
+          setErrorMessage(msg);
+          setShowError(true);
+          setTimeout(() => setShowError(false), 5000); // Hide after 5 seconds
+          throw new Error(msg);
+        } 
         throw new Error(`Failed to generate schema: ${response.status}`)
       }
       
@@ -400,7 +495,8 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
           feedback: message,
           file_path: filePath, // Reuse stored file path
           domain: domain, // Include domain information
-          custom_domain_file: customDomainFiles?.[domain] // Include custom domain file if available
+          custom_domain_file: customDomainFiles?.[domain], // Include custom domain file if available
+          dataset_type: selectedDatasetType, // Include dataset type for proper path handling
         }),
       })
       
@@ -519,7 +615,27 @@ export const SchemaChat = forwardRef<SchemaChatRef, SchemaChatProps>(function Sc
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col h-full">
+      {/* Error message alert */}
+      {showError && errorMessage && (
+        <div className="bg-destructive/15 border border-destructive text-destructive px-4 py-3 rounded-md mb-4 flex items-center justify-between animate-in slide-in-from-top duration-300">
+          <div className="flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+            </svg>
+            <span>{errorMessage}</span>
+          </div>
+          <button 
+            onClick={() => setShowError(false)}
+            className="text-destructive hover:text-destructive/80"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
+          </button>
+        </div>
+      )}
+      
       {/* Chat messages */}
       <ScrollArea className="flex-grow pr-4 min-h-0">
         <div className="space-y-3 p-4">

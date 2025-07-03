@@ -19,6 +19,14 @@ except ImportError:
     ChatGoogleGenerativeAI = None # type: ignore
     GOOGLE_AVAILABLE = False
     print("Warning: langchain_google_genai not found. Google provider will not be available.")
+    
+try:
+    from langchain_anthropic import ChatAnthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ChatAnthropic = None # type: ignore
+    ANTHROPIC_AVAILABLE = False
+    print("Warning: langchain_anthropic not found. Anthropic provider will not be available.")
 
 
 class LLMConstants:
@@ -26,9 +34,10 @@ class LLMConstants:
     class Providers:
         OPENAI = "openai"
         GOOGLE = "google"
+        ANTHROPIC = "anthropic"
 
     class OpenAIModels:
-        DEFAULT = "gpt-4"
+        DEFAULT = "gpt-4.1"
         # Add other OpenAI model constants here if needed
         # e.g., GPT_4_TURBO = "gpt-4-turbo"
 
@@ -37,6 +46,13 @@ class LLMConstants:
         DEFAULT = 'gemini-2.5-pro-preview-03-25'
         # Add other Google model constants here if needed
         # e.g., GEMINI_1_5_PRO = "gemini-1.5-pro-latest"
+        
+    class AnthropicModels:
+        DEFAULT = "claude-3-7-sonnet-20250219"
+        SONNET = "claude-3-7-sonnet-20250219"
+        SONNET_20240229 = "claude-3-sonnet-20240229"
+        OPUS = "claude-3-opus-20240229"
+        HAIKU = "claude-3-haiku-20240307"
 
 
 class LLMProvider:
@@ -45,6 +61,7 @@ class LLMProvider:
     # Cache for pre-initialized LLM instances
     _openai_instance = None
     _google_instance = None
+    _anthropic_instance = None
     _initialized = False
 
     @staticmethod
@@ -78,6 +95,11 @@ class LLMProvider:
                (model_name is None or model_name == LLMConstants.GoogleModels.DEFAULT) and \
                LLMProvider._google_instance is not None:
                 return LLMProvider._google_instance
+                
+            if provider_name == LLMConstants.Providers.ANTHROPIC and \
+               (model_name is None or model_name == LLMConstants.AnthropicModels.DEFAULT) and \
+               LLMProvider._anthropic_instance is not None:
+                return LLMProvider._anthropic_instance
         
         api_key = None
         llm_instance = None
@@ -106,12 +128,26 @@ class LLMProvider:
             model_to_use = model_name or LLMConstants.GoogleModels.DEFAULT
             print(f"Initializing ChatGoogleGenerativeAI model: {model_to_use}")
             try:
-                # Ensure the API key is passed correctly during initialization
                 llm_instance = ChatGoogleGenerativeAI(model=model_to_use, temperature=temperature, google_api_key=api_key)
             except Exception as e:
                 raise RuntimeError(f"Error initializing ChatGoogleGenerativeAI: {e}") from e
+                
+        elif provider_name == LLMConstants.Providers.ANTHROPIC:
+            if not ANTHROPIC_AVAILABLE:
+                raise ImportError("Anthropic provider selected, but langchain_anthropic is not installed.")
+            api_key = os.getenv("ANTHROPIC_API_KEY")
+            if not api_key:
+                raise ValueError("ANTHROPIC_API_KEY environment variable not set.")
+            
+            model_to_use = model_name or LLMConstants.AnthropicModels.DEFAULT
+            print(f"Initializing ChatAnthropic model: {model_to_use}")
+            try:
+                llm_instance = ChatAnthropic(model=model_to_use, temperature=temperature, anthropic_api_key=api_key)
+            except Exception as e:
+                raise RuntimeError(f"Error initializing ChatAnthropic: {e}") from e
+        
         else:
-            raise ValueError(f"Unsupported LLM provider '{provider_name}'. Supported: '{LLMConstants.Providers.OPENAI}', '{LLMConstants.Providers.GOOGLE}'.")
+            raise ValueError(f"Unsupported LLM provider '{provider_name}'. Supported: '{LLMConstants.Providers.OPENAI}', '{LLMConstants.Providers.GOOGLE}', '{LLMConstants.Providers.ANTHROPIC}'.")
 
         # Should not be None if we reached here without raising an exception
         if llm_instance is None:
@@ -164,9 +200,15 @@ class LLMProvider:
         Returns the cached Google LLM instance with default settings.
         If not initialized, returns None.
         """
-        if LLMProvider._initialized and LLMProvider._google_instance is not None:
-            return LLMProvider._google_instance
-        return None
+        return LLMProvider._google_instance
+        
+    @staticmethod
+    def get_cached_anthropic() -> BaseChatModel:
+        """
+        Returns the cached Anthropic LLM instance with default settings.
+        If not initialized, returns None.
+        """
+        return LLMProvider._anthropic_instance
         
     @staticmethod
     def initialize_models():
@@ -203,6 +245,18 @@ class LLMProvider:
             else:
                 print("Warning: GOOGLE_API_KEY environment variable is not set or langchain_google_genai not installed. Skipping initialization.")
                 
+            # Initialize Anthropic model if API key is available
+            if ANTHROPIC_AVAILABLE and os.getenv("ANTHROPIC_API_KEY"):
+                print("Pre-initializing Anthropic LLM model...")
+                LLMProvider._anthropic_instance = LLMProvider.get_llm(
+                    provider_name=LLMConstants.Providers.ANTHROPIC,
+                    model_name=LLMConstants.AnthropicModels.DEFAULT,
+                    temperature=0.0
+                )
+                print("Successfully initialized Anthropic Sonnet LLM")
+            else:
+                print("Warning: ANTHROPIC_API_KEY environment variable is not set or langchain_anthropic not installed. Skipping initialization.")
+                
             LLMProvider._initialized = True
             
         except Exception as e:
@@ -238,6 +292,15 @@ if __name__ == '__main__':
             print(f"Successfully got default Google model: {google_llm_default.model}") # Note: attribute might differ
     except (ImportError, ValueError, RuntimeError) as e:
         print(f"Failed to get default Google model: {e}")
+        
+    # Test Anthropic
+    print("\n--- Testing Anthropic ---")
+    try:
+        anthropic_llm_default = LLMProvider.get_llm(LLMConstants.Providers.ANTHROPIC)
+        if anthropic_llm_default:
+            print(f"Successfully got default Anthropic model: {anthropic_llm_default.model_name}")
+    except (ImportError, ValueError, RuntimeError) as e:
+        print(f"Failed to get default Anthropic model: {e}")
 
     # Test specific model (if desired and key is set)
     # print("\n--- Testing Specific OpenAI Model ---")

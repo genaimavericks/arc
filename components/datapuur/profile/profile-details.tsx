@@ -188,6 +188,26 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
           originalHeaders: data.original_headers || "No original headers found"
         })
         
+        // Debug specific numeric columns known to have missing value issues
+        const problemColumns = ['tenure', 'Waste_Generated__kg'];
+        problemColumns.forEach(colName => {
+          // Find column by name in the data.columns object
+          const foundColumn = Object.values(data.columns || {}).find(
+            (col: any) => col.column_name === colName || col.name === colName
+          ) as ColumnProfile | undefined;
+          
+          if (foundColumn) {
+            console.log(`FRONTEND DEBUG - ${colName} column data:`, {
+              missing_count: foundColumn.missing_count,
+              null_count: foundColumn.null_count,
+              count: foundColumn.count,
+              data_type: foundColumn.data_type
+            });
+          } else {
+            console.log(`FRONTEND DEBUG - ${colName} column not found in profile data`);
+          }
+        })
+        
         // Ensure the data has the expected structure
         if (!data || !data.columns) {
           console.error("Invalid profile data structure:", data)
@@ -432,13 +452,21 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
       
       // Ensure the column data has all required properties
       if (columnData) {
-        // Calculate missing values by combining null_count with empty string count from frequent_values
-        let emptyStringCount = 0;
-        if (columnData.frequent_values && '' in columnData.frequent_values) {
-          emptyStringCount = columnData.frequent_values[''];
-        }
+        // IMPORTANT: Use the backend's missing_count if available, as it includes numeric conversion missing values
+        // Only calculate it locally if not provided by the backend
+        let missingCount = columnData.missing_count;
         
-        const missingCount = (columnData.null_count || 0) + emptyStringCount;
+        // If missing_count isn't available from backend, calculate it
+        if (missingCount === undefined || missingCount === null) {
+          console.log(`Missing count not provided by backend for column at index ${index}, calculating locally`);
+          let emptyStringCount = 0;
+          if (columnData.frequent_values && '' in columnData.frequent_values) {
+            emptyStringCount = columnData.frequent_values[''];
+          }
+          missingCount = (columnData.null_count || 0) + emptyStringCount;
+        } else {
+          console.log(`Using backend-provided missing count (${missingCount}) for column at index ${index}`);
+        }
         
         // Make sure all required properties exist with appropriate defaults
         return {
@@ -468,13 +496,21 @@ export default function ProfileDetails({ profileId }: ProfileDetailsProps) {
       
       // Ensure the column data has all required properties
       if (columnData) {
-        // Calculate missing values by combining null_count with empty string count from frequent_values
-        let emptyStringCount = 0;
-        if (columnData.frequent_values && '' in columnData.frequent_values) {
-          emptyStringCount = columnData.frequent_values[''];
-        }
+        // IMPORTANT: Use the backend's missing_count if available, as it includes numeric conversion missing values
+        // Only calculate it locally if not provided by the backend
+        let missingCount = columnData.missing_count;
         
-        const missingCount = (columnData.null_count || 0) + emptyStringCount;
+        // If missing_count isn't available from backend, calculate it
+        if (missingCount === undefined || missingCount === null) {
+          console.log(`Missing count not provided by backend for column ${selectedColumn}, calculating locally`);
+          let emptyStringCount = 0;
+          if (columnData.frequent_values && '' in columnData.frequent_values) {
+            emptyStringCount = columnData.frequent_values[''];
+          }
+          missingCount = (columnData.null_count || 0) + emptyStringCount;
+        } else {
+          console.log(`Using backend-provided missing count (${missingCount}) for column ${selectedColumn}`);
+        }
         
         // Make sure all required properties exist with appropriate defaults
         return {

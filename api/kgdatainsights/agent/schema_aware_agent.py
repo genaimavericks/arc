@@ -6,18 +6,32 @@ import threading
 import traceback
 import re
 import asyncio
+import logging
 from pathlib import Path
 from uuid import uuid4
 from typing import Dict, Any, Optional, Callable
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
+# Configure LangChain detailed logging
+# This enables verbose output from LangChain components
+import langchain
+langchain.verbose = True
+
+# Set up detailed logging for LangChain components
+langchain_logger = logging.getLogger("langchain")
+langchain_logger.setLevel(logging.DEBUG)
+langchain_handler = logging.StreamHandler()
+langchain_handler.setLevel(logging.DEBUG)
+langchain_logger.addHandler(langchain_handler)
+
 from dotenv import load_dotenv
-from langchain.chains import GraphCypherQAChain
 from langchain.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_neo4j import (
     Neo4jChatMessageHistory,
-    Neo4jGraph
+    Neo4jGraph,
+    GraphCypherQAChain
 )
+from langchain.callbacks import StdOutCallbackHandler, StreamingStdOutCallbackHandler
 
 from .cache import Cache
 from .cache import cacheable
@@ -27,6 +41,28 @@ from ...models import Schema
 from ...db_config import SessionLocal  
 from .csv_to_cypher_generator import CsvToCypherGenerator
 from ...utils.llm_provider import LLMProvider, LLMConstants
+
+# Configure logger
+logger = logging.getLogger("kgdatainsights.agent")
+
+# Debug function that can use print or logger
+def debug_log(message, level="DEBUG"):
+    """
+    Log debug messages using either print statements or proper logger based on configuration.
+    
+    Args:
+        message (str): The message to log
+        level (str): Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+    """
+    # Use logger if it's configured to the appropriate level
+    log_level = getattr(logging, level)
+    
+    if logger.isEnabledFor(log_level):
+        log_method = getattr(logger, level.lower())
+        log_method(message)
+    else:
+        # Fallback to print if logger is not configured or level is not enabled
+        print(f"{level}: {message}")
 
 # Load environment variables
 load_dotenv()
@@ -56,7 +92,7 @@ class SchemaAwareGraphAssistant:
             schema: The schema content as a string or dict
             session_id: Optional session ID for chat history, generated if not provided
         """
-        print(f"TRACE: Before SchemaAwareGraphAssistant.__init__ for {db_id}")
+        debug_log(f"Before SchemaAwareGraphAssistant.__init__ for {db_id}", "DEBUG")
 
         # Initialize basic properties regardless of gen_schema flag
         self.db_id = db_id
@@ -73,35 +109,35 @@ class SchemaAwareGraphAssistant:
         finally:
             db.close()
         
-        print(f"TRACE: Before _format_schema() for {self.db_id}")
+        debug_log(f"Before _format_schema() for {self.db_id}", "DEBUG")
         self._format_schema()
-        print(f"TRACE: After _format_schema() for {self.db_id}")
+        debug_log(f"After _format_schema() for {self.db_id}", "DEBUG")
         
         # After formatting schema, use our enhanced path resolution logic
         # We don't need _get_csv_path anymore as _resolve_data_path is more robust
         resolved_path = self._resolve_data_path()
         if resolved_path:
             self.csv_file_path = resolved_path
-            print(f"TRACE: CSV file path resolved to: {self.csv_file_path}")
+            debug_log(f"CSV file path resolved to: {self.csv_file_path}", "DEBUG")
         else:
-            print(f"WARNING: Could not resolve CSV file path for schema {self.schema_id}")
+            debug_log(f"Could not resolve CSV file path for schema {self.schema_id}", "WARNING")
         
         # If gen_schema is True, skip expensive initializations
-        print(f"TRACE: Initializing in schema generation mode for {self.db_id}")
-        print(f"Initializing in schema generation mode - skipping LLM, graph connection, and chain setup")
+        debug_log(f"Initializing in schema generation mode for {self.db_id}", "DEBUG")
+        debug_log(f"Initializing in schema generation mode - skipping LLM, graph connection, and chain setup", "INFO")
         
         # Initialize minimal components needed for schema operations
-        print(f"TRACE: Before _get_connection_params() for {self.db_id}")
+        debug_log(f"Before _get_connection_params() for {self.db_id}", "DEBUG")
         self.connection_params = self._get_connection_params()
-        print(f"TRACE: After _get_connection_params() for {self.db_id}")
+        debug_log(f"After _get_connection_params() for {self.db_id}", "DEBUG")
         
-        print(f"TRACE: Before Cache initialization for {self.db_id}")
+        debug_log(f"Before Cache initialization for {self.db_id}", "DEBUG")
         self.cache = Cache()
-        print(f"TRACE: After Cache initialization for {self.db_id}")
+        debug_log(f"After Cache initialization for {self.db_id}", "DEBUG")
         
-        print(f"TRACE: Before _ensure_prompt() for {self.db_id}")
+        debug_log(f"Before _ensure_prompt() for {self.db_id}", "DEBUG")
         self._ensure_prompt()
-        print(f"TRACE: After _ensure_prompt() for {self.db_id}")
+        debug_log(f"After _ensure_prompt() for {self.db_id}", "DEBUG")
 
         # Start async initialization in the background
         self.initialization_complete = False
@@ -120,7 +156,7 @@ class SchemaAwareGraphAssistant:
         This runs in the background to avoid blocking object construction.
         """
         try:
-            print(f"DEBUG: Starting async initialization for {self.db_id} with schema {self.schema_id}")
+            debug_log(f"Starting async initialization for {self.db_id} with schema {self.schema_id}", "DEBUG")
             
             # Initialize LLM
             self.llm = LLMProvider.get_llm(
@@ -155,37 +191,178 @@ class SchemaAwareGraphAssistant:
                 database=self.connection_params.get("database", "neo4j")
             )
             
-            # Initialize QA chain with Neo4j optimizations using modular LangChain pattern
-            print(f"DEBUG: Initializing GraphCypherQAChain using langchain_community pattern")
+            # Wrap Neo4jChatMessageHistory methods to handle bookmark timeout issues
+            original_add_message = self.history.add_message
             
-            # Import the correct GraphCypherQAChain implementation
-            from langchain_community.chains.graph_qa.cypher import GraphCypherQAChain as CommunityGraphCypherQAChain
+            def add_message_with_retry(message):
+                try:
+                    return original_add_message(message)
+                except Exception as e:
+                    if "BookmarkTimeout" in str(e) or "not up to the requested version" in str(e) or "AuthenticationRateLimit" in str(e):
+                        debug_log("Handling error in chat history: " + str(e), "DEBUG")
+                        # Just log the error but don't fail the whole operation
+                        # This ensures the conversation can continue even if history persistence fails
+                        return None
+                    raise e
+            
+            # Replace the add_message method with our wrapped version
+            self.history.add_message = add_message_with_retry
+            
+            # Initialize QA chain with Neo4j optimizations using modular LangChain pattern
+            debug_log(f"Initializing GraphCypherQAChain using langchain_community pattern", "DEBUG")
+            
+            # Use GraphCypherQAChain from langchain_neo4j
             
             # Create a structured chain configuration dictionary
+            # Create a wrapper for the graph.query method to handle bookmark timeout issues
+            original_query = self.graph.query
+            
+            def query_with_no_bookmarks(*args, **kwargs):
+                try:
+                    return original_query(*args, **kwargs)
+                except Exception as e:
+                    if "BookmarkTimeout" in str(e) or "not up to the requested version" in str(e):
+                        debug_log("Handling bookmark timeout error by retrying without bookmarks", "DEBUG")
+                        # Get access to the underlying driver and create a new session without bookmarks
+                        try:
+                            if hasattr(self.graph, '_driver'):
+                                # Use direct cypher execution with no bookmarks
+                                query = args[0] if args else kwargs.get('query')
+                                with self.graph._driver.session(database=self.graph._database) as session:
+                                    result = session.run(query)
+                                    return [dict(record) for record in result]
+                        except Exception as inner_e:
+                            debug_log(f"Failed to execute query without bookmarks: {inner_e}", "ERROR")
+                    # Re-raise the original exception if we couldn't handle it
+                    raise e
+            
+            # Replace the query method with our wrapped version
+            self.graph.query = query_with_no_bookmarks
+            
+            # Create detailed callback handlers for tracking all steps in the chain
+            handlers = [
+                StdOutCallbackHandler(),  # Standard output logging
+                StreamingStdOutCallbackHandler()  # Real-time streaming output
+            ]
+            
+            debug_log("Setting up GraphCypherQAChain with detailed logging and callbacks", "DEBUG")
+            
             chain_config = {
                 "llm": self.llm,
                 "graph": self.graph,
                 "verbose": True,
                 "return_intermediate_steps": True,
-                "allow_dangerous_requests": True
+                "allow_dangerous_requests": True,
+                "callbacks": handlers
             }
+            '''
+            # Ensure schema is properly parsed into a dict
+            try:
+                # self.schema can be a dict (already parsed) or a string (needs parsing)
+                if isinstance(self.schema, str):
+                    # json.loads converts a string to a Python object (dict)
+                    db_schema = json.loads(self.schema)
+                else:
+                    # Already a dict, use as is
+                    db_schema = self.schema
+                    
+                debug_log(f"Schema information type: {type(db_schema).__name__}", "DEBUG")
+                # Only proceed with validation if we have a proper dict
+                if db_schema and isinstance(db_schema, dict):
+                    # Extract node and relationship schemas if available
+                    node_props = {}
+                    rel_props = {}
+                
+                    # Extract schema information based on the structure we have
+                    if 'nodes' in db_schema:
+                        for node in db_schema.get('nodes', []):
+                            if 'label' in node and 'properties' in node:
+                                # Extract property names from the properties object
+                                # Properties are in format {"prop_name": "type"}
+                                node_props[node['label']] = list(node['properties'].keys())
+                    
+                    if 'relationships' in db_schema:
+                        for rel in db_schema.get('relationships', []):
+                            if 'type' in rel:
+                                # Extract property names from the properties object 
+                                # Properties are in format {"prop_name": "value"}
+                                rel_props[rel['type']] = list(rel.get('properties', {}).keys())
+                    
+                    # Only enable schema validation if we have actual schema data
+                    if node_props or rel_props:
+                        debug_log("Enabling Cypher validation with schema information", "DEBUG")
+                        chain_config["validate_cypher"] = True
+                        
+                        # Prepare the schema for validation
+                        formatted_schema = {
+                            "node_props": node_props,
+                            "rel_props": rel_props
+                        }
+                        
+                        # The structured_schema needs to be directly available to the graph
+                        # Create a structured schema with relationships in the format expected by CypherQueryCorrector
+                        structured_schema = {
+                            "nodes": [],
+                            "relationships": []
+                        }
+                        
+                        # Extract relationship info with the correct field names
+                        # CypherQueryCorrector expects 'start', 'type', and 'end' fields
+                        if 'relationships' in db_schema:
+                            for rel in db_schema.get('relationships', []):
+                                if all(k in rel for k in ['startNode', 'type', 'endNode']):
+                                    # Map from our schema format to the expected format
+                                    structured_schema['relationships'].append({
+                                        "start": rel['startNode'],
+                                        "type": rel['type'],
+                                        "end": rel['endNode']
+                                    })
+                        
+                        debug_log(f"Structured schema: {structured_schema}", "DEBUG")
+                        
+                        # For Cypher validation to work, the structured_schema needs to be 
+                        # an attribute of the graph object itself
+                        # This is because GraphCypherQAChain accesses it via:
+                        # kwargs["graph"].structured_schema
+                        
+                        # Attach the structured schema to the graph object
+                        self.graph.structured_schema = structured_schema
+                        
+                        # Add node/rel properties to the config
+                        chain_config["schema"] = formatted_schema
+
+                    else:
+                        # Don't enable validation if we don't have schema data
+                        debug_log("Disabling Cypher validation due to missing schema information", "DEBUG")
+                        chain_config["validate_cypher"] = False
+                else:
+                    # Don't enable validation if schema is not available
+                    debug_log("Disabling Cypher validation due to missing schema information", "DEBUG")
+                    chain_config["validate_cypher"] = False
+            except Exception as e:
+                debug_log(f"Failed to process schema: {e}", "ERROR")
+                debug_log(f"Error details: {traceback.format_exc()}", "DEBUG")
+                debug_log("Disabling Cypher validation due to schema processing error", "DEBUG")
+                chain_config["validate_cypher"] = False
+            
+            '''
             
             # Only add prompts if they are properly loaded
             if hasattr(self, 'cypher_prompt') and self.cypher_prompt:
-                print('DEBUG: cypher prompt found')
+                debug_log('cypher prompt found', "DEBUG")
                 chain_config["cypher_prompt"] = self.cypher_prompt
             
             # QA prompt requires special handling because it relies on intermediate variables
             # that are generated by the chain itself (query and response)
             if hasattr(self, 'qa_prompt') and self.qa_prompt:
-                print('DEBUG: qa prompt found - wrapping to handle intermediate variables')
+                debug_log('qa prompt found - wrapping to handle intermediate variables', "DEBUG")
                 
                 # We need to modify how the QA prompt is passed to work with GraphCypherQAChain
                 # The chain internally generates 'query' and 'response' variables
                 # Get the template string from our ChatPromptTemplate
                 if hasattr(self.qa_prompt, 'template') and hasattr(self.qa_prompt.template, 'template'):
                     qa_template_str = self.qa_prompt.template.template
-                    print(f"DEBUG: Using template string: {qa_template_str[:50]}...")
+                    debug_log(f"Using template string: {qa_template_str[:50]}...", "DEBUG")
                     
                     # Create a proper PromptTemplate that GraphCypherQAChain can work with
                     # Based on the error, make sure we include 'query' as an input variable
@@ -198,21 +375,21 @@ class SchemaAwareGraphAssistant:
                     )
                     chain_config["qa_prompt"] = qa_prompt_template
                 else:
-                    print(f"DEBUG: Using original QA prompt - may cause errors")
+                    debug_log(f"Using original QA prompt - may cause errors", "DEBUG")
                     chain_config["qa_prompt"] = self.qa_prompt
             
-            # Initialize with the validated configuration using the community implementation
-            self.chain = CommunityGraphCypherQAChain.from_llm(**chain_config)
+            # Initialize with the validated configuration using langchain_neo4j implementation
+            self.chain = GraphCypherQAChain.from_llm(**chain_config)
             print(f"DEBUG: Successfully initialized GraphCypherQAChain")
             
             # Mark initialization as complete
             self.initialization_complete = True
-            print(f"DEBUG: Async initialization completed successfully for {self.db_id}")
+            debug_log(f"Async initialization completed successfully for {self.db_id}", "DEBUG")
             
         except Exception as e:
             self.initialization_error = str(e)
-            print(f"ERROR: Async initialization failed: {str(e)}")
-            print(f"DEBUG: Error details: {traceback.format_exc()}")
+            debug_log(f"Async initialization failed: {str(e)}", "ERROR")
+            debug_log(f"Error details: {traceback.format_exc()}", "DEBUG")
     
     def _get_csv_path(self):
         """
@@ -237,20 +414,20 @@ class SchemaAwareGraphAssistant:
             graph_config = config.get(self.db_id, {})
             
             if not graph_config:
-                print(f"WARNING: No configuration found for database '{self.db_id}' in neo4j.databases.yaml")
+                debug_log(f"No configuration found for database '{self.db_id}' in neo4j.databases.yaml", "WARNING")
                 # Try to use default configuration if available
                 graph_config = config.get("default", {})
                 if graph_config:
-                    print(f"INFO: Using 'default' Neo4j configuration as fallback for '{self.db_id}'")
+                    debug_log(f"Using 'default' Neo4j configuration as fallback for '{self.db_id}'", "INFO")
                 else:
-                    print(f"ERROR: No fallback configuration found for '{self.db_id}'")
+                    debug_log(f"No fallback configuration found for '{self.db_id}'", "ERROR")
             
             # Parse the connection parameters
             params = parse_connection_params(graph_config)
             
             # Validate and log the parameters
             if not params:
-                print(f"ERROR: Failed to parse connection parameters for '{self.db_id}'")
+                debug_log(f"Failed to parse connection parameters for '{self.db_id}'", "ERROR")
                 return {
                     "uri": None,
                     "username": None,
@@ -265,17 +442,17 @@ class SchemaAwareGraphAssistant:
                 "database": params.get("database"),
                 "password": "*****" if params.get("password") else None
             }
-            print(f"DEBUG: Neo4j connection parameters for '{self.db_id}': {conn_debug}")
+            debug_log(f"Neo4j connection parameters for '{self.db_id}': {conn_debug}", "DEBUG")
             
             # Validate the essential parameters
             if not params.get("uri"):
-                print(f"ERROR: Missing Neo4j URI for database '{self.db_id}'")
+                debug_log(f"Missing Neo4j URI for database '{self.db_id}'", "ERROR")
             
             return params
             
         except Exception as e:
-            print(f"ERROR: Failed to get connection params for {self.db_id}: {str(e)}")
-            print(f"DEBUG: Stack trace: {traceback.format_exc()}")
+            debug_log(f"Failed to get connection params for {self.db_id}: {str(e)}", "ERROR")
+            debug_log(f"Stack trace: {traceback.format_exc()}", "DEBUG")
             return {
                 "uri": None,
                 "username": None,
@@ -285,43 +462,46 @@ class SchemaAwareGraphAssistant:
         
     def _ensure_prompt(self) -> None:
         """Check if prompts exist, validate generation_id, create and save if needed."""
-        print(f"TRACE: _ensure_prompt started for db_id={self.db_id}, schema_id={self.schema_id}")
+        debug_log(f"_ensure_prompt started for db_id={self.db_id}, schema_id={self.schema_id}", "DEBUG")
         prompt_file = PROMPT_DIR / f"prompt_{self.db_id}_{self.schema_id}.json"
         query_file = QUERY_DIR / f"{self.schema_id}_queries.json" 
-        print(f"TRACE: Prompt file path: {prompt_file}")
-        print(f"TRACE: Query file path: {query_file}")
+        debug_log(f"Prompt file path: {prompt_file}", "DEBUG")
+        debug_log(f"Query file path: {query_file}", "DEBUG")
 
         regenerate_prompts = False
         current_generation_id = None
         existing_prompts = None
+        domain = None
 
-        # 1. Fetch current generation_id from DB
-        print(f"TRACE: Starting DB fetch for generation_id, schema_id={self.schema_id}")
+        # 1. Fetch current generation_id and domain from DB
+        debug_log(f"Starting DB fetch for generation_id, schema_id={self.schema_id}", "DEBUG")
         db = None # Initialize db to None
         try:
-            print(f"TRACE: Creating DB session")
+            debug_log(f"Creating DB session", "DEBUG")
             db = SessionLocal()
-            print(f"TRACE: Querying Schema table for schema_id={self.schema_id}")
+            debug_log(f"Querying Schema table for schema_id={self.schema_id}", "DEBUG")
             schema_record = db.query(Schema).filter(Schema.id == self.schema_id).first()
             if schema_record:
-                print(f"TRACE: Schema record found, checking generation_id")
+                debug_log(f"Schema record found, checking generation_id", "DEBUG")
                 current_generation_id = schema_record.generation_id
+                domain = schema_record.domain  # Get the domain from the schema record
+                debug_log(f"Domain from schema record: {domain}", "DEBUG")
                 if not current_generation_id:
-                    print(f"Warning: Schema record found for {self.schema_id}, but generation_id is missing. Will regenerate prompts.")
+                    debug_log(f"Schema record found for {self.schema_id}, but generation_id is missing. Will regenerate prompts.", "WARNING")
                     regenerate_prompts = True
                 else:
-                    print(f"DEBUG: Schema record found for {self.schema_id} with generation_id {current_generation_id}")    
+                    debug_log(f"Schema record found for {self.schema_id} with generation_id {current_generation_id}", "DEBUG")
             else:
-                print(f"Warning: Schema record not found for schema_id {self.schema_id}. Cannot verify prompt generation ID. Will regenerate prompts.")
+                debug_log(f"Schema record not found for schema_id {self.schema_id}. Cannot verify prompt generation ID. Will regenerate prompts.", "WARNING")
                 regenerate_prompts = True # If schema record is missing, prompts might be invalid.
         except Exception as e:
-            print(f"Error fetching schema generation_id: {e}. Proceeding, may regenerate prompts.")
-            print(f"TRACE: Exception details: {traceback.format_exc()}")
+            debug_log(f"Error fetching schema generation_id: {e}. Proceeding, may regenerate prompts.", "ERROR")
+            debug_log(f"Exception details: {traceback.format_exc()}", "DEBUG")
             # If DB access fails, we should probably regenerate prompts
             regenerate_prompts = True
         finally:
             if db:
-                print(f"TRACE: Closing DB session")
+                debug_log(f"Closing DB session", "DEBUG")
                 db.close()
 
         # 2. Check prompt file and generation_id if regeneration not already decided
@@ -334,54 +514,89 @@ class SchemaAwareGraphAssistant:
 
                 if not current_generation_id: 
                      # This case should be handled above by setting regenerate_prompts=True
-                     print(f"Error: Logic flaw - current_generation_id missing but regeneration wasn't triggered.")
+                     debug_log(f"Logic flaw - current_generation_id missing but regeneration wasn't triggered.", "ERROR")
                      regenerate_prompts = True 
                 elif file_generation_id == current_generation_id:
-                    print(f"Prompt file {prompt_file} found and generation_id matches. Loading prompts.")
+                    debug_log(f"Prompt file {prompt_file} found and generation_id matches. Loading prompts.", "INFO")
                     # Load prompts later, set flag to false
                     regenerate_prompts = False 
                 else:
-                    print(f"Prompt file {prompt_file} found, but generation_id mismatch (File: {file_generation_id}, DB: {current_generation_id}). Regenerating prompts.")
+                    debug_log(f"Prompt file {prompt_file} found, but generation_id mismatch (File: {file_generation_id}, DB: {current_generation_id}). Regenerating prompts.", "INFO")
                     regenerate_prompts = True
             except (json.JSONDecodeError, KeyError, Exception) as e:
-                print(f"Error reading or parsing prompt file {prompt_file}: {e}. Regenerating prompts.")
+                debug_log(f"Error reading or parsing prompt file {prompt_file}: {e}. Regenerating prompts.", "ERROR")
                 regenerate_prompts = True
         elif not prompt_file.exists():
-             print(f"Prompt file for db '{self.db_id}' and schema '{self.schema_id}' not found. Creating prompts...")
+             debug_log(f"Prompt file for db '{self.db_id}' and schema '{self.schema_id}' not found. Creating prompts...", "INFO")
              regenerate_prompts = True
 
         # 3. Regenerate and save if needed
         if regenerate_prompts:
-            print("Generating new prompts...")
-            print(f"TRACE: Starting _generate_prompts() for db_id={self.db_id}, schema_id={self.schema_id}")
+            debug_log("Generating new prompts...", "INFO")
+            debug_log(f"Starting _generate_prompts() for db_id={self.db_id}, schema_id={self.schema_id}", "DEBUG")
             # Generate prompts based on schema
             try:
-                prompts = self._generate_prompts() # Assumes this returns a dict
-                print(f"TRACE: Successfully completed _generate_prompts()")
+                # Check if we should use domain-specific sample queries
+                use_domain_specific_queries = False
+                domain_specific_queries = []
+                domain_queries_file = None
+                
+                # Check if domain contains telecom_churn or foam_factory
+                if domain:
+                    domain_lower = domain.lower()
+                    if 'telecom_churn' in domain_lower:
+                        debug_log(f"Using domain-specific sample queries for telecom_churn domain", "INFO")
+                        domain_queries_file = os.path.join(os.path.dirname(__file__), 'domain_queries', 'telecom_churn_queries.json')
+                        use_domain_specific_queries = True
+                    elif 'foam_factory' in domain_lower:
+                        debug_log(f"Using domain-specific sample queries for foam_factory domain", "INFO")
+                        domain_queries_file = os.path.join(os.path.dirname(__file__), 'domain_queries', 'foam_factory_queries.json')
+                        use_domain_specific_queries = True
+                
+                # Generate prompts - pass a flag indicating if domain-specific queries will be used
+                prompts = self._generate_prompts(skip_sample_queries_generation=use_domain_specific_queries) # Assumes this returns a dict
+                
+                # If we should use domain-specific queries, load them from the JSON file
+                if use_domain_specific_queries and domain_queries_file and os.path.exists(domain_queries_file):
+                    try:
+                        with open(domain_queries_file, 'r') as f:
+                            domain_data = json.load(f)
+                            domain_specific_queries = domain_data.get('queries', [])
+                        
+                        if domain_specific_queries:
+                            # Replace the LLM-generated sample queries with domain-specific ones
+                            debug_log(f"Replacing LLM-generated sample queries with domain-specific queries for {domain}", "INFO")
+                            prompts["sample_queries"] = domain_specific_queries
+                    except Exception as e:
+                        debug_log(f"Error loading domain-specific queries from {domain_queries_file}: {e}", "ERROR")
+                        debug_log(f"Exception details: {traceback.format_exc()}", "DEBUG")
+                        # Continue with LLM-generated queries if there's an error
+                
+                debug_log(f"Successfully completed _generate_prompts()", "DEBUG")
             except Exception as e:
-                print(f"TRACE: Error in _generate_prompts(): {str(e)}")
-                print(f"TRACE: Exception details: {traceback.format_exc()}")
+                debug_log(f"Error in _generate_prompts(): {str(e)}", "ERROR")
+                debug_log(f"Exception details: {traceback.format_exc()}", "DEBUG")
                 raise
             
             # Add the current generation_id (if available and valid)
             if current_generation_id:
                 prompts["generation_id"] = current_generation_id
             else:
-                 print(f"Warning: Could not retrieve valid current generation_id for schema {self.schema_id}. Saving prompts without generation_id.")
+                 debug_log(f"Could not retrieve valid current generation_id for schema {self.schema_id}. Saving prompts without generation_id.", "WARNING")
                  prompts.pop("generation_id", None) # Ensure it's not stale
 
             # Save the prompts to file
             try:
-                print(f"TRACE: Creating prompt directory: {PROMPT_DIR}")
+                debug_log(f"Creating prompt directory: {PROMPT_DIR}", "DEBUG")
                 PROMPT_DIR.mkdir(parents=True, exist_ok=True) # Ensure directory exists
-                print(f"TRACE: Saving prompts to file: {prompt_file}")
+                debug_log(f"Saving prompts to file: {prompt_file}", "DEBUG")
                 with open(prompt_file, "w") as f:
                     json.dump(prompts, f, indent=2)
-                print(f"Prompts saved to {prompt_file}")
+                debug_log(f"Prompts saved to {prompt_file}", "INFO")
 
-                print(f"TRACE: Creating query directory: {QUERY_DIR}")
+                debug_log(f"Creating query directory: {QUERY_DIR}", "DEBUG")
                 QUERY_DIR.mkdir(parents=True, exist_ok=True) # Ensure directory exists
-                print(f"TRACE: Saving queries to file: {query_file}")
+                debug_log(f"Saving queries to file: {query_file}", "DEBUG")
                 with open(query_file, "w") as f:
                     # Format the sample queries to match what the API expects
                     # The API expects a dictionary with categories as keys and lists of queries as values
@@ -406,18 +621,23 @@ class SchemaAwareGraphAssistant:
                         formatted_queries[category].append({
                             "id": f"{category}_{len(formatted_queries[category])+1}",
                             "query": query,
-                            "description": f"AI-generated sample query #{i+1}"
+                            "description": f"Sample query for {domain if domain else 'graph'} #{i+1}"
                         })
                     
                     json.dump(formatted_queries, f, indent=2)
-                print(f"Queries saved to {query_file}")
+                debug_log(f"Queries saved to {query_file}", "INFO")
 
             except Exception as e:
-                print(f"Error saving prompts to {prompt_file}: {e}")
-                print("Warning: Prompts generated but failed to save to file. Using in-memory prompts for this session.")
+                debug_log(f"Error saving prompts to {prompt_file}: {e}", "ERROR")
+                debug_log("Prompts generated but failed to save to file. Using in-memory prompts for this session.", "WARNING")
         
-    def _generate_prompts(self) -> Dict[str, Any]:
-        """Generate custom prompts using LLM based on the schema"""
+    def _generate_prompts(self, skip_sample_queries_generation=False) -> Dict[str, Any]:
+        """Generate custom prompts using LLM based on the schema
+        
+        Args:
+            skip_sample_queries_generation: If True, don't generate sample queries with LLM
+                                          as they will be replaced with domain-specific ones
+        """
         
         # Define a system prompt for prompt generation
         cypher_system_prompt = """
@@ -481,7 +701,11 @@ class SchemaAwareGraphAssistant:
         Keep the prompt concise but comprehensive enough to guide accurate Cypher query generation.
         
         11. IMPORTANT: Use {question} (not {{question}} or query) as the placeholder for the user's question, as this is required for compatibility with the GraphCypherQAChain.
-        12. Append following critical instructions to **Instructions for Cypher Query Generation:** section:
+        12. CRITICAL: When accessing relationship properties, ALWAYS first assign the relationship to a variable and then access its properties. For example:
+            - INCORRECT: MATCH (a)-[:RELATIONSHIP {property: value}]->(b)
+            - CORRECT: MATCH (a)-[r:RELATIONSHIP]->(b) WHERE r.property = value
+            - CORRECT: MATCH (a)-[r:RELATIONSHIP]->(b) RETURN r.property
+        13. Append following critical instructions to **Instructions for Cypher Query Generation:** section:
             - Cypher query should only include names of node, relationship or properties as per given schema
             - Return ONLY a single raw Cypher query with NO explanations, NO headers, NO numbering, NO query repetition, NO backticks, and NO additional text of any kind
             - The response should be ONLY the executable Cypher query with no additional text. The LLM must not include any of the following in its response:
@@ -493,9 +717,10 @@ class SchemaAwareGraphAssistant:
                 - NO "Here's a Cypher query that..." text
                 - NO "This query will..." explanatory text
             - For Date properties, in where clause or in filter queries, cast 'Date' attribute to datetime type and value to datetime type e.g. WHERE datetime(d.Date) = datetime('2020-01-03')
+            - IMPORTANT: When accessing relationship properties, ALWAYS first assign the relationship to a variable and then access its properties. NEVER try to filter on relationship properties inside the relationship pattern.
             - If no cypher query could be generated for given query then return None or empty. DO NOT RETURN text with explaination.
-        13. Do not alter **Sample Cyphers used for node/relationship creation** section
-        14. Output Format:
+        14. Do not alter **Sample Cyphers used for node/relationship creation** section
+        15. Output Format:
         **Your Role:**
         **Your Task:**
         **Schema:**
@@ -571,7 +796,7 @@ class SchemaAwareGraphAssistant:
         
         try:
             # Generate Cypher prompt template with retry
-            print(f"Generating Cypher prompt template for {self.db_id}...")
+            debug_log(f"Generating Cypher prompt template for {self.db_id}...", "INFO")
             cypher_messages = [
                 {"role": "system", "content": cypher_system_prompt},
                 {"role": "user", "content": f"Use this Neo4j schema: {self.formatted_schema} for generating Cypher prompt as per following instructions:\n\n{cypher_prompt_instruction}"}
@@ -581,20 +806,22 @@ class SchemaAwareGraphAssistant:
             # Use retry mechanism for Cypher prompt generation
             cypher_prompt_template = self._generate_prompt_with_retry(llm_local, cypher_messages, "Cypher prompt")
             
-            import pandas as pd
+            cypher_queries = ''
+            
+            '''import pandas as pd
             import tempfile
             import os
             
             # Get resolved data file path to ensure proper handling of transformed datasets
             data_file_path = self._resolve_data_path()
             if not data_file_path or not os.path.exists(data_file_path):
-                print(f"Warning: Data file not found at {data_file_path}, falling back to original path")
+                debug_log(f"Data file not found at {data_file_path}, falling back to original path", "WARNING")
                 data_file_path = self.csv_file_path  # Fallback to original path
             
             # Check file type to handle differently based on extension
             is_parquet = data_file_path and data_file_path.lower().endswith('.parquet')
             
-            print(f"Using data file for cypher generation: {data_file_path} (is_parquet={is_parquet})")
+            debug_log(f"Using data file for cypher generation: {data_file_path} (is_parquet={is_parquet})", "INFO")
             
             # Use the proper generator based on file type
             if is_parquet:
@@ -607,7 +834,7 @@ class SchemaAwareGraphAssistant:
                         temp_csv_path = temp_file.name
                     
                     # Read parquet and write to CSV
-                    print(f"Converting parquet to temporary CSV for processing")
+                    debug_log(f"Converting parquet to temporary CSV for processing", "DEBUG")
                     df = pd.read_parquet(data_file_path, engine='pyarrow')
                     df.head(100).to_csv(temp_csv_path, index=False)
                     
@@ -623,24 +850,21 @@ class SchemaAwareGraphAssistant:
                         try:
                             os.unlink(temp_csv_path)
                         except Exception as e:
-                            print(f"Warning: Could not delete temp file {temp_csv_path}: {str(e)}")
+                            debug_log(f"Could not delete temp file {temp_csv_path}: {str(e)}", "WARNING")
             else:
                 # For CSV files, use the standard approach
                 cypher_generator = CsvToCypherGenerator(self.schema, data_file_path, 
                                                      LLMConstants.Providers.GOOGLE, 
                                                      LLMConstants.GoogleModels.DEFAULT)
                 cypher_queries = cypher_generator.generate_cypher_for_rows()
-            #cypher_queries_str = '\n'.join(cypher_queries)
-            #import_notes = '\n\n Note: DO NOT return example question and cypher query. Return PROPER cypher query only. DO NOT include any explanation'
-            #cypher_prompt_template = f"### Task: Generate Cypher queries for time-series data using this schema:\n\n### Cypher Queries:\n\n{cypher_queries_str}\n\n{import_notes}\n\n{cypher_prompt_template}"
-
+            '''
             # Apply Neo4j property syntax escaping to prevent template variable confusion
             cypher_prompt_template = self._escape_neo4j_properties(cypher_prompt_template)
             cypher_prompt_template = cypher_prompt_template.replace("{context}", "")
 
             
             # Generate QA prompt template with retry
-            print(f"Generating QA prompt template for {self.db_id}...")
+            debug_log(f"Generating QA prompt template for {self.db_id}...", "INFO")
             qa_messages = [
                 {"role": "system", "content": qa_system_prompt},
                 {"role": "user", "content": f"Use this Neo4j schema: {self.formatted_schema} for generating QA prompt as per following instructions:\n\n{qa_prompt_instruction}"}
@@ -650,21 +874,23 @@ class SchemaAwareGraphAssistant:
             
             # Apply Neo4j property syntax escaping to prevent template variable confusion
             qa_prompt_template = self._escape_neo4j_properties(qa_prompt_template)
-            # Append formatted schema at the front of the template
-            #qa_prompt_gen_txt = 'You are an expert at answering questions using data from a knowledge graph. You will receive a question and the results of a Cypher query executed against the graph. Your task is to interpret the Cypher query results and provide a concise and informative natural language answer to the original question.'
-            #qa_prompt_template = f"{qa_prompt_gen_txt}\n\n{self.formatted_schema}\n\n{qa_prompt_template}"
             
-            # Generate sample data JSON
-            sample_data = self._generate_sample_data_json()
-            print(f"Sample data JSON for Queries!!!: {sample_data}")
-            # Generate sample queries with retry
-            sample_queries_messages = [
-                {"role": "system", "content": sample_queries_system_prompt},
-                {"role": "user", "content": f"Use this Neo4j schema: {self.formatted_schema} and the data to use: {sample_data} for generating sample questions prompt as per following instruction: \n\n{sample_queries_instruction}"}
-            ]
-            
-            # Use retry mechanism for sample queries generation and parsing
-            sample_queries = self._generate_sample_queries_with_retry(llm_local, sample_queries_messages, sample_data)
+            # Generate sample queries only if we're not using domain-specific ones
+            if skip_sample_queries_generation:
+                debug_log(f"Skipping sample queries generation as domain-specific queries will be used", "INFO")
+                sample_queries = []  # Empty list as placeholder, will be replaced by domain-specific queries
+            else:
+                # Generate sample data JSON
+                sample_data = self._generate_sample_data_json()
+                debug_log(f"Sample data JSON for Queries: {sample_data}", "DEBUG")
+                # Generate sample queries with retry
+                sample_queries_messages = [
+                    {"role": "system", "content": sample_queries_system_prompt},
+                    {"role": "user", "content": f"Use this Neo4j schema: {self.formatted_schema} and the data to use: {sample_data} for generating sample questions prompt as per following instruction: \n\n{sample_queries_instruction}"}
+                ]
+                
+                # Use retry mechanism for sample queries generation and parsing
+                sample_queries = self._generate_sample_queries_with_retry(llm_local, sample_queries_messages, sample_data)
                             
             # Create prompts dictionary
             prompts = {
@@ -674,14 +900,14 @@ class SchemaAwareGraphAssistant:
                 "sample_queries": sample_queries,
                 "sample_cyphers": cypher_queries
             }
-            print(f"DEBUG: Created prompts with properly escaped Neo4j property syntax")
+            debug_log(f"Created prompts with properly escaped Neo4j property syntax", "DEBUG")
             
             return prompts
             
         except Exception as e:
-            print(f"Error generating prompts with LLM: {e}")
+            debug_log(f"Error generating prompts with LLM: {e}", "ERROR")
             import traceback
-            print(f"Traceback: {traceback.format_exc()}")
+            debug_log(f"Traceback: {traceback.format_exc()}", "DEBUG")
             
             # Instead of using fallback prompts, raise the exception to fail explicitly
             # This makes debugging easier by exposing the actual error
@@ -698,10 +924,10 @@ class SchemaAwareGraphAssistant:
             file_path = self._resolve_data_path()
             
             if not file_path or not os.path.exists(file_path):
-                print(f"Error: Data file not found at {file_path}")
+                debug_log(f"Data file not found at {file_path}", "ERROR")
                 return "{}"
                 
-            print(f"Reading data from resolved path: {file_path}")
+            debug_log(f"Reading data from resolved path: {file_path}", "INFO")
             
             # Determine file type and read accordingly
             if file_path.endswith('.csv'):
@@ -714,7 +940,7 @@ class SchemaAwareGraphAssistant:
                 df = pd.read_json(file_path)
                 df = df.head(100)
             else:
-                print(f"Unsupported file format for {file_path}")
+                debug_log(f"Unsupported file format for {file_path}", "WARNING")
                 return "{}"
             
             # Create a dictionary to store column names and unique values
@@ -736,7 +962,7 @@ class SchemaAwareGraphAssistant:
             
             return json.dumps(sample_data, indent=2)
         except Exception as e:
-            print(f"Error generating sample data JSON: {str(e)}")
+            debug_log(f"Error generating sample data JSON: {str(e)}", "ERROR")
             return "{}"
             
     def _resolve_data_path(self):
@@ -751,13 +977,13 @@ class SchemaAwareGraphAssistant:
         try:
             schema = db.query(Schema).filter(Schema.id == self.schema_id).first()
             if not schema:
-                print(f"Schema with ID {self.schema_id} not found")
+                debug_log(f"Schema with ID {self.schema_id} not found", "ERROR")
                 return None
                 
             # Get the file path from the schema
             data_path = schema.csv_file_path
             if not data_path:
-                print(f"No file path found in schema {self.schema_id}")
+                debug_log(f"No file path found in schema {self.schema_id}", "ERROR")
                 return None
                 
             # Check if this is a transformed dataset based on dataset_type flag
@@ -765,7 +991,7 @@ class SchemaAwareGraphAssistant:
             
             # Only apply path resolution for transformed datasets with just a filename
             if is_transformed_dataset:
-                print(f"Resolving path for transformed dataset: {data_path}")
+                debug_log(f"Resolving path for transformed dataset: {data_path}", "DEBUG")
                 # If just a filename without path, check in data directories
                 data_dirs = [
                     os.path.join(os.path.dirname(__file__), '..', '..', 'data'),
@@ -776,16 +1002,16 @@ class SchemaAwareGraphAssistant:
                 for dir_path in data_dirs:
                     full_path = os.path.join(dir_path, data_path)
                     if os.path.exists(full_path):
-                        print(f"Found transformed dataset at {full_path}")
+                        debug_log(f"Found transformed dataset at {full_path}", "INFO")
                         return full_path
                         
-                print(f"Warning: Could not find transformed dataset in any of the data directories")
+                debug_log(f"Could not find transformed dataset in any of the data directories", "WARNING")
             
             # If not a transformed dataset or if it already has a full path, use as-is
             if os.path.exists(data_path):
                 return data_path
             else:
-                print(f"Warning: File does not exist at path: {data_path}")
+                debug_log(f"File does not exist at path: {data_path}", "WARNING")
                 return None
                 
         finally:
@@ -831,23 +1057,23 @@ class SchemaAwareGraphAssistant:
             self.cypher_prompt = None
             self.qa_prompt = None
             
-            print(f"DEBUG: Attempting to load prompts")
+            debug_log(f"Attempting to load prompts", "DEBUG")
             prompts = {}
             
             # Try to load the specific prompt file first
             if prompt_file.exists():
                 with open(prompt_file, "r") as f:
                     prompts = json.load(f)
-                print(f"DEBUG: Loaded prompt file for db '{self.db_id}' and schema '{self.schema_id}'")
+                debug_log(f"Loaded prompt file for db '{self.db_id}' and schema '{self.schema_id}'", "DEBUG")
             else:
-                print(f"DEBUG: No prompt files found, will use default prompts")
+                debug_log(f"No prompt files found, will use default prompts", "DEBUG")
                 
             # Convert string prompts to ChatPromptTemplate objects if needed
             if "cypher_prompt" in prompts:
                 cypher_prompt_text = prompts.get("cypher_prompt")
                 # Check if it's already a structured object or a string
                 if isinstance(cypher_prompt_text, str):
-                    print(f"DEBUG: Converting cypher_prompt string to ChatPromptTemplate")
+                    debug_log(f"Converting cypher_prompt string to ChatPromptTemplate", "DEBUG")
                     # Check if the prompt starts with "Prompt:" or "Prompt Template:" and clean it
                     if cypher_prompt_text.startswith("Prompt:") or cypher_prompt_text.startswith("Prompt Template:"):
                         lines = cypher_prompt_text.split('\n')
@@ -876,7 +1102,7 @@ class SchemaAwareGraphAssistant:
                 qa_prompt_text = prompts.get("qa_prompt")
                 # Check if it's already a structured object or a string
                 if isinstance(qa_prompt_text, str):
-                    print(f"DEBUG: Converting qa_prompt string to ChatPromptTemplate")
+                    debug_log(f"Converting qa_prompt string to ChatPromptTemplate", "DEBUG")
                     # Check if the prompt starts with "Prompt:" or "Prompt Template:" and clean it
                     if qa_prompt_text.startswith("Prompt:") or qa_prompt_text.startswith("Prompt Template:"):
                         lines = qa_prompt_text.split('\n')
@@ -907,7 +1133,7 @@ class SchemaAwareGraphAssistant:
                     #     template_text = template_text.replace("{{response}}", "{context}")
                     #     print(f"DEBUG: Replaced {{response}} with {{context}} in QA prompt")
                             
-                    print(f"DEBUG: Fixed placeholders in QA prompt")
+                    debug_log(f"Fixed placeholders in QA prompt", "DEBUG")
                     self.qa_prompt = ChatPromptTemplate.from_template(template_text)
                 else:
                     self.qa_prompt = qa_prompt_text
@@ -917,8 +1143,8 @@ class SchemaAwareGraphAssistant:
             
         except Exception as e:
             # Handle any errors in loading prompts
-            print(f"ERROR: Failed to load prompts: {str(e)}")
-            print(f"DEBUG: {traceback.format_exc()}")
+            debug_log(f"Failed to load prompts: {str(e)}", "ERROR")
+            debug_log(f"Traceback: {traceback.format_exc()}", "DEBUG")
             
             # Instead of using fallback prompts, raise the exception to fail explicitly
             # This makes debugging easier by exposing the actual error
@@ -926,25 +1152,25 @@ class SchemaAwareGraphAssistant:
             
     def _debug_print_prompts(self):
         """Print debug information about the loaded prompts"""
-        print("\n=== DEBUG: PROMPT INFORMATION ===")
-        print(f"Cypher prompt type: {type(self.cypher_prompt)}")
-        print(f"QA prompt type: {type(self.qa_prompt)}")
+        debug_log("=== DEBUG: PROMPT INFORMATION ===", "DEBUG")
+        debug_log(f"Cypher prompt type: {type(self.cypher_prompt)}", "DEBUG")
+        debug_log(f"QA prompt type: {type(self.qa_prompt)}", "DEBUG")
         
         # Check prompt template variable names
         if hasattr(self.cypher_prompt, 'template') and hasattr(self.cypher_prompt.template, 'variable_names'):
-            print(f"Cypher prompt variables: {self.cypher_prompt.template.variable_names}")
+            debug_log(f"Cypher prompt variables: {self.cypher_prompt.template.variable_names}", "DEBUG")
         elif hasattr(self.cypher_prompt, 'input_variables'):
-            print(f"Cypher prompt variables: {self.cypher_prompt.input_variables}")
+            debug_log(f"Cypher prompt variables: {self.cypher_prompt.input_variables}", "DEBUG")
         else:
-            print("Cannot determine Cypher prompt variables")
+            debug_log("Cannot determine Cypher prompt variables", "DEBUG")
             
         if hasattr(self.qa_prompt, 'template') and hasattr(self.qa_prompt.template, 'variable_names'):
-            print(f"QA prompt variables: {self.qa_prompt.template.variable_names}")
+            debug_log(f"QA prompt variables: {self.qa_prompt.template.variable_names}", "DEBUG")
         elif hasattr(self.qa_prompt, 'input_variables'):
-            print(f"QA prompt variables: {self.qa_prompt.input_variables}")
+            debug_log(f"QA prompt variables: {self.qa_prompt.input_variables}", "DEBUG")
         else:
-            print("Cannot determine QA prompt variables")
-        print("===================================\n")
+            debug_log("Cannot determine QA prompt variables", "DEBUG")
+        debug_log("===================================", "DEBUG")
 
     def _get_cypher_from_table(self, model_class) -> str:
         """Reads loading cypher from the specified table based on schema_id."""
@@ -1278,7 +1504,7 @@ class SchemaAwareGraphAssistant:
                     return query
         
         # If all else fails, return None instead of a hardcoded query
-        print(f"WARNING: Could not extract a valid Cypher query from LLM output.")
+        debug_log(f"Could not extract a valid Cypher query from LLM output.", "WARNING")
         return None
         
     def query(self, question: str) -> Dict[str, Any]:
@@ -1291,7 +1517,16 @@ class SchemaAwareGraphAssistant:
             Dict with the result key containing the answer
         """
         start_time = time.time()
-        print(f"Processing query: {question}")
+        debug_log(f"Processing query: {question}", "INFO")
+        
+        # Create handlers for this specific query execution
+        query_handlers = [
+            StdOutCallbackHandler(),
+            StreamingStdOutCallbackHandler()
+        ]
+        
+        debug_log("=== DETAILED GRAPHCYPHERQACHAIN EXECUTION LOG ====", "INFO")
+        debug_log(f"Question: {question}", "INFO")
         
         # Check if initialization is complete
         if not self.initialization_complete:
@@ -1299,7 +1534,7 @@ class SchemaAwareGraphAssistant:
             max_wait_time = 10  # seconds
             wait_start = time.time()
             while not self.initialization_complete and time.time() - wait_start < max_wait_time:
-                print(f"Waiting for initialization to complete...")
+                debug_log(f"Waiting for initialization to complete...", "INFO")
                 time.sleep(0.5)  # Wait a bit and check again
             
             # Check if initialization completed or timed out
@@ -1312,98 +1547,201 @@ class SchemaAwareGraphAssistant:
         try:
             # Special handling for schema-related questions
             if any(keyword in question.lower() for keyword in ["schema", "structure", "model", "nodes", "relationships", "node types", "relationship types"]):
-                print("DEBUG: Schema-related question detected, using direct schema information")
+                debug_log("Schema-related question detected, using direct schema information", "DEBUG")
                 return {"result": f"Here's the schema of the graph:\n\n{self.formatted_schema}"}
                     
             # Try the direct approach with our custom prompts
             try:
                 # Step 1: Generate Cypher query using the cypher_prompt
-                print("DEBUG: Generating Cypher query")
+                debug_log("=== GENERATING CYPHER QUERY ====", "INFO")
                 cypher_inputs = {"query": question}
                 
-                if hasattr(self.chain, "llm") and hasattr(self.chain, "cypher_prompt"):
-                    # Use the retry-enabled LLM invocation
-                    generated_cypher = self._invoke_llm_with_retry(
-                        self.chain.llm,
-                        self.chain.cypher_prompt.format(**cypher_inputs),
-                        timeout=30  # Standard timeout for Cypher generation
-                    )
-                    print(f"DEBUG: Generated Cypher: {generated_cypher}")
-                    
-                    # Step 2: Extract valid Cypher query with retry
-                    clean_cypher = self._extract_valid_cypher_with_retry(generated_cypher)
-                    
-                    if clean_cypher is None:
-                        print("DEBUG: Failed to extract a valid Cypher query after multiple retries")
-                        return {"result": "I couldn't generate a valid query for your question. Could you please rephrase or provide more specific details?"}
-                    
-                    print(f"DEBUG: Clean Cypher: {clean_cypher}")
-                    
-                    # Step 3: Execute the Cypher query
-                    print("DEBUG: Executing Cypher query")
-                    context = self.graph.query(clean_cypher)
-                    print(f"DEBUG: Query result: {context}")
-                    
-                    # Step 4: Generate the final answer using the qa_prompt
-                    qa_inputs = {"query": question, "context": context}
-                    if hasattr(self.chain, "qa_llm") and hasattr(self.chain, "qa_prompt"):
-                        print("DEBUG: Generating answer using QA prompt")
-                        # Use the retry-enabled QA response generation with validation
-                        try:
-                            answer = self._generate_qa_response_with_retry(
-                                self.chain.qa_llm,
-                                self.chain.qa_prompt.format(**qa_inputs),
-                                timeout=30  # Standard timeout for QA generation
-                            )
-                            result = {"result": answer}
-                        except (TimeoutError, ConnectionError, Exception) as e:
-                            print(f"Failed to generate answer after retries: {str(e)}")
-                            return {"result": f"I retrieved data from the database but had trouble generating a response. Here's the raw data: {str(context)}"}
-                    else:
-                        result = {"result": f"Query results: {context}"}
-                else:
-                    # Fallback to standard chain invocation
-                    print("DEBUG: Falling back to standard chain invocation")
+                # Add detailed logging for the standard chain invocation
+                debug_log(f"Invoking chain with question: {question}", "DEBUG")
+                chain_start_time = time.time()
+                
+                # Add timeout handling for chain invocation
+                def invoke_chain_with_timeout():
+                    return self.chain.invoke({'question': question, 'query': question}, callbacks=query_handlers)
+                
+                # Set timeout for chain invocation (60 seconds)
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    # Submit the chain invocation to the executor with a timeout
+                    future = executor.submit(invoke_chain_with_timeout)
                     try:
-                        result = self.chain.invoke({'question': question, 'query': question})
-                    except Exception as chain_error:
-                        print(f"DEBUG: Standard chain invocation failed: {str(chain_error)}")
-                        # Check if error is related to None Cypher query
-                        if "Invalid input 'None'" in str(chain_error):
-                            return {"result": "Not able to prepare valid queries. Please update your question with specific data attributes or relationships."}
-                        # Otherwise, raise the error to be caught by the outer try-except
-                        raise
-            except Exception as e:
-                print(f"ERROR: Direct approach failed: {str(e)}")
-                print(f"DEBUG: {traceback.format_exc()}")
-                # Return an informative error message instead of using hardcoded fallback queries
-                result = {
-                    "result": "I encountered an error processing your query. The database might be unavailable or your question might be too complex. Could you please try a simpler question or check if the database is accessible?"
-                }
+                        debug_log("Waiting for chain response (timeout: 60s)...", "INFO")
+                        result = future.result(timeout=60)
+                        chain_time = time.time() - chain_start_time
+                        debug_log(f"Chain execution completed in {chain_time:.2f} seconds", "INFO")
+                        debug_log(f"Raw chain result: {json.dumps(result, default=str)[:500]}{'...' if len(json.dumps(result, default=str)) > 500 else ''}", "DEBUG")
+                    except concurrent.futures.TimeoutError:
+                        debug_log("Chain invocation timed out after 60 seconds", "ERROR")
+                        
+                        # Force close the Neo4j connection to free up resources
+                        try:
+                            if hasattr(self, 'graph') and self.graph is not None:
+                                debug_log("Forcefully closing Neo4j connection due to timeout", "WARNING")
+                                self.graph.close()
+                                debug_log("Neo4j connection closed successfully", "INFO")
+                                
+                                # Reinitialize the connection for future queries
+                                connection_params = self._get_connection_params()
+                                self.graph = Neo4jGraph(
+                                    url=connection_params.get("uri"),
+                                    username=connection_params.get("username"),
+                                    password=connection_params.get("password"),
+                                    database=connection_params.get("database", "neo4j")
+                                )
+                                debug_log("Neo4j connection reinitialized", "INFO")
+                        except Exception as close_error:
+                            debug_log(f"Error while closing Neo4j connection: {str(close_error)}", "ERROR")
+                        
+                        # Return immediately with a timeout message instead of raising an exception
+                        return {"result": "The query execution timed out. This might be due to a complex query or Neo4j database connectivity issues. Please try a simpler query or check your database connection."}
+                        
+                # Additional check for empty or None result
+                if not result:
+                    debug_log("Chain returned empty result", "WARNING")
+                    raise ValueError("Chain returned empty result")
+            except Exception as chain_error:
+                debug_log(f"Standard chain invocation failed: {str(chain_error)}", "DEBUG")
+                # Check if error is related to None Cypher query
+                if "Invalid input 'None'" in str(chain_error):
+                    return {"result": "Not able to prepare valid queries. Please update your question with specific data attributes or relationships."}
+                # Otherwise, raise the error to be caught by the outer try-except
+                raise
             
-            query_time = time.time() - start_time
-            print(f"Query completed in {query_time:.2f} seconds")
+            # Add the conversation to history
+            try:
+                if hasattr(self, 'history'):
+                    debug_log("Adding conversation to history", "DEBUG")
+                    self.history.add_user_message(question)
+                    self.history.add_ai_message(result["result"])
+                    debug_log("Successfully added conversation to history", "DEBUG")
+            except Exception as history_error:
+                debug_log(f"Failed to add conversation to history: {str(history_error)}", "ERROR")
+                debug_log(traceback.format_exc(), "DEBUG")
             
-            # Persist conversation
-            print(f"Persisting conversation: {result}")
-            self.history.add_user_message(question)
-            self.history.add_ai_message(result["result"])
-            
+            # Return the final result
+            elapsed_time = time.time() - start_time
+            debug_log(f"Query processed in {elapsed_time:.2f} seconds", "INFO")
+            debug_log("=== END OF GRAPHCYPHERQACHAIN EXECUTION ====", "INFO")
             return result
-        
+            
         except Exception as e:
-            print(f"Research error: {str(e)}")
-            print(f"Full error traceback: {traceback.format_exc()}")
+            debug_log(f"Research error: {str(e)}", "ERROR")
+            debug_log(f"Full error traceback: {traceback.format_exc()}", "DEBUG")
             return {"result": f"An error occurred while processing your query: {str(e)}. Please try again or contact support."}
 
     def __del__(self):
         # Close the cache connection when the object is garbage collected
         if hasattr(self, 'cache'):
             self.cache.close()
-
 # Singleton-like behavior with dict of assistants by db_id
 _assistants = {}
 _lock = threading.Lock()
+
+def initialize_all_agents(db_session=None):
+    """
+    Initialize all schema-aware agents at application startup.
+    This helps avoid cold-start delays when users first interact with the system.
+    
+    Args:
+        db_session: Optional database session. If not provided, a new session will be created.
+    
+    Returns:
+        dict: A dictionary mapping schema IDs to initialization status (True for success, False for failure)
+    """
+    from ...db_config import SessionLocal
+    from ...models import Schema
+    import time
+    
+    debug_log("Starting initialization of all schema-aware agents...", "INFO")
+    start_time = time.time()
+    
+    # Use provided session or create a new one
+    close_session = False
+    if db_session is None:
+        db_session = SessionLocal()
+        close_session = True
+    
+    results = {}
+    try:
+        # Get only schemas with db_loaded='yes' from the database
+        schemas = db_session.query(Schema).filter(Schema.db_loaded == 'yes').all()
+        debug_log(f"Found {len(schemas)} schemas with db_loaded='yes' to initialize", "INFO")
+        
+        for schema in schemas:
+            if not schema.schema or not schema.db_id:
+                debug_log(f"Skipping schema {schema.id}: Missing schema data or DB ID", "WARNING")
+                results[schema.id] = False
+                continue
+            
+            try:
+                debug_log(f"Pre-initializing agent for schema {schema.id}...", "INFO")
+                # Initialize the agent
+                assistant = get_schema_aware_assistant(schema.db_id, schema.id, schema.schema)
+                # Force initialization of prompt templates
+                assistant._ensure_prompt()
+                results[schema.id] = True
+                debug_log(f"Successfully initialized agent for schema {schema.id}", "INFO")
+            except Exception as e:
+                debug_log(f"Failed to initialize agent for schema {schema.id}: {str(e)}", "ERROR")
+                results[schema.id] = False
+    
+    except Exception as e:
+        debug_log(f"Error during agent initialization: {str(e)}", "ERROR")
+    
+    finally:
+        if close_session:
+            db_session.close()
+    
+    elapsed_time = time.time() - start_time
+    success_count = sum(1 for v in results.values() if v)
+    print(f"Completed initialization of {success_count}/{len(results)} agents in {elapsed_time:.2f} seconds")
+    
+    return results
+
+def remove_schema_aware_assistant(schema_id: str):
+    """
+    Remove schema-aware assistant for the specified schema ID.
+    This should be called when a schema's db_loaded status is changed to 'no'.
+    
+    Args:
+        schema_id: ID of the schema whose assistant should be removed
+        
+    Returns:
+        bool: True if an assistant was removed, False otherwise
+    """
+    removed = False
+    try:
+        with _lock:
+            # Find and remove all assistants for this schema_id
+            keys_to_remove = []
+            for key in list(_assistants.keys()):
+                # Each key is formatted as "db_id:schema_id" or "db_id:schema_id:session_id"
+                parts = key.split(':')
+                if len(parts) >= 2 and parts[1] == str(schema_id):
+                    keys_to_remove.append(key)
+            
+            # Remove all found assistants
+            for key in keys_to_remove:
+                if key in _assistants:
+                    print(f"DEBUG: Removing schema-aware assistant for schema {schema_id} with key {key}")
+                    del _assistants[key]
+                    removed = True
+            
+            if removed:
+                print(f"DEBUG: Successfully removed assistant(s) for schema {schema_id}")
+            else:
+                print(f"DEBUG: No assistants found for schema {schema_id}")
+            
+            return removed
+    except Exception as e:
+        print(f"ERROR: Failed to remove schema-aware assistant for schema {schema_id}: {str(e)}")
+        return False
+
 
 def get_schema_aware_assistant(db_id: str, schema_id: str, schema: str, session_id: str = None) -> SchemaAwareGraphAssistant:
     """
@@ -1415,7 +1753,6 @@ def get_schema_aware_assistant(db_id: str, schema_id: str, schema: str, session_
         schema_id: ID of the schema being used
         schema: JSON string containing the schema
         session_id: Optional session ID for chat history
-        gen_schema: If True, only initialize minimal components needed for schema generation
     Returns:
         SchemaAwareGraphAssistant: The assistant for the database
     """
@@ -1427,7 +1764,7 @@ def get_schema_aware_assistant(db_id: str, schema_id: str, schema: str, session_
             if key not in _assistants:
                 # Log connection attempt for debugging
                 print(f"DEBUG: Creating new schema-aware assistant for {db_id} with schema {schema_id}")
-                print(f"DEBUG: Schema: {schema}")
+                #print(f"DEBUG: Schema: {schema}")
                 _assistants[key] = SchemaAwareGraphAssistant(db_id, schema_id, schema, session_id)
                 print(f"DEBUG: Successfully created assistant for {db_id}")
             return _assistants[key]

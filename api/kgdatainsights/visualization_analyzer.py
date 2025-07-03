@@ -341,8 +341,11 @@ def get_llm_visualization_suggestion(data: Dict[str, Any]) -> Optional[LLMVisual
             partial_variables={"format_instructions": parser.get_format_instructions()}
         )
         
-        # Initialize the language model
-        model = ChatOpenAI(temperature=0.2, model="gpt-3.5-turbo")
+        # Import and use LLM provider for Anthropic model
+        from api.utils.llm_provider import LLMProvider, LLMConstants
+        
+        # Initialize the language model 
+        model = LLMProvider.get_llm(provider_name=LLMConstants.Providers.OPENAI, model_name=LLMConstants.OpenAIModels.DEFAULT, temperature=0.2)
         
         # Create the chain
         chain = LLMChain(llm=model, prompt=prompt)

@@ -7,6 +7,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { WebSocketService, ConnectionStatus } from './websocket-service';
 import { AutocompleteService, AutocompleteSuggestion } from './autocomplete-service';
+import { useRouter } from 'next/navigation';
 
 // Re-export AutocompleteSuggestion for consumers of this hook
 export type { AutocompleteSuggestion };
@@ -47,6 +48,8 @@ export function useKGInsights(
   token: string,
   options: KGInsightsHookOptions = {}
 ): KGInsightsHookResult {
+  // Router for navigation
+  const router = useRouter();
   // State
   const [connectionStatus, setConnectionStatus] = useState<string>(ConnectionStatus.DISCONNECTED);
   const [loading, setLoading] = useState(false);
@@ -74,6 +77,11 @@ export function useKGInsights(
     const webSocketService = new WebSocketService({
       url: wsUrl,
       autoReconnect: options.autoReconnect !== false,
+      // Handle authentication errors by redirecting to login page
+      onAuthError: () => {
+        console.log('Authentication error detected, redirecting to login page');
+        router.push('/login?expired=true');
+      },
     });
     
     // Create Autocomplete service
@@ -89,6 +97,12 @@ export function useKGInsights(
     // Handle connection status changes
     webSocketService.onStatusChange((status) => {
       setConnectionStatus(status);
+      
+      // If authentication error occurs, redirect to login page
+      if (status === ConnectionStatus.AUTH_ERROR) {
+        console.log('Authentication error status detected, redirecting to login page');
+        router.push('/login?expired=true');
+      }
     });
     
     // Handle autocomplete suggestions

@@ -89,11 +89,9 @@ router = APIRouter(
 from fastapi import Body
 
 @router.post("/predict")
-async def predict(query: Dict[str, str] = Body(...), user=Depends(get_current_user)):
+async def predict(query: Dict[str, str] = Body(...), user=Depends(has_any_permission(["datapuur:read", "djinni:read"]))):
     """Process a factory data query and return predictions"""
     try:
-        # Ensure the user has the required permissions
-        has_any_permission(["datapuur:read"])(user)
         
         # Extract the question from the request body
         question = ""
@@ -158,22 +156,18 @@ async def predict(query: Dict[str, str] = Body(...), user=Depends(get_current_us
         raise HTTPException(status_code=500, detail=f"Error processing query: {str(e)}")
 
 @router.get("/examples")
-async def examples(user=Depends(get_current_user)):
+async def examples(user=Depends(has_any_permission(["datapuur:read", "djinni:read"]))):
     """Get example questions for factory data queries"""
     try:
-        # Ensure the user has the required permissions
-        has_any_permission(["datapuur:read"])(user)
         
         return {"examples": get_example_questions()}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting examples: {str(e)}")
 
 @router.post("/clear-history")
-async def clear_history(user=Depends(get_current_user)):
+async def clear_history(user=Depends(has_any_permission(["datapuur:read", "djinni:read"]))):
     """Clear chat history for factory data queries"""
     try:
-        # Ensure the user has the required permissions
-        has_any_permission(["datapuur:read"])(user)
         
         clear_chat_history()
         return {"status": "success", "message": "Chat history cleared"}

@@ -537,11 +537,17 @@ async def get_profile(
                         quality_metrics = {k: column_profiles[0].get(k) for k in ['quality_score', 'completeness', 'uniqueness', 'validity'] if k in column_profiles[0]}
                         logger.info(f"[{request_id}] Quality metrics found in sample: {quality_metrics}")
         
-        # Ensure quality metrics are present in column profiles
+        # Ensure quality metrics and missing_count are present in column profiles
         if column_profiles:
             if isinstance(column_profiles, dict):
                 for key, column in column_profiles.items():
                     if isinstance(column, dict):
+                        # Check for missing_count field - critical for correct UI display
+                        if 'missing_count' not in column and 'null_count' in column:
+                            logger.warning(f"[{request_id}] 'missing_count' field missing in column '{key}'. Using null_count as fallback.")
+                            # Use null_count as a fallback for missing_count
+                            column['missing_count'] = column.get('null_count', 0)
+                            
                         # If any quality metrics are missing, log a warning and add default values
                         missing_metrics = [k for k in ['quality_score', 'completeness', 'uniqueness', 'validity'] if k not in column]
                         if missing_metrics:
@@ -550,12 +556,18 @@ async def get_profile(
                             for metric in missing_metrics:
                                 column[metric] = 0.7 if metric == 'quality_score' else 0.0
                             
-                            # Update the column_profiles dictionary with the fixed column data
-                            column_profiles[key] = column
+                        # Update the column_profiles dictionary with the fixed column data
+                        column_profiles[key] = column
             
             elif isinstance(column_profiles, list):
                 for i, column in enumerate(column_profiles):
                     if isinstance(column, dict):
+                        # Check for missing_count field - critical for correct UI display
+                        if 'missing_count' not in column and 'null_count' in column:
+                            logger.warning(f"[{request_id}] 'missing_count' field missing in column at index {i}. Using null_count as fallback.")
+                            # Use null_count as a fallback for missing_count
+                            column['missing_count'] = column.get('null_count', 0)
+                            
                         # If any quality metrics are missing, log a warning and add default values
                         missing_metrics = [k for k in ['quality_score', 'completeness', 'uniqueness', 'validity'] if k not in column]
                         if missing_metrics:
@@ -564,8 +576,8 @@ async def get_profile(
                             for metric in missing_metrics:
                                 column[metric] = 0.7 if metric == 'quality_score' else 0.0
                             
-                            # Update the column_profiles list with the fixed column data
-                            column_profiles[i] = column
+                        # Update the column_profiles list with the fixed column data
+                        column_profiles[i] = column
                 
                 # Convert list to dictionary format for consistency with the frontend expectation
                 column_dict = {}
@@ -578,6 +590,37 @@ async def get_profile(
             if isinstance(column_profiles, dict) and column_profiles:
                 sample_key = list(column_profiles.keys())[0]
                 sample_column = column_profiles[sample_key]
+                
+                # Debug: Check for known problematic columns that may have missing values from numeric conversion
+                problem_columns = ['tenure', 'Waste_Generated__kg']
+                for col_key, col_data in column_profiles.items():
+                    if isinstance(col_data, dict) and col_data.get('column_name') in problem_columns:
+                        column_name = col_data.get('column_name')
+                        logger.info(f"[{request_id}] NUMERIC COLUMN DATA [{column_name}] - missing_count: {col_data.get('missing_count')}, null_count: {col_data.get('null_count')}, count: {col_data.get('count')}")
+                        
+                        # Critical: Ensure the column_profiles has the missing_count field that includes numeric conversion detected missing values
+                        if 'missing_count' not in col_data:
+                            logger.warning(f"[{request_id}] Missing 'missing_count' field for {column_name} column!")
+                            col_data['missing_count'] = col_data.get('null_count', 0)
+                            column_profiles[col_key] = col_data
+                        
+                        # Also check if this is a numeric column with potential conversion issues
+                        if col_data.get('data_type') in ['integer', 'float']:
+                            logger.info(f"[{request_id}] Numeric column [{column_name}]: Verifying missing_count is properly set")
+                            # If we have count + missing_count != total rows, something is wrong
+                            expected_total = col_data.get('count', 0) + col_data.get('missing_count', 0)
+                            logger.info(f"[{request_id}] Column [{column_name}] expected total: {expected_total}, actual total rows in dataset: {profile_result.total_rows}")
+                            
+                # Log all columns with numeric data types to trace potential missing value issues
+                numeric_columns = []
+                for col_key, col_data in column_profiles.items():
+                    if isinstance(col_data, dict) and col_data.get('data_type') in ['integer', 'float']:
+                        numeric_columns.append((col_data.get('column_name'), col_data.get('missing_count'), col_data.get('null_count')))
+                if numeric_columns:
+                    logger.info(f"[{request_id}] All numeric columns: {numeric_columns}")
+                else:
+                    logger.warning(f"[{request_id}] No numeric columns found in profile data!")
+
                 if isinstance(sample_column, dict):
                     quality_metrics = {k: sample_column.get(k) for k in ['quality_score', 'completeness', 'uniqueness', 'validity'] if k in sample_column}
                     logger.debug(f"[{request_id}] API Response with quality metrics sample:")
@@ -659,6 +702,22 @@ async def get_profile(
             "fuzzy_duplicates_count": profile_result.fuzzy_duplicates_count,
             "duplicate_groups": profile_result.duplicate_groups
         }
+        
+        # Debug: Log the missing values for all numeric columns in the response
+        # And ensure the final response has the correct missing_count
+        for col_key, col_data in response['columns'].items():
+            if isinstance(col_data, dict) and col_data.get('data_type') in ['integer', 'float']:
+                column_name = col_data.get('column_name')
+                
+                # Verify numeric columns have proper missing_count in final response
+                logger.info(f"[{request_id}] API RESPONSE - Numeric column [{column_name}] - missing_count: {col_data.get('missing_count')}, null_count: {col_data.get('null_count')}, count: {col_data.get('count')}")
+                
+                # CRITICAL FIX: Ensure profile columns in API response have the right missing_count 
+                # This is critical to ensure UI shows correct missing values for numeric columns
+                if 'missing_count' not in col_data and 'null_count' in col_data:
+                    logger.warning(f"[{request_id}] Missing 'missing_count' in final API response for column {column_name}")
+                    col_data['missing_count'] = col_data.get('null_count', 0)
+                    response['columns'][col_key] = col_data
         
         # Convert any NumPy types to Python native types for serialization
         response = convert_numpy_types(response)

@@ -21,6 +21,9 @@ interface SchemaSelectionContextType {
   selectedSchemaId: number | null
   isLoading: boolean
   error: string | null
+  errorMessage: string
+  showError: boolean
+  setShowError: (show: boolean) => void
   
   // Actions
   selectSchema: (id: number | null) => void
@@ -38,6 +41,8 @@ export function SchemaSelectionProvider({ children }: { children: ReactNode }) {
   const [selectedSchemaId, setSelectedSchemaId] = useState<number | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [errorMessage, setErrorMessage] = useState('')
+  const [showError, setShowError] = useState(false)
   const { toast } = useToast()
 
   // Fetch schemas on component mount
@@ -117,6 +122,18 @@ export function SchemaSelectionProvider({ children }: { children: ReactNode }) {
       })
       
       if (!response.ok) {
+        // Handle specific 403 error with a permission-specific message
+        if (response.status === 403) {
+          const msg = "Permission denied: You don't have sufficient permissions to delete schemas."
+          setErrorMessage(msg)
+          setShowError(true)
+          
+          // Auto-dismiss after 5 seconds
+          setTimeout(() => setShowError(false), 5000)
+          
+          throw new Error(msg)
+        }
+        
         // Try to get more detailed error information from the response
         try {
           const errorData = await response.json()
@@ -162,16 +179,19 @@ export function SchemaSelectionProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  // Context value
+  // Create context value
   const value = {
     schemas,
     selectedSchemaId,
     isLoading,
     error,
+    errorMessage,
+    showError,
+    setShowError,
     selectSchema,
     refreshSchemas,
     getSchemaById,
-    deleteSchema
+    deleteSchema,
   }
 
   return (

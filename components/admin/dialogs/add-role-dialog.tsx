@@ -39,12 +39,32 @@ export function AddRoleDialog({ open, onOpenChange }: AddRoleDialogProps) {
     }
   }, [open]);
 
-  // Function to toggle a single permission
+  // Function to toggle a single permission with hierarchical enforcement
   const togglePermission = (permission: string) => {
     setNewRole((prev) => {
-      const updatedPermissions = prev.permissions.includes(permission)
-        ? prev.permissions.filter((p) => p !== permission)
-        : [...prev.permissions, permission];
+      let updatedPermissions = [...prev.permissions];
+      const permissionType = permission.split(':')[1];
+      const modulePrefix = permission.split(':')[0];
+      
+      // Handle toggling the permission on/off
+      if (updatedPermissions.includes(permission)) {
+        // If removing a permission
+        updatedPermissions = updatedPermissions.filter(p => p !== permission);
+        
+        // If removing write permission, we don't automatically remove read
+        // This allows users to downgrade from write to read
+      } else {
+        // If adding a permission
+        updatedPermissions.push(permission);
+        
+        // If adding 'write' permission, automatically add the corresponding 'read' permission
+        if (permissionType === 'write' || permissionType === 'manage') {
+          const readPermission = `${modulePrefix}:read`;
+          if (!updatedPermissions.includes(readPermission)) {
+            updatedPermissions.push(readPermission);
+          }
+        }
+      }
       
       return { 
         ...prev, 
@@ -214,6 +234,7 @@ export function AddRoleDialog({ open, onOpenChange }: AddRoleDialogProps) {
                           id={`permission-${permission}`}
                           checked={newRole.permissions.includes(permission)}
                           onCheckedChange={() => togglePermission(permission)}
+                          disabled={permission.endsWith(':read') && newRole.permissions.includes(permission.replace(':read', ':write'))}
                         />
                         <Label 
                           htmlFor={`permission-${permission}`} 
