@@ -145,7 +145,28 @@ export function UnifiedChatInterface() {
   useEffect(() => {
     fetchKnowledgeGraphSources()
     fetchAstroExamples()
-  }, [fetchKnowledgeGraphSources]);
+  }, [fetchKnowledgeGraphSources, fetchAstroExamples]);
+  
+  // Add polling mechanism to retry fetching schemas when none are initially available
+  useEffect(() => {
+    let pollingInterval: NodeJS.Timeout | null = null;
+    
+    // Only set up polling if no sources are available
+    if (availableSources.length === 0) {
+      console.log('No knowledge graph sources available, setting up polling mechanism');
+      pollingInterval = setInterval(() => {
+        console.log('Polling for knowledge graph sources availability...');
+        fetchKnowledgeGraphSources();
+      }, 10000); // Poll every 10 seconds
+    }
+    
+    // Clean up interval on unmount or when sources become available
+    return () => {
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+      }
+    };
+  }, [availableSources.length, fetchKnowledgeGraphSources]);
 
   useEffect(() => {
     if (sourceId) {
