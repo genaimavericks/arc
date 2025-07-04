@@ -2589,7 +2589,7 @@ async def execute_script_background(job_id: str, script: str, file_path: str, jo
                         name=dataset_name,
                         description=f"Transformed from {dataset_name}",
                         source_file_path=job.input_file_path,
-                        transformed_file_path=result.get("output_file_path"),
+                        transformed_file_path=result.get("full_output_path"),
                         transformation_plan_id=plan.id,
                         job_id=job.id,
                         created_by=job.created_by,

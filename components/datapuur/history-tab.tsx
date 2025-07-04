@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react"
 import {
   FileText,
-  Eye,
   Download,
   Calendar,
   HardDrive,
@@ -17,6 +16,7 @@ import {
   ChevronRight,
   ArrowLeft,
   ArrowRight,
+  AlertCircle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -24,7 +24,6 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { motion } from "framer-motion"
 import { formatDistanceToNow, format } from "date-fns"
-import { AlertCircle } from "lucide-react"
 import { getApiBaseUrl } from "@/lib/config"
 import { useAdminLogout } from "@/components/admin-logout-fix"
 
@@ -82,14 +81,10 @@ export function HistoryTab() {
   const [showErrorDetails, setShowErrorDetails] = useState<Record<string, boolean>>({})
 
   // Add state for storing fetched data and loading states
-  const [itemData, setItemData] = useState<Record<string, { preview: any; schema: any; stats: any; error?: string }>>({})
+  const [itemData, setItemData] = useState<Record<string, { schema: any; stats: any; error?: string }>>({})
   const [tabLoadingStates, setTabLoadingStates] = useState<
-    Record<string, { preview: boolean; schema: boolean; stats: boolean; error?: boolean }>
+    Record<string, { schema: boolean; stats: boolean; error?: boolean }>
   >({})
-
-  // Add state for table pagination
-  const [previewPage, setPreviewPage] = useState<Record<string, number>>({})
-  const [previewPageSize, setPreviewPageSize] = useState(10)
 
   // Update the fetchFileHistory function to use the SQLite database
   const fetchFileHistory = async () => {
@@ -167,27 +162,6 @@ export function HistoryTab() {
       return await response.json()
     } catch (err) {
       console.error(`Error fetching schema for ingestion ${ingestionId}:`, err)
-      return null
-    }
-  }
-
-  // Add a function to fetch preview data for a specific ingestion
-  const fetchPreviewData = async (ingestionId: string) => {
-    try {
-      const apiBaseUrl = getApiBaseUrl()
-      const response = await fetch(`${apiBaseUrl}/api/datapuur/ingestion-preview/${ingestionId}`, {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-      })
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch preview data")
-      }
-
-      return await response.json()
-    } catch (err) {
-      console.error(`Error fetching preview for ingestion ${ingestionId}:`, err)
       return null
     }
   }
@@ -536,253 +510,6 @@ export function HistoryTab() {
     ]
   }
 
-  // Generate mock preview data for the FoamFactory file
-  const generateMockPreviewData = (fileId: string) => {
-    if (fileId === "3") {
-      // Mock data for FoamFactory CSV
-      return {
-        headers: [
-          "Factory",
-          "Date",
-          "Location",
-          "Machine Type",
-          "Machine Utilization (%)",
-          "Machine Downtime (hours)",
-          "Maintenance History",
-          "Machine Age (years)",
-          "Batch",
-          "Batch Quality (Pass %)",
-          "Cycle Time (minutes)",
-          "Energy Consumption (kWh)",
-        ],
-        data: [
-          [
-            "Factory A",
-            "2023-01-15",
-            "North Wing",
-            "Extruder",
-            "87.5",
-            "2.3",
-            "Regular",
-            "4.5",
-            "B12345",
-            "98.7",
-            "45",
-            "320",
-          ],
-          [
-            "Factory A",
-            "2023-01-16",
-            "North Wing",
-            "Extruder",
-            "92.1",
-            "1.5",
-            "Regular",
-            "4.5",
-            "B12346",
-            "99.2",
-            "43",
-            "315",
-          ],
-          [
-            "Factory B",
-            "2023-01-15",
-            "South Wing",
-            "Mixer",
-            "78.3",
-            "4.2",
-            "Overhaul",
-            "6.2",
-            "B22345",
-            "95.8",
-            "52",
-            "410",
-          ],
-          [
-            "Factory B",
-            "2023-01-16",
-            "South Wing",
-            "Mixer",
-            "81.5",
-            "3.7",
-            "Regular",
-            "6.2",
-            "B22346",
-            "96.3",
-            "50",
-            "395",
-          ],
-          [
-            "Factory C",
-            "2023-01-15",
-            "East Wing",
-            "Cutter",
-            "94.7",
-            "1.1",
-            "Minimal",
-            "2.3",
-            "B32345",
-            "99.5",
-            "38",
-            "280",
-          ],
-          [
-            "Factory C",
-            "2023-01-16",
-            "East Wing",
-            "Cutter",
-            "95.2",
-            "0.9",
-            "Minimal",
-            "2.3",
-            "B32346",
-            "99.7",
-            "37",
-            "275",
-          ],
-          [
-            "Factory A",
-            "2023-01-17",
-            "North Wing",
-            "Extruder",
-            "89.3",
-            "2.1",
-            "Regular",
-            "4.5",
-            "B12347",
-            "98.9",
-            "44",
-            "318",
-          ],
-          [
-            "Factory B",
-            "2023-01-17",
-            "South Wing",
-            "Mixer",
-            "82.7",
-            "3.5",
-            "Regular",
-            "6.2",
-            "B22347",
-            "96.5",
-            "49",
-            "390",
-          ],
-          [
-            "Factory C",
-            "2023-01-17",
-            "East Wing",
-            "Cutter",
-            "95.5",
-            "0.8",
-            "Minimal",
-            "2.3",
-            "B32347",
-            "99.8",
-            "36",
-            "272",
-          ],
-          [
-            "Factory A",
-            "2023-01-18",
-            "North Wing",
-            "Extruder",
-            "90.2",
-            "1.9",
-            "Regular",
-            "4.5",
-            "B12348",
-            "99.0",
-            "43",
-            "316",
-          ],
-          [
-            "Factory B",
-            "2023-01-18",
-            "South Wing",
-            "Mixer",
-            "83.4",
-            "3.3",
-            "Regular",
-            "6.2",
-            "B22348",
-            "96.7",
-            "48",
-            "385",
-          ],
-          [
-            "Factory C",
-            "2023-01-18",
-            "East Wing",
-            "Cutter",
-            "95.8",
-            "0.7",
-            "Minimal",
-            "2.3",
-            "B32348",
-            "99.9",
-            "35",
-            "270",
-          ],
-          [
-            "Factory A",
-            "2023-01-19",
-            "North Wing",
-            "Extruder",
-            "91.5",
-            "1.7",
-            "Regular",
-            "4.5",
-            "B12349",
-            "99.1",
-            "42",
-            "312",
-          ],
-          [
-            "Factory B",
-            "2023-01-19",
-            "South Wing",
-            "Mixer",
-            "84.2",
-            "3.1",
-            "Regular",
-            "6.2",
-            "B22349",
-            "97.0",
-            "47",
-            "380",
-          ],
-          [
-            "Factory C",
-            "2023-01-19",
-            "East Wing",
-            "Cutter",
-            "96.0",
-            "0.6",
-            "Minimal",
-            "2.3",
-            "B32349",
-            "99.9",
-            "35",
-            "268",
-          ],
-        ],
-      }
-    }
-
-    // Default mock data for other files
-    return {
-      headers: ["Column 1", "Column 2", "Column 3", "Column 4", "Column 5"],
-      data: [
-        ["Value 1-1", "Value 1-2", "Value 1-3", "Value 1-4", "Value 1-5"],
-        ["Value 2-1", "Value 2-2", "Value 2-3", "Value 2-4", "Value 2-5"],
-        ["Value 3-1", "Value 3-2", "Value 3-3", "Value 3-4", "Value 3-5"],
-        ["Value 4-1", "Value 4-2", "Value 4-3", "Value 4-4", "Value 4-5"],
-        ["Value 5-1", "Value 5-2", "Value 5-3", "Value 5-4", "Value 5-5"],
-      ],
-    }
-  }
-
   // Fetch data on initial load and when page changes
   useEffect(() => {
     fetchFileHistory()
@@ -888,11 +615,11 @@ export function HistoryTab() {
       [id]: isExpanding,
     }))
 
-    // If we're expanding the item and no tab is active, set "preview" as the default
+    // If we're expanding the item and no tab is active, set "schema" as the default
     if (isExpanding && !activeTabs[id]) {
       setActiveTabs((prev) => ({
         ...prev,
-        [id]: "preview",
+        [id]: "schema",
       }))
 
       // Find the file item by ID
@@ -917,17 +644,16 @@ export function HistoryTab() {
         setTabLoadingStates((prev) => ({
           ...prev,
           [id]: {
-            preview: true,
             schema: true,
             stats: true,
+            error: false
           },
         }))
 
         try {
           // For mock data in preview mode
           if (error) {
-            // Use mock data
-            const mockPreviewData = generateMockPreviewData(id)
+            // Use mock data (preview removed)
             const mockSchemaData = file.schema
             const mockStatsData = file.statistics
 
@@ -938,15 +664,14 @@ export function HistoryTab() {
             setItemData((prev) => ({
               ...prev,
               [id]: {
-                preview: mockPreviewData,
                 schema: mockSchemaData,
                 stats: mockStatsData,
+                error: undefined
               },
             }))
           } else {
-            // Fetch data for each tab in parallel from real API
-            const [previewData, schemaData, statsData] = await Promise.all([
-              fetchPreviewData(id),
+            // Fetch data for each tab in parallel from real API (preview removed)
+            const [schemaData, statsData] = await Promise.all([
               fetchSchemaData(id),
               fetchStatisticsData(id),
             ])
@@ -955,22 +680,22 @@ export function HistoryTab() {
             setItemData((prev) => ({
               ...prev,
               [id]: {
-                preview: previewData,
                 schema: schemaData,
                 stats: statsData,
+                error: undefined
               },
             }))
           }
         } catch (error) {
           console.error(`Error fetching data for ingestion ${id}:`, error)
         } finally {
-          // Clear loading states
+          // Clear loading states (preview removed)
           setTabLoadingStates((prev) => ({
             ...prev,
             [id]: {
-              preview: false,
               schema: false,
               stats: false,
+              error: false
             },
           }))
         }
@@ -998,183 +723,7 @@ export function HistoryTab() {
     }
   }
 
-  // Handle preview pagination
-  const handlePreviewPageChange = (id: string, newPage: number) => {
-    setPreviewPage((prev) => ({
-      ...prev,
-      [id]: newPage,
-    }))
-  }
-
-  // Calculate total preview pages
-  const calculateTotalPreviewPages = (id: string) => {
-    const previewData = itemData[id]?.preview
-    if (!previewData || !previewData.data) return 1
-
-    // Ensure data is an array before calculating length
-    const dataArray = Array.isArray(previewData.data) ? previewData.data : [previewData.data]
-    return Math.ceil(dataArray.length / previewPageSize)
-  }
-
-  // Get paginated preview data
-  const getPaginatedPreviewData = (id: string) => {
-    const previewData = itemData[id]?.preview
-    if (!previewData || !previewData.data) return { headers: [], rows: [] }
-
-    const currentPage = previewPage[id] || 1
-    const startIndex = (currentPage - 1) * previewPageSize
-    const endIndex = startIndex + previewPageSize
-
-    // Ensure data is an array before slicing
-    const dataArray = Array.isArray(previewData.data) ? previewData.data : [previewData.data]
-
-    return {
-      headers: previewData.headers || [],
-      rows: dataArray.slice(startIndex, endIndex),
-    }
-  }
-
-  // Update the renderPreviewContent function to use fetched data with improved formatting
-  const renderPreviewContent = (file: FileHistoryItem) => {
-    const id = file.id
-    const isLoading = tabLoadingStates[id]?.preview
-
-    if (isLoading) {
-      return (
-        <div className="flex justify-center items-center h-40">
-          <RefreshCw className="h-8 w-8 animate-spin text-primary" />
-        </div>
-      )
-    }
-
-    if (file.status === "failed") {
-      return (
-        <div className="p-4 bg-destructive/10 border border-destructive rounded-md text-destructive">
-          This ingestion failed. No preview data is available.
-        </div>
-      )
-    }
-
-    const previewData = itemData[id]?.preview
-    if (!previewData || !previewData.data) {
-      return (
-        <div className="p-4 bg-muted/30 rounded-md text-muted-foreground">
-          No preview data available for this ingestion.
-        </div>
-      )
-    }
-
-    // Ensure data is an array
-    const dataArray = Array.isArray(previewData.data) ? previewData.data : [previewData.data]
-    
-    // Check if array is empty
-    if (dataArray.length === 0) {
-      return (
-        <div className="p-4 bg-muted/30 rounded-md text-muted-foreground">
-          No preview data available for this ingestion.
-        </div>
-      )
-    }
-
-    // Get paginated data
-    const { headers, rows } = getPaginatedPreviewData(id)
-    const totalPages = calculateTotalPreviewPages(id)
-    const currentPage = previewPage[id] || 1
-
-    // Render improved table view
-    return (
-      <div className="space-y-4">
-        <div className="bg-card shadow-sm border border-border rounded-md overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-muted/50">
-                  {headers.map((header: string, i: number) => (
-                    <th key={i} className="px-4 py-2 text-left text-sm font-medium text-muted-foreground border-b">
-                      {header}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row: any, rowIndex: number) => (
-                  <tr key={rowIndex} className={rowIndex % 2 === 0 ? "bg-background" : "bg-muted/20"}>
-                    {Array.isArray(row) ? row.map((cell: any, cellIndex: number) => (
-                      <td key={cellIndex} className="px-4 py-2 text-sm border-b border-border">
-                        {cell !== null ? String(cell) : <span className="text-muted-foreground italic">NULL</span>}
-                      </td>
-                    )) : typeof row === 'object' && row !== null ? (
-                      // Handle JSON objects (each row is an object with properties matching headers)
-                      headers.map((header: string, cellIndex: number) => (
-                        <td key={cellIndex} className="px-4 py-2 text-sm border-b border-border">
-                          {row[header] !== undefined && row[header] !== null 
-                            ? (typeof row[header] === 'object' 
-                                ? JSON.stringify(row[header]) 
-                                : String(row[header]))
-                            : <span className="text-muted-foreground italic">NULL</span>}
-                        </td>
-                      ))
-                    ) : (
-                      <td className="px-4 py-2 text-sm border-b border-border">
-                        {row !== null ? String(row) : <span className="text-muted-foreground italic">NULL</span>}
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Pagination controls */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-muted-foreground">
-              Showing {(currentPage - 1) * previewPageSize + 1} to{" "}
-              {Math.min(currentPage * previewPageSize, dataArray.length)} of {dataArray.length} rows
-            </div>
-            <div className="flex items-center space-x-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handlePreviewPageChange(id, 1)}
-                disabled={currentPage === 1}
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handlePreviewPageChange(id, currentPage - 1)}
-                disabled={currentPage === 1}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <span className="text-sm">
-                Page {currentPage} of {totalPages}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handlePreviewPageChange(id, currentPage + 1)}
-                disabled={currentPage === totalPages}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handlePreviewPageChange(id, totalPages)}
-                disabled={currentPage === totalPages}
-              >
-                <ArrowRight className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        )}
-      </div>
-    )
-  }
+  // Preview content rendering and pagination functions removed
 
   // Update the renderSchemaContent function to use fetched data
   const renderSchemaContent = (file: FileHistoryItem) => {
@@ -1518,17 +1067,6 @@ export function HistoryTab() {
                     <div className="flex space-x-4">
                       <button
                         className={`pb-2 px-1 text-sm font-medium ${
-                          activeTabs[file.id] === "preview"
-                            ? "text-primary border-b-2 border-primary"
-                            : "text-muted-foreground hover:text-foreground"
-                        }`}
-                        onClick={() => setActiveTab(file.id, "preview")}
-                      >
-                        <Eye className="h-4 w-4 inline mr-1" />
-                        Preview
-                      </button>
-                      <button
-                        className={`pb-2 px-1 text-sm font-medium ${
                           activeTabs[file.id] === "schema"
                             ? "text-primary border-b-2 border-primary"
                             : "text-muted-foreground hover:text-foreground"
@@ -1554,7 +1092,6 @@ export function HistoryTab() {
 
                   {/* Tab content */}
                   <div className="py-2">
-                    {activeTabs[file.id] === "preview" && renderPreviewContent(file)}
                     {activeTabs[file.id] === "schema" && renderSchemaContent(file)}
                     {activeTabs[file.id] === "stats" && renderStatsContent(file)}
                   </div>

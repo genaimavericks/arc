@@ -642,10 +642,10 @@ print("===RESULT_END===")
             input_filename = input_path.name
             
             # Create output filename with transformed_ prefix if not already present
-            if not input_filename.startswith("transformed_"):
-                output_filename = f"transformed_{input_filename}"
-            else:
-                output_filename = input_filename
+            # if not input_filename.startswith("transformed_"):
+            #     output_filename = f"transformed_{input_filename}"
+            # else:
+            output_filename = input_filename
                 
             # Ensure output is parquet format
             if not output_filename.lower().endswith(".parquet"):
