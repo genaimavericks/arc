@@ -193,9 +193,7 @@ export function DatasetDetail({ dataset }: DatasetDetailProps) {
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Transformation Plan:</span>
                   <span className="truncate max-w-[250px]" title={dataset.transformation_plan_id}>
-                    <a href={`/datapuur/ai-transformation/${dataset.transformation_plan_id}`} className="text-blue-600 hover:underline">
-                      View Plan
-                    </a>
+                    {dataset.transformation_plan_id || 'Not available'}
                   </span>
                 </div>
               </div>
@@ -209,9 +207,7 @@ export function DatasetDetail({ dataset }: DatasetDetailProps) {
             </p>
           </div>
           
-          <Button onClick={handleDownload} className="mb-6">
-            <FileSpreadsheet className="mr-2 h-4 w-4" /> Download Dataset
-          </Button>
+
         </TabsContent>
         
         <TabsContent value="metadata" className="px-6">
