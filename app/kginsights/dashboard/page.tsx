@@ -17,6 +17,7 @@ import { DatasetPreviewModal } from "@/components/kginsights/dataset-preview-mod
 import { SchemaViewerModal } from "@/components/kginsights/schema-viewer-modal"
 import { GenerateKGModal } from "@/components/kginsights/generate-kg-modal"
 import { KGInsightsLayout } from "@/components/kginsights/kginsights-layout"
+import { fetchWithAuth } from "@/lib/auth-utils"
 
 import {
   AlertDialog,
@@ -116,6 +117,9 @@ function KGraphDashboardContent() {
   const [generateKGModalOpen, setGenerateKGModalOpen] = useState(false)
   const [applyToNeo4jModalOpen, setApplyToNeo4jModalOpen] = useState(false)
   const [graphToApply, setGraphToApply] = useState<KnowledgeGraph | null>(null)
+  const [datasetToDelete, setDatasetToDelete] = useState<{id: string, name: string} | null>(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   // Function to fetch available datasets (source and transformed)
   const fetchDataSources = async () => {
@@ -333,6 +337,68 @@ function KGraphDashboardContent() {
   const handleGenerateKG = (datasetId: string, name: string, datasetType: string) => {
     // Logic to initiate knowledge graph generation with dataset type
     router.push(`/kginsights/generate?sourceId=${datasetId}&sourceName=${encodeURIComponent(name)}&datasetType=${datasetType}`)
+  }
+  
+  // Function to handle dataset deletion
+  const handleDeleteClick = (dataset: Dataset) => {
+    setDatasetToDelete({ id: dataset.id, name: dataset.dataset || dataset.name })
+    setDeleteDialogOpen(true)
+  }
+
+  // Function to confirm dataset deletion
+  const handleDeleteConfirm = async () => {
+    if (!datasetToDelete) return
+
+    try {
+      setIsDeleting(true)
+      
+      try {
+        // Use fetchWithAuth to delete the dataset
+        await fetchWithAuth(`/api/datapuur/delete-file/${datasetToDelete.id}`, {
+          method: "DELETE",
+          headers: {
+            "Content-Type": "application/json"
+          }
+        })
+        
+        // Update local state to reflect the deletion
+        setDatasets((prevDatasets) => prevDatasets.filter((d) => d.id !== datasetToDelete?.id))
+        
+        toast({
+          title: "Dataset deleted",
+          description: `${datasetToDelete.name} has been successfully deleted.`,
+        })
+      } catch (error) {
+        // Check if this is a permission error (403)
+        if ((error as Error).message.includes("403") || 
+            (error as Error).message.includes("Forbidden")) {
+          toast({
+            title: "Permission denied",
+            description: "You don't have access to delete datasets.",
+            variant: "destructive",
+          })
+        } else {
+          // Handle other errors
+          console.error("Error deleting dataset:", error)
+          toast({
+            title: "Error",
+            description: "Failed to delete dataset. Please try again.",
+            variant: "destructive",
+          })
+        }
+      }
+    } catch (error) {
+      console.error("Error deleting dataset:", error)
+      toast({
+        title: "Error",
+        description: "Failed to delete dataset. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsDeleting(false)
+      setDeleteDialogOpen(false)
+      setDatasetToDelete(null)
+    }
   }
 
   // Function to handle manage schema
@@ -741,6 +807,15 @@ function KGraphDashboardContent() {
                                   >
                                     <PlusCircle className="w-5 h-5" />
                                   </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleDeleteClick(dataset)}
+                                    title="Delete Dataset"
+                                    className="text-destructive hover:text-destructive/80 hover:bg-destructive/10"
+                                  >
+                                    <Trash2 className="w-5 h-5" />
+                                  </Button>
                                 </div>
                               </td>
                             </motion.tr>
@@ -852,6 +927,40 @@ function KGraphDashboardContent() {
           datasetName={selectedDataset.name}
           datasetType={selectedDataset.type === "transformed" ? "transformed" : "source"}
         />
+      )}
+      
+      {/* Delete Confirmation Dialog */}
+      {deleteDialogOpen && (
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Dataset</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete {datasetToDelete?.name}? This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={(e) => {
+                  e.preventDefault()
+                  handleDeleteConfirm()
+                }}
+                disabled={isDeleting}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {isDeleting ? (
+                  <>
+                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  "Delete"
+                )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
     </div>
   )

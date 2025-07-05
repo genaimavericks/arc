@@ -2318,8 +2318,22 @@ async def get_ingestion_history(
         query = query.filter(IngestionJob.type != "profile")
         
         # Apply filters
+        file_type_filter = None
         if type:
-            query = query.filter(IngestionJob.type == type)
+            # Handle csv/json file type filtering separately
+            if type.lower() in ["csv", "json", "database"]:
+                if type.lower() == "database":
+                    # For database type, filter on job.type directly
+                    query = query.filter(IngestionJob.type == "database")
+                else:
+                    # For csv/json, we need to filter after query execution
+                    # Store the file type filter for post-processing
+                    file_type_filter = type.lower()
+                    # Only look at file type jobs
+                    query = query.filter(IngestionJob.type == "file")
+            else:
+                # For any other type filter, use the original logic
+                query = query.filter(IngestionJob.type == type)
         
         if source:
             source_type = "database" if source == "database" else "file"
@@ -2355,6 +2369,7 @@ async def get_ingestion_history(
         
         # Convert to response format
         items = []
+        filtered_items = []
         for job in jobs:
             # Get file info if it's a file ingestion
             file_info = None
@@ -2415,6 +2430,20 @@ async def get_ingestion_history(
             
             items.append(history_item)
         
+        # Apply post-processing filtering for CSV/JSON if needed
+        if file_type_filter and file_type_filter.lower() in ["csv", "json"]:
+            # Filter items based on the file type from file_info
+            filtered_items = [item for item in items if item["type"] and item["type"].lower() == file_type_filter.lower()]
+            
+            # Recalculate total count
+            if filtered_items:
+                total = len(filtered_items)
+            else:
+                total = 0
+        else:
+            # No additional filtering needed
+            filtered_items = items
+        
         # Log activity
         log_activity(
             db=db,
@@ -2424,7 +2453,7 @@ async def get_ingestion_history(
         )
         
         return {
-            "items": items,
+            "items": filtered_items,
             "total": total,
             "page": page,
             "limit": limit
