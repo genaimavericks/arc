@@ -704,4 +704,4 @@ async def download_dataset(
         raise
     except Exception as e:
         logger.error(f"Error downloading dataset: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to download dataset with filter {column} {operator} {value if value else ""}. Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to download dataset with filter {column} {operator} {value if value else ''}. Error: {str(e)}")
