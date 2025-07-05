@@ -12,7 +12,10 @@ import {
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
 import { formatBytes, formatDate } from '@/lib/utils'
-import { Loader2, Database, Eye, FileSpreadsheet } from 'lucide-react'
+import { Loader2, Database, Eye, FileSpreadsheet, Trash2 } from 'lucide-react'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
+import { useAuth } from '@/lib/auth-context'
+import { fetchWithAuth } from '@/lib/auth-utils'
 import { TransformedDataset } from '@/lib/datapuur-types'
 
 interface TransformedDatasetsListProps {
@@ -24,29 +27,22 @@ export function TransformedDatasetsList({ onSelectDataset }: TransformedDatasets
   const [datasets, setDatasets] = useState<TransformedDataset[]>([])
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(false)
+  const [datasetToDelete, setDatasetToDelete] = useState<TransformedDataset | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
   const { toast } = useToast()
+  const { user } = useAuth()
   
   const fetchDatasets = async () => {
     try {
       setIsLoading(true)
-      // Get authentication token from localStorage
-      const token = localStorage.getItem('token')
-      if (!token) {
-        throw new Error('Authentication token not found')
-      }
       
-      const response = await fetch(`/api/datapuur-ai/transformed-datasets?page=${page}&limit=10`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      })
-      if (!response.ok) {
+      try {
+        const data = await fetchWithAuth(`/api/datapuur-ai/transformed-datasets?page=${page}&limit=10`)
+        setDatasets(data)
+        setHasMore(data.length === 10)
+      } catch (apiError) {
         throw new Error('Failed to fetch transformed datasets')
       }
-      
-      const data = await response.json()
-      setDatasets(data)
-      setHasMore(data.length === 10)
     } catch (error) {
       console.error('Error fetching transformed datasets:', error)
       toast({
@@ -56,6 +52,43 @@ export function TransformedDatasetsList({ onSelectDataset }: TransformedDatasets
       })
     } finally {
       setIsLoading(false)
+    }
+  }
+  
+  const handleDeleteDataset = async () => {
+    if (!datasetToDelete) return
+    
+    try {
+      setIsDeleting(true)
+      
+      const response = await fetch(`/api/datapuur-ai/transformed-datasets/${datasetToDelete.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        }
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to delete dataset')
+      }
+      
+      toast({
+        title: "Success",
+        description: `Dataset "${datasetToDelete.name}" has been deleted successfully.`,
+      })
+      
+      // Refresh the dataset list
+      fetchDatasets()
+    } catch (error) {
+      console.error('Error deleting dataset:', error)
+      toast({
+        title: "Error",
+        description: "Failed to delete dataset. Please try again.",
+        variant: "destructive"
+      })
+    } finally {
+      setIsDeleting(false)
+      setDatasetToDelete(null)
     }
   }
   
@@ -109,13 +142,26 @@ export function TransformedDatasetsList({ onSelectDataset }: TransformedDatasets
               <TableCell>{dataset.file_size_bytes ? formatBytes(dataset.file_size_bytes) : 'Unknown'}</TableCell>
               <TableCell>{formatDate(new Date(dataset.created_at))}</TableCell>
               <TableCell>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => onSelectDataset(dataset)}
-                >
-                  <Eye className="h-4 w-4 mr-1" /> View Details
-                </Button>
+                <div className="flex space-x-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onSelectDataset(dataset)}
+                  >
+                    <Eye className="h-4 w-4 mr-1" /> View Details
+                  </Button>
+                  {user?.permissions && (user.permissions.includes('datapuur:write') || user.permissions.includes('datapuur:manage')) && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                      onClick={() => setDatasetToDelete(dataset)}
+                      disabled={isDeleting}
+                    >
+                      <Trash2 className="h-4 w-4 mr-1" /> Delete
+                    </Button>
+                  )}
+                </div>
               </TableCell>
             </TableRow>
           ))}
@@ -138,6 +184,35 @@ export function TransformedDatasetsList({ onSelectDataset }: TransformedDatasets
           Next
         </Button>
       </div>
+      
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!datasetToDelete} onOpenChange={(open) => !open && setDatasetToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure you want to delete this dataset?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the dataset "{datasetToDelete?.name}".
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteDataset}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                'Delete'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

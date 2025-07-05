@@ -93,9 +93,9 @@ export function HistoryTab() {
 
     try {
       const apiBaseUrl = getApiBaseUrl()
-      // Use the updated endpoint that fetches from the SQLite database
+      // Use the updated endpoint that fetches from the SQLite database with normalized file type parameter
       const response = await fetch(
-        `${apiBaseUrl}/api/datapuur/ingestion-history?page=${page}&limit=${itemsPerPage}&sort=${sortOrder}&type=${fileTypeFilter !== "all" ? fileTypeFilter : ""}&source=${sourceTypeFilter !== "all" ? sourceTypeFilter : ""}&status=${statusFilter !== "all" ? statusFilter : ""}&search=${encodeURIComponent(searchQuery)}`,
+        `${apiBaseUrl}/api/datapuur/ingestion-history?page=${page}&limit=${itemsPerPage}&sort=${sortOrder}&type=${fileTypeFilter !== "all" ? fileTypeFilter.toLowerCase() : ""}&source=${sourceTypeFilter !== "all" ? sourceTypeFilter : ""}&status=${statusFilter !== "all" ? statusFilter : ""}&search=${encodeURIComponent(searchQuery)}`,
         {
           headers: {
             Authorization: `Bearer ${localStorage.getItem("token")}`,
@@ -533,9 +533,9 @@ export function HistoryTab() {
         )
       }
 
-      // Apply file type filter
+      // Apply file type filter - fixed to handle different cases correctly
       if (fileTypeFilter !== "all") {
-        result = result.filter((file) => file.type === fileTypeFilter)
+        result = result.filter((file) => file.type && file.type.toLowerCase() === fileTypeFilter.toLowerCase())
       }
 
       // Apply source type filter
@@ -910,7 +910,21 @@ export function HistoryTab() {
         </div>
 
         <div className="flex flex-col sm:flex-row gap-2">
-          <Select value={fileTypeFilter} onValueChange={setFileTypeFilter}>
+          <Select value={fileTypeFilter} onValueChange={(value) => {
+            if (value === "csv") {
+              setFileTypeFilter("csv");
+              setSourceTypeFilter("file");
+            } else if (value === "json") {
+              setFileTypeFilter("json");
+              setSourceTypeFilter("file");
+            } else if (value === "database") {
+              setFileTypeFilter("database");
+              setSourceTypeFilter("database");
+            } else {
+              setFileTypeFilter("all");
+              setSourceTypeFilter("all");
+            }
+          }}>
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="File Type" />
             </SelectTrigger>

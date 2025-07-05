@@ -258,6 +258,61 @@ async def preview_transformed_dataset(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.delete("/transformed-datasets/{dataset_id}")
+async def delete_transformed_dataset(
+    dataset_id: str,
+    current_user: User = Depends(has_any_permission(["datapuur:write", "datapuur:manage"])),
+    db: Session = Depends(get_db)
+):
+    """Delete a transformed dataset"""
+    try:
+        # Retrieve the transformed dataset record
+        dataset = db.query(TransformedDataset).filter(TransformedDataset.id == dataset_id).first()
+        if not dataset:
+            raise HTTPException(status_code=404, detail="Transformed dataset not found")
+        
+        # Get the file path from the dataset record
+        file_path = None
+        if dataset.transformed_file_path:
+            # Construct file path
+            file_path = Path(dataset.transformed_file_path)
+            
+            if not file_path.exists():
+                # Try with relative path
+                file_path = Path(__file__).parent.parent / "data" / file_path.name
+        
+        # Delete the file if it exists
+        try:
+            if file_path and file_path.exists():
+                os.remove(file_path)
+                logger.info(f"Deleted transformed dataset file: {file_path}")
+        except Exception as file_error:
+            logger.error(f"Error deleting file {file_path}: {str(file_error)}")
+            # Continue with database deletion even if file deletion fails
+        
+        # Delete the database record
+        dataset_name = dataset.name
+        db.delete(dataset)
+        db.commit()
+        
+        # Log the deletion
+        log_activity(
+            db,
+            current_user.username,
+            "delete_transformed_dataset",
+            {"dataset_id": dataset_id, "dataset_name": dataset_name}
+        )
+        
+        return JSONResponse(
+            status_code=200,
+            content={"message": f"Transformed dataset '{dataset_name}' deleted successfully"}
+        )
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error deleting transformed dataset {dataset_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/transformed-datasets/{dataset_id}/schema")
 async def get_transformed_dataset_schema(
     dataset_id: str,
