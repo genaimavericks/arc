@@ -355,12 +355,6 @@ export function DatasetDetail({ dataset }: DatasetDetailProps) {
                 <h4 className="font-medium mb-2">Transformation Details</h4>
                 <div className="space-y-2">
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Transformation Plan:</span>
-                    <a href={`/datapuur/ai-transformation/${dataset.transformation_plan_id}`} className="text-blue-600 hover:underline">
-                      View Plan
-                    </a>
-                  </div>
-                  <div className="flex justify-between">
                     <span className="text-muted-foreground">Transformation Date:</span>
                     <span>{formatDate(new Date(dataset.created_at))}</span>
                   </div>
