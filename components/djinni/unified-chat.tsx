@@ -118,6 +118,8 @@ export function UnifiedChatInterface() {
       console.log('✅ WebSocket connected successfully to source:', sourceId);
     }
   }, [sourceId, kgConnected, kgLoading, kgError, autocompleteSuggestions?.length, apiBaseUrl, token, availableSources]);
+  
+  // The WebSocket connection_status handler is now implemented directly in websocket-service.ts
 
   const fetchKnowledgeGraphSources = useCallback(async () => {
     try {
@@ -486,16 +488,9 @@ export function UnifiedChatInterface() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: message, astro_type: astroType }),
       });
-
-      if (!astroResponse.ok) {
-        const errorData = await astroResponse.json().catch(() => ({ detail: 'Astro query failed' }));
-        throw new Error(errorData.detail);
-      }
-
-      const result = await astroResponse.json();
       
       // Check for error status in the response
-      if (result.status === 'error') {
+      if (result && result.status === 'error') {
         const errorMessage = result.summary || result.message || 'An error occurred with the prediction';
         const assistantMessage: UnifiedChatMessage = {
           id: `astro-error-${Date.now()}`,
@@ -568,11 +563,13 @@ export function UnifiedChatInterface() {
   const fetchFactoryAstroSuggestions = async (text: string, cursorPos: number) => {
     try {
       setIsLoadingFactorySuggestions(true);
-      const response = await fetch(`${apiBaseUrl}/api/factory-astro/autocomplete`, {
+      
+      // Use fetchWithAuth to handle authentication consistently
+      const data = await fetchWithAuth(`${apiBaseUrl}/api/factory-astro/autocomplete`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Content-Type': 'application/json'
+          // fetchWithAuth already adds the Authorization header
         },
         body: JSON.stringify({
           partial_text: text,
@@ -580,16 +577,25 @@ export function UnifiedChatInterface() {
           max_suggestions: 5
         })
       });
-
-      if (!response.ok) {
-        console.warn('Failed to fetch Factory Astro suggestions:', response.status, response.statusText);
+      
+      // Log the response for debugging
+      console.log('Factory Astro suggestions response:', data);
+      
+      // Process suggestions
+      if (data && data.suggestions && Array.isArray(data.suggestions)) {
+        // Format suggestions to match the expected structure if needed
+        const formattedSuggestions = data.suggestions.map((suggestion: any) => ({
+          text: suggestion.text || suggestion.suggestion || '',
+          description: suggestion.description || '',
+          source: 'factory_astro'
+        }));
+        
+        console.log('Formatted Factory Astro suggestions:', formattedSuggestions);
+        setFactoryAstroSuggestions(formattedSuggestions);
+      } else {
+        console.warn('Invalid Factory Astro suggestions format:', data);
         setFactoryAstroSuggestions([]);
-        return;
       }
-
-      const data = await response.json();
-      console.log('Factory Astro suggestions:', data.suggestions);
-      setFactoryAstroSuggestions(data.suggestions || []);
     } catch (error) {
       console.error('Error fetching Factory Astro suggestions:', error);
       setFactoryAstroSuggestions([]);
@@ -600,46 +606,104 @@ export function UnifiedChatInterface() {
   
   // Combine KGInsights and Factory Astro suggestions
   useEffect(() => {
-    // Merge suggestions from both sources and deduplicate
-    const allSuggestions = [...(autocompleteSuggestions || []), ...factoryAstroSuggestions];
+    // Log current suggestion state for debugging
+    console.log('🔍 Combining suggestions:', {
+      kgSuggestions: autocompleteSuggestions?.length || 0,
+      factoryAstroSuggestions: factoryAstroSuggestions?.length || 0
+    });
+    
+    // Ensure both arrays exist before combining
+    const kgSuggestions = Array.isArray(autocompleteSuggestions) ? autocompleteSuggestions : [];
+    const astroSuggestions = Array.isArray(factoryAstroSuggestions) ? factoryAstroSuggestions : [];
+    
+    // Merge suggestions from both sources
+    const allSuggestions = [...kgSuggestions, ...astroSuggestions];
     
     // Remove any duplicates (based on text)
     const uniqueSuggestions = allSuggestions.filter((suggestion, index, self) => 
-      index === self.findIndex((s) => s.text === suggestion.text)
+      suggestion && suggestion.text && 
+      index === self.findIndex((s) => s && s.text === suggestion.text)
     );
     
+    console.log('🔍 Combined unique suggestions:', uniqueSuggestions.length);
+    if (uniqueSuggestions.length > 0) {
+      console.log('🔍 First few suggestions:', uniqueSuggestions.slice(0, 3));
+    }
+    
     setCombinedSuggestions(uniqueSuggestions);
-  }, [autocompleteSuggestions, factoryAstroSuggestions]);
+    
+    // If we have suggestions, make sure they're displayed
+    if (uniqueSuggestions.length > 0 && input.trim().length >= 2) {
+      console.log('🔍 Setting showSuggestions to true from combine effect');
+      setShowSuggestions(true);
+    }
+  }, [autocompleteSuggestions, factoryAstroSuggestions, input]);
+  
+  // Debug useEffect to monitor suggestion state
+  useEffect(() => {
+    console.log('🔍 Suggestion render state:', { 
+      showSuggestions, 
+      hasCombinedSuggestions: Boolean(combinedSuggestions), 
+      combinedSuggestionsLength: combinedSuggestions?.length || 0,
+      inputLength: input?.trim().length || 0,
+      shouldShowSuggestions: showSuggestions && combinedSuggestions && combinedSuggestions.length > 0
+    });
+    
+    // Debug WebSocket connection status
+    console.log('🔍 WebSocket status:', {
+      connected: kgConnected,
+      loading: kgLoading,
+      error: kgError || 'none',
+      sourceId: sourceId || 'none'
+    });
+  }, [showSuggestions, combinedSuggestions, input, kgConnected, kgLoading, kgError, sourceId]);
 
   // Handle input change with debounce for autocomplete
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    // Debug log to confirm the handler is being called
+    console.log('🔍 handleInputChange triggered');
+    
     const value = e.target.value;
     setInput(value);
     
     // Update cursor position for autocomplete suggestions
     const cursorPos = e.target.selectionStart || value.length;
+    setCursorPosition(cursorPos); // Make sure we update the cursor position state
+    
+    console.log('🔍 Input value:', value, 'Length:', value.trim().length);
     
     // Only show suggestions if there's input and it's at least 2 characters
     if (value.trim().length >= 2) {
       // Fetch suggestions from both sources
       // Get KGInsights suggestions if WebSocket is connected
+      console.log('🔍 WebSocket connection status:', kgConnected ? 'Connected' : 'Disconnected');
+      
       if (kgConnected) {
-        console.log('Requesting KGInsights autocomplete suggestions:', { query: value, cursorPos });
+        console.log('🔍 Requesting KGInsights autocomplete suggestions:', { query: value, cursorPos });
         getAutocompleteSuggestions(value, cursorPos);
       } else {
-        console.warn('Cannot get KGInsights suggestions - WebSocket not connected');
+        console.warn('🔍 Cannot get KGInsights suggestions - WebSocket not connected');
       }
       
       // Also fetch Factory Astro suggestions for predictive queries
-      if (value.toLowerCase().includes('what will') || value.toLowerCase().startsWith('what')) {
-        console.log('Requesting Factory Astro autocomplete suggestions:', { query: value, cursorPos });
+      const isAstroQuery = value.toLowerCase().includes('what will') || value.toLowerCase().startsWith('what');
+      console.log('🔍 Is Astro query?', isAstroQuery, 'Text:', value);
+      
+      if (isAstroQuery) {
+        console.log('🔍 Requesting Factory Astro autocomplete suggestions:', { query: value, cursorPos });
         fetchFactoryAstroSuggestions(value, cursorPos);
+      } else {
+        console.log('🔍 Not an Astro query, skipping Factory Astro suggestions');
       }
       
+      // Force show suggestions
+      console.log('🔍 Setting showSuggestions to true');
       setShowSuggestions(true);
     } else {
+      console.log('🔍 Input too short, hiding suggestions');
       setShowSuggestions(false);
       setFactoryAstroSuggestions([]);
+      // Note: autocompleteSuggestions come from useKGInsights hook, not a local state
     }
   }
 
@@ -746,6 +810,8 @@ export function UnifiedChatInterface() {
                 <span className="text-muted-foreground">| Source: {sourceId || 'None'}</span>
               </div>
               
+              {/* Debug info logged in useEffect */}
+              
               {/* Autocomplete suggestions */}
               {showSuggestions && combinedSuggestions && combinedSuggestions.length > 0 && (
                 <div className="absolute bottom-full left-0 w-full mb-1 border border-border rounded-md shadow-md overflow-hidden bg-card/95 backdrop-blur-sm z-50">
@@ -754,21 +820,21 @@ export function UnifiedChatInterface() {
                   </div>
                   <div className="divide-y divide-border/50 max-h-[200px] overflow-y-auto">
                     {combinedSuggestions.map((suggestion, index) => (
-                      <div 
-                        key={index}
-                        className="p-2 hover:bg-primary/10 cursor-pointer transition-colors duration-200"
-                        onClick={() => handleSelectSuggestion(suggestion)}
-                      >
-                        <div className="font-medium">{suggestion.text}</div>
-                        {suggestion.description && (
-                          <div className="text-xs text-muted-foreground">{suggestion.description}</div>
-                        )}
-                        {suggestion.source && (
-                          <div className="text-[10px] text-muted-foreground mt-1">
-                            Source: {suggestion.source === 'factory_astro' ? 'Factory Astro' : 'KGInsights'}
-                          </div>
-                        )}
-                      </div>
+                        <div 
+                          key={index}
+                          className="p-2 hover:bg-primary/10 cursor-pointer transition-colors duration-200"
+                          onClick={() => handleSelectSuggestion(suggestion)}
+                        >
+                          <div className="font-medium">{suggestion.text}</div>
+                          {suggestion.description && (
+                            <div className="text-xs text-muted-foreground">{suggestion.description}</div>
+                          )}
+                          {suggestion.source && (
+                            <div className="text-[10px] text-muted-foreground mt-1">
+                              Source: {suggestion.source === 'factory_astro' ? 'Factory Astro' : 'KGInsights'}
+                            </div>
+                          )}
+                        </div>
                     ))}
                   </div>
                 </div>
