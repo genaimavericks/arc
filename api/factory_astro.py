@@ -3,14 +3,16 @@ Factory Astro API Module for RSW
 
 This module provides FastAPI endpoints for the Factory Astro functionality.
 """
-from fastapi import APIRouter, Depends, HTTPException
-from typing import Dict, List, Any
+from fastapi import APIRouter, Depends, HTTPException, WebSocket
+from typing import Dict, List, Any, Optional
 import sys
 import os
 from pathlib import Path
 import json
 import numpy as np
 import pandas as pd
+import asyncio
+from pydantic import BaseModel
 
 
 def convert_numpy_types(obj):
@@ -65,6 +67,38 @@ try:
                     "summary": "Unable to process this specific factory query due to a model compatibility issue. Please try a different question or time period."
                 }
             return {"status": "error", "message": f"An unexpected error occurred: {error_message}", "summary": "An error occurred while processing your request."}
+    
+    # Function for generating autocomplete suggestions
+    def get_factory_autocomplete_suggestions(partial_text, cursor_position, max_suggestions=5):
+        """Generate autocomplete suggestions for Factory Astro based on partial text"""
+        try:
+            # Get example questions to use as a knowledge base for suggestions
+            examples = get_example_questions()
+            
+            # If we have no partial text, return some example questions as suggestions
+            if not partial_text:
+                return [{'text': example, 'type': 'example'} for example in examples[:max_suggestions]]
+                
+            # For now, filter examples that match the partial text
+            matching_examples = [
+                {'text': example, 'type': 'example'}
+                for example in examples
+                if partial_text.lower() in example.lower()
+            ]
+            
+            # Prioritize examples that match at the beginning
+            beginning_matches = [
+                suggestion for suggestion in matching_examples
+                if suggestion['text'].lower().startswith(partial_text.lower())
+            ]
+            
+            # Combine and limit
+            suggestions = beginning_matches + [s for s in matching_examples if s not in beginning_matches]
+            return suggestions[:max_suggestions]
+            
+        except Exception as e:
+            print(f"Error generating autocomplete suggestions: {str(e)}")
+            return []
             
 except ImportError as e:
     print(f"Error importing astro_data: {e}")
@@ -77,6 +111,42 @@ except ImportError as e:
     
     def clear_chat_history():
         pass
+        
+    def get_factory_autocomplete_suggestions(partial_text, cursor_position, max_suggestions=5):
+        """Provide autocomplete suggestions for Factory Astro queries"""
+        # Common Factory Astro query patterns
+        factory_astro_queries = [
+            "What will the revenue for factory 3 be over the next 6 months?",
+            "What will the profit margin of factory 1 over the next quarter?",
+            "What will the production volume for factory 3 be over the next 6 months?",
+            "What will the revenue over the next 2 months for factory 3?",
+            "What will the production volume for factory 3 be over the next 2 months?",
+            "What will be the expected downtime for factory 2 in the next quarter?",
+            "What will be the production efficiency for factory 1 over the next month?",
+            "What will be the maintenance costs for factory 3 in the next 6 months?",
+            "What will be the inventory levels for factory 2 over the next quarter?",
+            "What will be the supply chain delays for factory 1 in the next month?"
+        ]
+        
+        # Get text up to cursor position for matching
+        active_text = partial_text[:cursor_position].lower().strip()
+        
+        # If no text or not relevant to Factory Astro, return empty suggestions
+        if not active_text or not (active_text.startswith("what will") or active_text.startswith("what")):
+            return []
+        
+        # Find matching queries
+        matching_queries = []
+        for query in factory_astro_queries:
+            if query.lower().startswith(active_text):
+                matching_queries.append({
+                    "text": query,
+                    "description": "Factory Astro prediction query",
+                    "source": "factory_astro"
+                })
+        
+        # Return top suggestions limited by max_suggestions
+        return matching_queries[:max_suggestions]
 
 from api.auth import get_current_user, has_any_permission
 
@@ -164,6 +234,25 @@ async def examples(user=Depends(has_any_permission(["datapuur:read", "djinni:rea
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting examples: {str(e)}")
 
+class AutocompleteRequest(BaseModel):
+    partial_text: str
+    cursor_position: int
+    max_suggestions: int = 5
+
+@router.post("/autocomplete")
+async def autocomplete(request: AutocompleteRequest, user=Depends(has_any_permission(["datapuur:read", "djinni:read"]))):
+    """Generate autocomplete suggestions for Factory Astro queries"""
+    try:
+        suggestions = get_factory_autocomplete_suggestions(
+            request.partial_text,
+            request.cursor_position,
+            request.max_suggestions
+        )
+        return {"suggestions": suggestions}
+    except Exception as e:
+        print(f"Error in autocomplete endpoint: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating suggestions: {str(e)}")
+
 @router.post("/clear-history")
 async def clear_history(user=Depends(has_any_permission(["datapuur:read", "djinni:read"]))):
     """Clear chat history for factory data queries"""
@@ -173,3 +262,22 @@ async def clear_history(user=Depends(has_any_permission(["datapuur:read", "djinn
         return {"status": "success", "message": "Chat history cleared"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error clearing history: {str(e)}")
+
+class AutocompleteRequest(BaseModel):
+    partial_text: str
+    cursor_position: int
+    max_suggestions: Optional[int] = 5
+
+@router.post("/autocomplete")
+async def autocomplete(request: AutocompleteRequest, user=Depends(has_any_permission(["datapuur:read", "djinni:read"]))):
+    """Generate autocomplete suggestions for Factory Astro queries"""
+    try:
+        suggestions = get_factory_autocomplete_suggestions(
+            request.partial_text,
+            request.cursor_position,
+            request.max_suggestions
+        )
+        return {"suggestions": suggestions}
+    except Exception as e:
+        print(f"Error in autocomplete endpoint: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating suggestions: {str(e)}")

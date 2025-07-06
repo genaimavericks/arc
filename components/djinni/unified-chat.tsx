@@ -51,10 +51,15 @@ export interface UnifiedChatMessage {
 export function UnifiedChatInterface() {
   const [messages, setMessages] = useState<UnifiedChatMessage[]>([])
   const [input, setInput] = useState("")
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [cursorPosition, setCursorPosition] = useState(0)
   const [loading, setLoading] = useState(false)
   const [showSidebar, setShowSidebar] = useState(true)
   const [sidebarWidth, setSidebarWidth] = useState(320)
   const [isResizing, setIsResizing] = useState(false)
+  const [factoryAstroSuggestions, setFactoryAstroSuggestions] = useState<any[]>([])
+  const [combinedSuggestions, setCombinedSuggestions] = useState<any[]>([])
+  const [isLoadingFactorySuggestions, setIsLoadingFactorySuggestions] = useState(false)
   const resizeRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -70,33 +75,129 @@ export function UnifiedChatInterface() {
   const [availableSources, setAvailableSources] = useState<string[]>([])
   const schemaIdMap = useRef<Record<string, number>>({})
   
-  const { connected: kgConnected } = useKGInsights(sourceId ?? '', token, { autoReconnect: true });
+  const { 
+    connected: kgConnected,
+    autocompleteSuggestions,
+    getAutocompleteSuggestions,
+    loading: kgLoading,
+    error: kgError
+  } = useKGInsights(sourceId ?? '', token, { 
+    baseUrl: apiBaseUrl,
+    autoReconnect: true,
+    autocompleteOptions: {
+      maxSuggestions: 5,
+      debounceTime: 150
+    } 
+  });
+  
+  // Debug WebSocket connection status with detailed information
+  useEffect(() => {
+    console.log('KG WebSocket status update:', { 
+      sourceId, 
+      connected: kgConnected, 
+      loading: kgLoading, 
+      error: kgError, 
+      suggestions: autocompleteSuggestions?.length,
+      apiBaseUrl,
+      token: token ? `${token.substring(0, 10)}...` : 'none',
+      availableSources,
+      schemaIdMap: Object.keys(schemaIdMap.current).length
+    });
+    
+    // If we have a source ID but no connection, provide troubleshooting info
+    if (sourceId && !kgConnected && !kgLoading) {
+      console.error('WebSocket connection failed. Troubleshooting info:', {
+        wsUrl: `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${apiBaseUrl.replace(/^https?:\/\//, '')}/api/kginsights/${sourceId}/ws?token=${token ? token.substring(0, 10) + '...' : 'none'}`,
+        browser: navigator.userAgent,
+        timeStamp: new Date().toISOString()
+      });
+    }
+    
+    // If we're connected, log it clearly
+    if (kgConnected) {
+      console.log('✅ WebSocket connected successfully to source:', sourceId);
+    }
+  }, [sourceId, kgConnected, kgLoading, kgError, autocompleteSuggestions?.length, apiBaseUrl, token, availableSources]);
 
   const fetchKnowledgeGraphSources = useCallback(async () => {
     try {
-      const data = await fetchWithAuth(`/api/graph/schema`)
-
-      if (data.schemas && data.schemas.length > 0 && data.schemas[0].id !== -100) {
-        const schemaNames = data.schemas.map((s: { name: string }) => s.name)
-        const newSchemaIdMap: Record<string, number> = {}
-        data.schemas.forEach((s: { id: number, name: string }) => {
-          newSchemaIdMap[s.name] = s.id
-        })
-        schemaIdMap.current = newSchemaIdMap
-        setAvailableSources(schemaNames)
-        if (!sourceId && schemaNames.length > 0) {
-            setSourceId(schemaNames[0]);
+      setLoading(true);
+      
+      // First try the kginsights/sources endpoint
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/kginsights/sources`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          console.log('Fetched KG sources from /api/kginsights/sources:', data);
+          
+          setAvailableSources(data.sources || []);
+          schemaIdMap.current = data.schemaIdMap || {};
+          
+          if (data.sources && data.sources.length > 0) {
+            console.log('Setting sourceId to first available source:', data.sources[0]);
+            setSourceId(data.sources[0]);
+            return; // Successfully got sources, exit early
+          }
+        } else {
+          console.warn(`kginsights/sources endpoint not available: ${response.status} ${response.statusText}`);
         }
-      } else {
-        setAvailableSources([])
-        setSourceId(null);
+      } catch (err) {
+        console.warn('Error accessing kginsights/sources endpoint:', err);
       }
-    } catch (error) {
-      console.error("Error fetching graph sources:", error)
-      setAvailableSources([])
-      setSourceId(null);
+      
+      // Fallback: Try the graph/schema endpoint used by KG Insights
+      try {
+        console.log('Trying fallback graph/schema endpoint');
+        const response = await fetch(`${apiBaseUrl}/api/graph/schema`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Failed to fetch graph schemas: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log('Fetched graph schemas:', data);
+
+        if (data.schemas && data.schemas.length > 0 && data.schemas[0].id !== -100) {
+          const schemaNames = data.schemas.map((s: { name: string }) => s.name);
+          const newSchemaIdMap: Record<string, number> = {};
+          
+          data.schemas.forEach((s: { id: number, name: string }) => {
+            newSchemaIdMap[s.name] = s.id;
+          });
+          
+          console.log('Found schemas:', schemaNames, 'with IDs:', newSchemaIdMap);
+          schemaIdMap.current = newSchemaIdMap;
+          setAvailableSources(schemaNames);
+          
+          if (schemaNames.length > 0) {
+            console.log('Setting sourceId to:', schemaNames[0]);
+            setSourceId(schemaNames[0]);
+          }
+        } else {
+          // Last resort: use hardcoded 'default' schema as a fallback
+          console.log('Using default schema as fallback');
+          setAvailableSources(['default']);
+          schemaIdMap.current = { 'default': -1 };
+          setSourceId('default');
+        }
+      } catch (error) {
+        console.error('Error in fallback graph schema fetch:', error);
+        
+        // Emergency fallback - set a default source ID to at least try to establish WebSocket connection
+        console.log('Setting emergency default source ID');
+        setAvailableSources(['default']);
+        schemaIdMap.current = { 'default': -1 };
+        setSourceId('default');
+      }
+    } finally {
+      setLoading(false);
     }
-  }, [token, sourceId])
+  }, [apiBaseUrl, token]);
 
   const fetchAstroExamples = useCallback(async () => {
     try {
@@ -132,7 +233,11 @@ export function UnifiedChatInterface() {
     if (!schemaId) return;
     setLoadingHistory(true);
     try {
-      const data = await fetchWithAuth(`/api/datainsights/${schemaId}/history`);
+      const response = await fetch(`/api/datainsights/${schemaId}/history`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error('Failed to fetch history');
+      const data = await response.json();
       setHistoryItems(data.queries.map((item: any) => ({ ...item, timestamp: new Date(item.timestamp) })));
     } catch (error) {
       console.error("Failed to fetch history:", error);
@@ -143,7 +248,16 @@ export function UnifiedChatInterface() {
   }, [token]);
 
   useEffect(() => {
-    fetchKnowledgeGraphSources()
+    fetchKnowledgeGraphSources();
+    
+    // Set default sourceId if available sources and none is selected
+    if (!sourceId && availableSources.length > 0) {
+      console.log('Setting default sourceId to:', availableSources[0]);
+      setSourceId(availableSources[0]);
+    }
+  }, [availableSources.length]);
+
+  useEffect(() => {
     fetchAstroExamples()
   }, [fetchKnowledgeGraphSources, fetchAstroExamples]);
   
@@ -372,6 +486,30 @@ export function UnifiedChatInterface() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: message, astro_type: astroType }),
       });
+
+      if (!astroResponse.ok) {
+        const errorData = await astroResponse.json().catch(() => ({ detail: 'Astro query failed' }));
+        throw new Error(errorData.detail);
+      }
+
+      const result = await astroResponse.json();
+      
+      // Check for error status in the response
+      if (result.status === 'error') {
+        const errorMessage = result.summary || result.message || 'An error occurred with the prediction';
+        const assistantMessage: UnifiedChatMessage = {
+          id: `astro-error-${Date.now()}`,
+          role: 'assistant',
+          content: errorMessage,
+          timestamp: new Date(),
+          source: astroType === 'churn_astro' ? 'churn_astro' : 'factory_astro',
+          userQuery: message,
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+        return;
+      }
+      
+      // Process successful response
       let predictionData = null;
       if (astroType === 'churn_astro') {
         predictionData = result.data;
@@ -382,10 +520,22 @@ export function UnifiedChatInterface() {
       const assistantMessage: UnifiedChatMessage = {
         id: `astro-response-${Date.now()}`,
         role: 'assistant',
-        content: result.summary || "I have processed your query.",
+        content: result.summary || "I have processed your query, but no detailed results are available.",
         timestamp: new Date(),
         source: astroType === 'churn_astro' ? 'churn_astro' : 'factory_astro',
         predictionData: predictionData,
+        userQuery: message,
+      };
+      setMessages(prev => [...prev, assistantMessage]);
+    } catch (error) {
+      // Handle any exceptions that occur during the API call
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      const assistantMessage: UnifiedChatMessage = {
+        id: `astro-error-${Date.now()}`,
+        role: 'assistant',
+        content: `Error: ${errorMessage}`,
+        timestamp: new Date(),
+        source: astroType === 'churn_astro' ? 'churn_astro' : 'factory_astro',
         userQuery: message,
       };
       setMessages(prev => [...prev, assistantMessage]);
@@ -398,6 +548,98 @@ export function UnifiedChatInterface() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSendMessage(input)
+    }
+  }
+
+  const handleSourceChange = (value: string) => {
+    setSourceId(value)
+    setShowSuggestions(false) // Reset suggestions when source changes
+  }
+
+  const handleSelectSuggestion = (suggestion: AutocompleteSuggestion) => {
+    setInput(suggestion.text)
+    setShowSuggestions(false)
+    if (inputRef.current) {
+      inputRef.current.focus()
+    }
+  }
+
+  // Fetch Factory Astro autocomplete suggestions
+  const fetchFactoryAstroSuggestions = async (text: string, cursorPos: number) => {
+    try {
+      setIsLoadingFactorySuggestions(true);
+      const response = await fetch(`${apiBaseUrl}/api/factory-astro/autocomplete`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          partial_text: text,
+          cursor_position: cursorPos,
+          max_suggestions: 5
+        })
+      });
+
+      if (!response.ok) {
+        console.warn('Failed to fetch Factory Astro suggestions:', response.status, response.statusText);
+        setFactoryAstroSuggestions([]);
+        return;
+      }
+
+      const data = await response.json();
+      console.log('Factory Astro suggestions:', data.suggestions);
+      setFactoryAstroSuggestions(data.suggestions || []);
+    } catch (error) {
+      console.error('Error fetching Factory Astro suggestions:', error);
+      setFactoryAstroSuggestions([]);
+    } finally {
+      setIsLoadingFactorySuggestions(false);
+    }
+  };
+  
+  // Combine KGInsights and Factory Astro suggestions
+  useEffect(() => {
+    // Merge suggestions from both sources and deduplicate
+    const allSuggestions = [...(autocompleteSuggestions || []), ...factoryAstroSuggestions];
+    
+    // Remove any duplicates (based on text)
+    const uniqueSuggestions = allSuggestions.filter((suggestion, index, self) => 
+      index === self.findIndex((s) => s.text === suggestion.text)
+    );
+    
+    setCombinedSuggestions(uniqueSuggestions);
+  }, [autocompleteSuggestions, factoryAstroSuggestions]);
+
+  // Handle input change with debounce for autocomplete
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setInput(value);
+    
+    // Update cursor position for autocomplete suggestions
+    const cursorPos = e.target.selectionStart || value.length;
+    
+    // Only show suggestions if there's input and it's at least 2 characters
+    if (value.trim().length >= 2) {
+      // Fetch suggestions from both sources
+      // Get KGInsights suggestions if WebSocket is connected
+      if (kgConnected) {
+        console.log('Requesting KGInsights autocomplete suggestions:', { query: value, cursorPos });
+        getAutocompleteSuggestions(value, cursorPos);
+      } else {
+        console.warn('Cannot get KGInsights suggestions - WebSocket not connected');
+      }
+      
+      // Also fetch Factory Astro suggestions for predictive queries
+      if (value.toLowerCase().includes('what will') || value.toLowerCase().startsWith('what')) {
+        console.log('Requesting Factory Astro autocomplete suggestions:', { query: value, cursorPos });
+        fetchFactoryAstroSuggestions(value, cursorPos);
+      }
+      
+      setShowSuggestions(true);
+    } else {
+      setShowSuggestions(false);
+      setFactoryAstroSuggestions([]);
     }
   }
 
@@ -475,15 +717,82 @@ export function UnifiedChatInterface() {
         </ScrollArea>
         <div className="p-4 border-t border-gray-200 dark:border-gray-700">
           <div className="relative">
-            <Textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Ask Djinni anything..."
-              className="w-full pr-12 resize-none"
-              rows={1}
-            />
+            <div className="relative flex-1">
+              <Textarea
+                ref={inputRef}
+                value={input}
+                onChange={handleInputChange}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault()
+                    handleSendMessage(input)
+                  } else if (e.key === "Escape") {
+                    setShowSuggestions(false)
+                  }
+                }}
+                onBlur={() => {
+                  // Delay hiding suggestions to allow for click events
+                  setTimeout(() => setShowSuggestions(false), 200)
+                }}
+                placeholder="Ask me anything..."
+                className="min-h-[60px] flex-1 resize-none overflow-auto rounded-md border border-input bg-transparent px-3 py-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 w-full"
+                disabled={loading}
+              />
+              
+              {/* WebSocket Status Indicator (always visible for debugging) */}
+              <div className="absolute top-full right-0 mt-1 text-xs flex items-center gap-1">
+                <span className={`w-2 h-2 rounded-full ${kgConnected ? 'bg-green-500' : kgLoading ? 'bg-yellow-500' : 'bg-red-500'}`}></span>
+                <span className="text-muted-foreground">{kgConnected ? 'Connected' : kgLoading ? 'Connecting...' : 'Disconnected'}</span>
+                <span className="text-muted-foreground">| Source: {sourceId || 'None'}</span>
+              </div>
+              
+              {/* Autocomplete suggestions */}
+              {showSuggestions && combinedSuggestions && combinedSuggestions.length > 0 && (
+                <div className="absolute bottom-full left-0 w-full mb-1 border border-border rounded-md shadow-md overflow-hidden bg-card/95 backdrop-blur-sm z-50">
+                  <div className="p-2 bg-secondary/50 text-secondary-foreground text-xs font-medium">
+                    Autocomplete Suggestions ({combinedSuggestions.length})
+                  </div>
+                  <div className="divide-y divide-border/50 max-h-[200px] overflow-y-auto">
+                    {combinedSuggestions.map((suggestion, index) => (
+                      <div 
+                        key={index}
+                        className="p-2 hover:bg-primary/10 cursor-pointer transition-colors duration-200"
+                        onClick={() => handleSelectSuggestion(suggestion)}
+                      >
+                        <div className="font-medium">{suggestion.text}</div>
+                        {suggestion.description && (
+                          <div className="text-xs text-muted-foreground">{suggestion.description}</div>
+                        )}
+                        {suggestion.source && (
+                          <div className="text-[10px] text-muted-foreground mt-1">
+                            Source: {suggestion.source === 'factory_astro' ? 'Factory Astro' : 'KGInsights'}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {/* Show debug info when there are no suggestions but we should have them */}
+              {showSuggestions && (!combinedSuggestions || combinedSuggestions.length === 0) && input.trim().length > 2 && (
+                <div className="absolute bottom-full left-0 w-full mb-1 border border-border rounded-md shadow-md overflow-hidden bg-card/95 backdrop-blur-sm z-50">
+                  <div className="p-2 bg-secondary/50 text-secondary-foreground text-xs font-medium">
+                    No Suggestions Available
+                  </div>
+                  <div className="p-2 text-xs text-muted-foreground">
+                    <div><strong>Troubleshooting Information:</strong></div>
+                    <div>• KGInsights Connection: {kgConnected ? '✅ Connected' : '❌ Disconnected'}</div>
+                    <div>• Source ID: {sourceId || 'None'}</div>
+                    <div>• Available sources: {availableSources.length ? availableSources.join(', ') : 'None'}</div>
+                    {kgError && <div>• Error: {kgError}</div>}
+                    <div>• Factory Astro Status: {isLoadingFactorySuggestions ? '⏳ Loading...' : factoryAstroSuggestions.length > 0 ? '✅ Available' : '❌ No results'}</div>
+                    <div>• API Base URL: {apiBaseUrl}</div>
+                    <div className="mt-1 text-[10px]">If Neo4j is unavailable, KGInsights suggestions cannot be generated. Factory Astro suggestions should still work.</div>
+                  </div>
+                </div>
+              )}
+            </div>
             <Button
               type="submit"
               size="icon"
