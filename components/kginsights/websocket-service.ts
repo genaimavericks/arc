@@ -86,6 +86,16 @@ export class WebSocketService {
             
             console.log(`WebSocket received message of type: ${type}`, data);
             
+            // Handle connection_status messages automatically
+            if (type === 'connection_status') {
+              // Update internal connection status based on the message
+              if (content === 'connected') {
+                this.updateConnectionStatus(ConnectionStatus.CONNECTED);
+              }
+              // No need to log warning for this type since we handle it internally
+              return;
+            }
+            
             // Check for authentication errors
             if (type === 'error' && typeof content === 'string' && 
                 (content.includes('Authentication failed') || 
