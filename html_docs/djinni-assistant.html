@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RSW Documentation - Djinni Assistant</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            background-color: #f8f9fa;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        nav {
+            background-color: #f8f9fa;
+            padding: 10px 20px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        nav ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-wrap: wrap;
+        }
+        nav ul li {
+            margin-right: 20px;
+            margin-bottom: 10px;
+        }
+        nav ul li a {
+            text-decoration: none;
+            color: #0366d6;
+        }
+        nav ul li a:hover {
+            text-decoration: underline;
+        }
+        h1, h2, h3, h4, h5, h6 {
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: 600;
+            line-height: 1.25;
+        }
+        h1 {
+            font-size: 2em;
+            border-bottom: 1px solid #eaecef;
+            padding-bottom: 0.3em;
+        }
+        h2 {
+            font-size: 1.5em;
+            border-bottom: 1px solid #eaecef;
+            padding-bottom: 0.3em;
+        }
+        a {
+            color: #0366d6;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        pre {
+            background-color: #f6f8fa;
+            border-radius: 3px;
+            padding: 16px;
+            overflow: auto;
+        }
+        code {
+            font-family: SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+            background-color: rgba(27, 31, 35, 0.05);
+            border-radius: 3px;
+            padding: 0.2em 0.4em;
+            font-size: 85%;
+        }
+        pre code {
+            background-color: transparent;
+            padding: 0;
+        }
+        blockquote {
+            margin: 0;
+            padding: 0 1em;
+            color: #6a737d;
+            border-left: 0.25em solid #dfe2e5;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-bottom: 16px;
+        }
+        table th, table td {
+            padding: 6px 13px;
+            border: 1px solid #dfe2e5;
+        }
+        table tr {
+            background-color: #fff;
+            border-top: 1px solid #c6cbd1;
+        }
+        table tr:nth-child(2n) {
+            background-color: #f6f8fa;
+        }
+        img {
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+        hr {
+            height: 0.25em;
+            padding: 0;
+            margin: 24px 0;
+            background-color: #e1e4e8;
+            border: 0;
+        }
+        .content {
+            padding: 20px;
+        }
+        footer {
+            margin-top: 40px;
+            padding: 20px;
+            text-align: center;
+            font-size: 0.8em;
+            color: #6a737d;
+            border-top: 1px solid #eaecef;
+        }
+        .toc {
+            background-color: #f8f9fa;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        .toc h2 {
+            margin-top: 0;
+            border-bottom: none;
+        }
+        .toc ul {
+            padding-left: 20px;
+        }
+        .active {
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>RSW Documentation</h1>
+    </header>
+    <nav>
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="getting-started.html">Getting Started</a></li>
+            <li><a href="djinni-assistant.html" class="active">Djinni Assistant</a></li>
+            <li><a href="datapuur.html">DataPuur</a></li>
+            <li><a href="kginsights.html">KGInsights</a></li>
+            <li><a href="api-reference.html">API Reference</a></li>
+        </ul>
+    </nav>
+    <div class="content">
+        <!-- Content will be inserted here -->
+        <h1>Djinni Assistant</h1>
+<ul>
+<li><a href="index.html">Home</a></li>
+<li><a href="getting-started.html">Getting Started</a></li>
+<li><a href="djinni-assistant.html" class="active">Djinni Assistant</a> (You are here)</li>
+<li>Tools</li>
+<li><a href="datapuur.html">DataPuur</a></li>
+<li><a href="kginsights.html">KGInsights</a></li>
+<li><a href="api-reference.html">API Reference</a></li>
+</ul>
+<h2>Table of Contents</h2>
+<ul>
+<li><a href="#introduction">Introduction</a></li>
+<li><a href="#features-overview">Features Overview</a></li>
+<li><a href="#accessing-djinni-assistant">Accessing Djinni Assistant</a></li>
+<li><a href="#using-djinni-assistant">Using Djinni Assistant</a></li>
+<li><a href="#basic-interaction">Basic Interaction</a></li>
+<li><a href="#query-types">Query Types</a></li>
+<li><a href="#visualization-features">Visualization Features</a></li>
+<li><a href="#factory-specific-queries">Factory-Specific Queries</a></li>
+<li><a href="#query-history-and-management">Query History and Management</a></li>
+<li><a href="#advanced-features">Advanced Features</a></li>
+<li><a href="#best-practices">Best Practices</a></li>
+<li><a href="#troubleshooting">Troubleshooting</a></li>
+</ul>
+<h2>Introduction</h2>
+<p>Djinni Assistant is an AI-powered conversational interface integrated into the RSW platform. It allows users to interact with data, generate insights, and visualize information using natural language queries. This documentation covers how to use Djinni Assistant effectively.</p>
+<p><img alt="Djinni Assistant Interface" src="./img/djinni-assistant.png" /></p>
+<h2>Features Overview</h2>
+<ul>
+<li><strong>Natural Language Querying</strong>: Ask questions in plain English</li>
+<li><strong>Data Visualization</strong>: Automatically generates charts and graphs</li>
+<li><strong>Context-Aware Responses</strong>: Maintains conversation context</li>
+<li><strong>Specialized Query Categories</strong>: General, factory-specific, and custom queries</li>
+<li><strong>Query History</strong>: Tracks and saves previous interactions</li>
+<li><strong>Interactive Visualizations</strong>: Dynamic charts that respond to queries</li>
+</ul>
+<h2>Accessing Djinni Assistant</h2>
+<ol>
+<li><strong>Navigation</strong>:</li>
+<li>Click on "Djinni Assistant" in the sidebar navigation</li>
+<li>
+<p>Alternatively, use the shortcut key <code>Ctrl+D</code> (Windows/Linux) or <code>Cmd+D</code> (Mac)</p>
+</li>
+<li>
+<p><strong>Interface Components</strong>:</p>
+</li>
+<li><strong>Chat Area</strong>: Main conversation interface</li>
+<li><strong>Query Input</strong>: Text field at the bottom</li>
+<li><strong>Visualization Panel</strong>: Displays charts and graphs</li>
+<li><strong>Query Categories</strong>: Sidebar with query suggestions</li>
+<li><strong>Settings</strong>: Configuration options</li>
+</ol>
+<h2>Using Djinni Assistant</h2>
+<h3>Basic Interaction</h3>
+<ol>
+<li><strong>Starting a Conversation</strong>:</li>
+<li>Type your question in the input field</li>
+<li>Press Enter or click the Send button</li>
+<li>
+<p>Wait for Djinni to process and respond</p>
+</li>
+<li>
+<p><strong>Query Types</strong>:</p>
+</li>
+<li><strong>Informational</strong>: "What is the total production for June?"</li>
+<li><strong>Comparative</strong>: "Compare machine utilization percentage among all factories"</li>
+<li><strong>Analytical</strong>: "What's causing the increase in downtime?"</li>
+<li>
+<p><strong>Predictive</strong>: "What will be the revenue for factory 3 over the next 3 months?"</p>
+</li>
+<li>
+<p><strong>Refining Queries</strong>:</p>
+</li>
+<li>Ask follow-up questions to drill down</li>
+<li>Specify time periods: "Show me data from last quarter"</li>
+<li>Filter by categories: "Only show Factory 2 data"</li>
+</ol>
+<h3>Visualization Features</h3>
+<ol>
+<li><strong>Chart Types</strong>:</li>
+<li>Bar charts for comparisons</li>
+<li>Line charts for trends</li>
+<li>Pie charts for proportions</li>
+<li>Radar charts for multi-dimensional metrics</li>
+<li>Tables for detailed data</li>
+</ol>
+<p><img alt="Djinni Visualization Example" src="./img/djinni-visualization.png" /></p>
+<ol>
+<li><strong>Interacting with Visualizations</strong>:</li>
+<li>Hover over data points for details</li>
+<li>Click on legend items to toggle visibility</li>
+<li>Use zoom controls for detailed views</li>
+<li>
+<p>Download charts as images or data</p>
+</li>
+<li>
+<p><strong>Customizing Visualizations</strong>:</p>
+</li>
+<li>Request specific chart types: "Show as a bar chart"</li>
+<li>Adjust time ranges: "Show monthly instead of quarterly"</li>
+<li>Change metrics: "Show by revenue instead of units"</li>
+</ol>
+<h3>Factory-Specific Queries</h3>
+<p>Djinni Assistant provides specialized queries for factory analytics:</p>
+<ol>
+<li><strong>Production Queries</strong>:</li>
+<li>"What is the production volume for Factory 2?"</li>
+<li>"Compare production volumes across all factories"</li>
+<li>
+<p>"Show production trend for the past year"</p>
+</li>
+<li>
+<p><strong>Revenue Queries</strong>:</p>
+</li>
+<li>"What will be the revenue for Factory 3 over the next 3 months?"</li>
+<li>"Compare profit margins across factories"</li>
+<li>
+<p>"Show revenue breakdown by product line"</p>
+</li>
+<li>
+<p><strong>Efficiency Queries</strong>:</p>
+</li>
+<li>"Compare machine utilization percentage among all factories"</li>
+<li>"What's the downtime percentage for Factory 1?"</li>
+<li>
+<p>"Which factory has the highest efficiency?"</p>
+</li>
+<li>
+<p><strong>Quality Metrics</strong>:</p>
+</li>
+<li>"Show quality metrics for Factory 4"</li>
+<li>"Compare defect rates across production lines"</li>
+<li>"What's the trend in quality scores?"</li>
+</ol>
+<h2>Query History and Management</h2>
+<ol>
+<li><strong>Viewing History</strong>:</li>
+<li>Click the "History" tab to view past conversations</li>
+<li>Search through previous queries</li>
+<li>
+<p>Filter by date or query type</p>
+</li>
+<li>
+<p><strong>Saving Important Queries</strong>:</p>
+</li>
+<li>Star important conversations for quick access</li>
+<li>Create named bookmarks for frequent queries</li>
+<li>
+<p>Export conversation logs for reporting</p>
+</li>
+<li>
+<p><strong>Managing Context</strong>:</p>
+</li>
+<li>Start new conversation with the "New Chat" button</li>
+<li>Clear context with "Reset Conversation"</li>
+<li>Reference previous queries: "Like the last query but for Factory 2"</li>
+</ol>
+<h2>Advanced Features</h2>
+<ol>
+<li><strong>Data Integration</strong>:</li>
+<li>Query across multiple data sources</li>
+<li>Combine DataPuur and KGInsights data</li>
+<li>Access historical and real-time information</li>
+</ol>
+<h2>Best Practices</h2>
+<ol>
+<li><strong>Effective Querying</strong>:</li>
+<li>Be specific about metrics and time periods</li>
+<li>Start with broad questions, then refine</li>
+<li>
+<p>Use consistent terminology</p>
+</li>
+<li>
+<p><strong>Optimizing Results</strong>:</p>
+</li>
+<li>Provide feedback on helpful/unhelpful responses</li>
+<li>Rephrase questions if results aren't as expected</li>
+<li>
+<p>Use suggested queries as templates</p>
+</li>
+<li>
+<p><strong>Collaboration[Planned for Future Releases]</strong>:</p>
+</li>
+<li>Share insights with team members</li>
+<li>Use in meetings for dynamic data exploration</li>
+<li>Create standard query templates for teams</li>
+</ol>
+<h2>Troubleshooting</h2>
+<ol>
+<li><strong>Query Not Understood</strong>:</li>
+<li>Rephrase using simpler terms</li>
+<li>Check for typos or ambiguous language</li>
+<li>
+<p>Use suggested query templates</p>
+</li>
+<li>
+<p><strong>Incorrect Results</strong>:</p>
+</li>
+<li>Verify data sources are up to date</li>
+<li>Check for filters that might be limiting results</li>
+<li>
+<p>Specify time ranges explicitly</p>
+</li>
+<li>
+<p><strong>Performance Issues</strong>:</p>
+</li>
+<li>Limit complex queries during peak usage times</li>
+<li>Break complex questions into simpler ones</li>
+<li>Refresh the browser if response times are slow</li>
+</ol>
+<h3>Example Query Workflow</h3>
+<p>Here's an example of how to use Djinni Assistant effectively:</p>
+<ol>
+<li>
+<p>Start with a general question:
+   <code>"Show me machine utilization across all factories"</code></p>
+</li>
+<li>
+<p>Djinni displays a pie chart showing utilization percentages.</p>
+</li>
+<li>
+<p>Ask a follow-up question:
+   <code>"Which factory has the lowest utilization?"</code></p>
+</li>
+<li>
+<p>Djinni identifies Factory 3 with 56.23% utilization.</p>
+</li>
+<li>
+<p>Drill down further:
+   <code>"What are the main causes of downtime in Factory 3?"</code></p>
+</li>
+<li>
+<p>Djinni provides a breakdown of downtime causes.</p>
+</li>
+</ol>
+<hr />
+<p><em>Previous: <a href="getting-started.html">Getting Started</a> | Next: <a href="datapuur.html">DataPuur</a></em></p>
+<p><em>Last updated: July 6, 2025</em></p>
+    </div>
+    <footer>
+        <p>RSW Documentation - Last updated: July 6, 2025</p>
+    </footer>
+</body>
+</html>

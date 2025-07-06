@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RSW Documentation - KGInsights</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            background-color: #f8f9fa;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        nav {
+            background-color: #f8f9fa;
+            padding: 10px 20px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        nav ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-wrap: wrap;
+        }
+        nav ul li {
+            margin-right: 20px;
+            margin-bottom: 10px;
+        }
+        nav ul li a {
+            text-decoration: none;
+            color: #0366d6;
+        }
+        nav ul li a:hover {
+            text-decoration: underline;
+        }
+        h1, h2, h3, h4, h5, h6 {
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: 600;
+            line-height: 1.25;
+        }
+        h1 {
+            font-size: 2em;
+            border-bottom: 1px solid #eaecef;
+            padding-bottom: 0.3em;
+        }
+        h2 {
+            font-size: 1.5em;
+            border-bottom: 1px solid #eaecef;
+            padding-bottom: 0.3em;
+        }
+        a {
+            color: #0366d6;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        pre {
+            background-color: #f6f8fa;
+            border-radius: 3px;
+            padding: 16px;
+            overflow: auto;
+        }
+        code {
+            font-family: SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+            background-color: rgba(27, 31, 35, 0.05);
+            border-radius: 3px;
+            padding: 0.2em 0.4em;
+            font-size: 85%;
+        }
+        pre code {
+            background-color: transparent;
+            padding: 0;
+        }
+        blockquote {
+            margin: 0;
+            padding: 0 1em;
+            color: #6a737d;
+            border-left: 0.25em solid #dfe2e5;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-bottom: 16px;
+        }
+        table th, table td {
+            padding: 6px 13px;
+            border: 1px solid #dfe2e5;
+        }
+        table tr {
+            background-color: #fff;
+            border-top: 1px solid #c6cbd1;
+        }
+        table tr:nth-child(2n) {
+            background-color: #f6f8fa;
+        }
+        img {
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+        hr {
+            height: 0.25em;
+            padding: 0;
+            margin: 24px 0;
+            background-color: #e1e4e8;
+            border: 0;
+        }
+        .content {
+            padding: 20px;
+        }
+        footer {
+            margin-top: 40px;
+            padding: 20px;
+            text-align: center;
+            font-size: 0.8em;
+            color: #6a737d;
+            border-top: 1px solid #eaecef;
+        }
+        .toc {
+            background-color: #f8f9fa;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        .toc h2 {
+            margin-top: 0;
+            border-bottom: none;
+        }
+        .toc ul {
+            padding-left: 20px;
+        }
+        .active {
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>RSW Documentation</h1>
+    </header>
+    <nav>
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="getting-started.html">Getting Started</a></li>
+            <li><a href="djinni-assistant.html">Djinni Assistant</a></li>
+            <li><a href="datapuur.html">DataPuur</a></li>
+            <li><a href="kginsights.html" class="active">KGInsights</a></li>
+            <li><a href="api-reference.html">API Reference</a></li>
+        </ul>
+    </nav>
+    <div class="content">
+        <!-- Content will be inserted here -->
+        <h1>KGInsights (K-Graff)</h1>
+<ul>
+<li><a href="index.html">Home</a></li>
+<li><a href="getting-started.html">Getting Started</a></li>
+<li><a href="djinni-assistant.html">Djinni Assistant</a></li>
+<li>Tools</li>
+<li><a href="datapuur.html">DataPuur</a></li>
+<li><a href="kginsights.html" class="active">KGInsights</a> (You are here)</li>
+<li><a href="api-reference.html">API Reference</a></li>
+</ul>
+<h2>Table of Contents</h2>
+<ul>
+<li><a href="#introduction">Introduction</a></li>
+<li><a href="#features-overview">Features Overview</a></li>
+<li><a href="#accessing-kginsights">Accessing KGInsights</a></li>
+<li><a href="#k-graff-dashboard">K-Graff Dashboard</a></li>
+<li><a href="#generate-graph">Generate Graph</a></li>
+<li><a href="#data-source-selection">Data Source Selection</a></li>
+<li><a href="#entity-and-relationship-configuration">Entity and Relationship Configuration</a></li>
+<li><a href="#graph-generation-process">Graph Generation Process</a></li>
+<li><a href="#manage-k-graff">Manage K-Graff</a></li>
+<li><a href="#graph-visualization">Graph Visualization</a></li>
+<li><a href="#graph-editing">Graph Editing</a></li>
+<li><a href="#graph-exploration">Graph Exploration</a></li>
+<li><a href="#k-graff-insights">K-Graff Insights</a></li>
+<li><a href="#schema-management">Schema Management</a></li>
+<li><a href="#best-practices">Best Practices</a></li>
+<li><a href="#troubleshooting">Troubleshooting</a></li>
+</ul>
+<h2>Introduction</h2>
+<p>KGInsights (K-Graff) is the knowledge graph management module of the RSW platform. It enables users to create, visualize, explore, and derive insights from complex relationship networks within their data. By representing data as interconnected entities and relationships, K-Graff helps uncover hidden patterns and connections that might be missed in traditional tabular analysis.</p>
+<p><img alt="KGInsights Dashboard" src="./img/kginsights-dashboard.png" /></p>
+<h2>Features Overview</h2>
+<ul>
+<li><strong>Graph Generation</strong>: Create knowledge graphs from structured data</li>
+<li><strong>Graph Visualization</strong>: Interactive visual exploration of relationships</li>
+<li><strong>Graph Management</strong>: Edit, update, and maintain knowledge graphs</li>
+<li><strong>Schema Management</strong>: Define and manage entity and relationship types</li>
+<li><strong>Network Analysis</strong>: Calculate centrality, clustering, and other metrics</li>
+<li><strong>Path Discovery</strong>: Find connections between entities</li>
+<li><strong>Pattern Recognition</strong>: Identify recurring structures and motifs</li>
+</ul>
+<h2>Accessing KGInsights</h2>
+<ol>
+<li><strong>Navigation</strong>:</li>
+<li>Click on "K-Graff" in the sidebar under Tools</li>
+<li>
+<p>Use the dropdown to access specific K-Graff features</p>
+</li>
+<li>
+<p><strong>Interface Components</strong>:</p>
+</li>
+<li><strong>K-Graff Dashboard</strong>: Overview of graph metrics and status</li>
+<li><strong>Generate Graph</strong>: Create new knowledge graphs</li>
+<li><strong>Manage K-Graff</strong>: Visualize and edit existing graphs</li>
+<li><strong>K-Graff Insights</strong>: Analyze graph patterns and metrics</li>
+<li><strong>Schema Management</strong>: Define entity and relationship types</li>
+</ol>
+<h2>K-Graff Dashboard</h2>
+<p>The K-Graff Dashboard provides a comprehensive overview of your knowledge graphs and available datasets:</p>
+<ol>
+<li><strong>Knowledge Graphs</strong>:</li>
+<li>List of available knowledge graphs with names and descriptions</li>
+<li>Creation timestamps</li>
+<li>Quick access to graph actions (view, edit, delete)</li>
+<li>
+<p>Status indicators (e.g., "Generated 4 hours ago")</p>
+</li>
+<li>
+<p><strong>Available Datasets</strong>:</p>
+</li>
+<li>List of datasets ready for knowledge graph generation</li>
+<li>Dataset status (Raw, Transformed)</li>
+<li>Creation timestamps</li>
+<li>
+<p>Available actions (generate graph, view details)</p>
+</li>
+<li>
+<p><strong>Quick Actions</strong>:</p>
+</li>
+<li>Create new graph with the "+" button</li>
+<li>Generate graph from selected dataset</li>
+<li>Search for specific graphs or datasets</li>
+<li>Filter datasets by type</li>
+</ol>
+<p><img alt="K-Graff Dashboard" src="./img/kginsights-dashboard.png" /></p>
+<h2>Generate Graph</h2>
+<h3>Data Source Selection</h3>
+<ol>
+<li>Navigate to KGInsights (K-Graff) &gt; Generate Graph</li>
+<li>Select a dataset from the dropdown menu</li>
+<li>Enter a schema name for your knowledge graph</li>
+<li>You can also select data domains if applicable</li>
+</ol>
+<h3>KG Assistant</h3>
+<p>The KG Assistant helps you design your knowledge graph through natural language interaction:</p>
+<ol>
+<li>The assistant provides an AI-powered interface to help you create your graph schema</li>
+<li>You can ask questions like "How can I help with your schema design?"</li>
+<li>The assistant will guide you through the process of:</li>
+<li>Identifying entities in your data</li>
+<li>Establishing relationships between entities</li>
+<li>Defining properties and attributes</li>
+<li>Optimizing the graph structure</li>
+</ol>
+<p><img alt="KG Assistant" src="./img/kginsights-kg-assistant.png" /></p>
+<h3>Schema Configuration</h3>
+<ol>
+<li><strong>Schema Options</strong>:</li>
+<li>Create a custom schema from scratch</li>
+<li>Generate schema automatically using AI</li>
+<li>Use a predefined schema template</li>
+<li>
+<p>Import an existing schema</p>
+</li>
+<li>
+<p><strong>Graph Generation</strong>:</p>
+</li>
+<li>Click "Generate Schema" to create the knowledge graph schema</li>
+<li>Review the generated schema</li>
+<li>Make any necessary adjustments</li>
+<li>Click "Generate Graph" to build the complete knowledge graph</li>
+</ol>
+<p><img alt="Generate Graph" src="./img/kginsights-generate-graph.png" /></p>
+<h3>Graph Generation Process</h3>
+<ol>
+<li><strong>Validation</strong>:</li>
+<li>System validates configuration</li>
+<li>Checks for data consistency</li>
+<li>
+<p>Identifies potential issues</p>
+</li>
+<li>
+<p><strong>Processing</strong>:</p>
+</li>
+<li>Entity extraction</li>
+<li>Relationship mapping</li>
+<li>Property assignment</li>
+<li>
+<p>Graph construction</p>
+</li>
+<li>
+<p><strong>Completion</strong>:</p>
+</li>
+<li>Graph metrics summary</li>
+<li>Preview of generated graph</li>
+<li>Options to visualize or refine</li>
+</ol>
+<h2>Manage K-Graff</h2>
+<h3>Knowledge Graph Management</h3>
+<ol>
+<li>Navigate to KGInsights (K-Graff) &gt; Manage Graphs</li>
+<li>View your knowledge graphs with detailed information:</li>
+<li>Graph name and schema information</li>
+<li>Creation timestamp</li>
+<li>Status indicators (e.g., "Updated about 4 hours ago")</li>
+<li>Data statistics (nodes, relationships, attributes)</li>
+<li>
+<p>Last updated timestamp</p>
+</li>
+<li>
+<p>Select a graph to view its details:</p>
+</li>
+<li>Overview tab with graph metadata</li>
+<li>Structure tab with node types distribution</li>
+<li>Visualization of the graph</li>
+</ol>
+<p><img alt="Manage Knowledge Graphs" src="./img/kginsights-manage-graphs.png" /></p>
+<h3>Graph Visualization</h3>
+<ol>
+<li>When viewing a graph, the visualization shows:</li>
+<li>Nodes representing entities (color-coded by type)</li>
+<li>Edges representing relationships</li>
+<li>
+<p>Interactive network diagram</p>
+</li>
+<li>
+<p>Visualization features include:</p>
+</li>
+<li>Node type distribution statistics</li>
+<li>Relationship counts and types</li>
+<li>Interactive zoom and pan</li>
+<li>Node selection and focus</li>
+<li>
+<p>Graph layout controls</p>
+</li>
+<li>
+<p>Graph details panel shows:</p>
+</li>
+<li>Schema ID and version</li>
+<li>Node count and types</li>
+<li>Relationship statistics</li>
+<li>Data source information</li>
+<li>Assessment metrics</li>
+</ol>
+<h3>Graph Exploration</h3>
+<ol>
+<li><strong>Search and Filter</strong>:</li>
+<li>Search for specific entities</li>
+<li>Filter by entity/relationship types</li>
+<li>Filter by property values</li>
+<li>
+<p>Show/hide specific subgraphs</p>
+</li>
+<li>
+<p><strong>Navigation</strong>:</p>
+</li>
+<li>Expand/collapse node neighborhoods</li>
+<li>Follow relationship paths</li>
+<li>Bookmark important nodes</li>
+<li>
+<p>Create custom views</p>
+</li>
+<li>
+<p><strong>Detail Panels</strong>:</p>
+</li>
+<li>Entity details</li>
+<li>Relationship details</li>
+<li>Connected entities</li>
+<li>Historical changes</li>
+</ol>
+<h2>K-Graff Insights</h2>
+<h3>Knowledge Graph Insights</h3>
+<ol>
+<li>Navigate to KGInsights (K-Graff) &gt; K-Graff Insights</li>
+<li>View the insights dashboard with:</li>
+<li>Suggested queries section</li>
+<li>
+<p>Recent activity history</p>
+</li>
+<li>
+<p>Interact with the AI assistant to analyze your knowledge graph:</p>
+</li>
+<li>Request relationship analysis</li>
+<li>
+<p>Discover patterns and insights</p>
+</li>
+<li>
+<p>Use the suggested queries for quick insights:</p>
+</li>
+<li>Analyze node types and distribution</li>
+<li>Identify key relationships</li>
+<li>Find critical paths between entities</li>
+</ol>
+<p><img alt="K-Graff Insights" src="./img/kginsights-insights.png" /></p>
+<h1></h1>
+<h3>Interactive Analysis</h3>
+<p>The KG Assistant in the Insights section allows for interactive analysis of your knowledge graph:</p>
+<ol>
+<li>Type natural language questions about your graph, such as:</li>
+<li>"What are the main connections between Factory and Location?"</li>
+<li>"Show me the shortest path between Supplier and Batch"</li>
+<li>
+<p>"Which nodes have the highest connectivity?"</p>
+</li>
+<li>
+<p>The assistant will process your query and provide:</p>
+</li>
+<li>Visual highlights on the graph</li>
+<li>Text explanations of findings</li>
+<li>Suggested follow-up questions</li>
+<li>
+<p>Actionable insights</p>
+</li>
+<li>
+<p>Use the chat history to build on previous analyses and create a comprehensive understanding of your graph data</p>
+</li>
+</ol>
+<h2>Schema Management</h2>
+<p>When generating a knowledge graph, you can create and manage schemas to define the structure of your graph:</p>
+<ol>
+<li><strong>Schema Creation Options</strong>:</li>
+<li>Define a custom schema manually</li>
+<li>Generate schema automatically with AI assistance</li>
+<li>
+<p>Use the Schema Name field to name your schema</p>
+</li>
+<li>
+<p><strong>Schema Components</strong>:</p>
+</li>
+<li>Node types (e.g., Factory, Location, Machine, Batch)</li>
+<li>Relationship types (e.g., located_at, supplies_to)</li>
+<li>Node properties and attributes</li>
+<li>
+<p>Relationship properties</p>
+</li>
+<li>
+<p><strong>Schema Generation</strong>:</p>
+</li>
+<li>Click "Generate Schema" to create a new schema</li>
+<li>The system will analyze your dataset and suggest appropriate entity and relationship mappings</li>
+<li>Review the generated schema in the visualization panel</li>
+<li>
+<p>Make adjustments as needed before finalizing</p>
+</li>
+<li>
+<p><strong>Schema Visualization</strong>:</p>
+</li>
+<li>View the node type distribution</li>
+<li>See relationship connections between different node types</li>
+<li>Examine the overall graph structure</li>
+<li>Identify key entities and their connections</li>
+</ol>
+<h2>Best Practices</h2>
+<h3>Graph Creation Best Practices</h3>
+<ol>
+<li><strong>Plan your schema</strong>:</li>
+<li>Define clear entity types</li>
+<li>Establish meaningful relationship types</li>
+<li>
+<p>Document property semantics</p>
+</li>
+<li>
+<p><strong>Start small and iterate</strong>:</p>
+</li>
+<li>Begin with core entities and relationships</li>
+<li>Test with sample data</li>
+<li>
+<p>Expand incrementally</p>
+</li>
+<li>
+<p><strong>Ensure data quality</strong>:</p>
+</li>
+<li>Clean data before graph creation</li>
+<li>Resolve entity duplicates</li>
+<li>Validate relationship logic</li>
+</ol>
+<h3>Graph Visualization Best Practices</h3>
+<ol>
+<li><strong>Focus on relevant subgraphs</strong>:</li>
+<li>Filter to show only relevant entities</li>
+<li>Use appropriate layout algorithms</li>
+<li>
+<p>Color-code by meaningful attributes</p>
+</li>
+<li>
+<p><strong>Balance detail and overview</strong>:</p>
+</li>
+<li>Start with high-level view</li>
+<li>Drill down to details as needed</li>
+<li>
+<p>Create saved views for different purposes</p>
+</li>
+<li>
+<p><strong>Optimize visual clarity</strong>:</p>
+</li>
+<li>Avoid overlapping nodes</li>
+<li>Use consistent visual language</li>
+<li>Provide context through labels</li>
+</ol>
+<h3>Analysis Best Practices</h3>
+<ol>
+<li><strong>Define clear questions</strong>:</li>
+<li>Start with specific analytical goals</li>
+<li>Choose appropriate metrics</li>
+<li>
+<p>Interpret results in business context</p>
+</li>
+<li>
+<p><strong>Combine multiple perspectives</strong>:</p>
+</li>
+<li>Use different centrality measures</li>
+<li>Apply various clustering algorithms</li>
+<li>
+<p>Compare results across time periods</p>
+</li>
+<li>
+<p><strong>Validate insights</strong>:</p>
+</li>
+<li>Cross-check with domain experts</li>
+<li>Verify with alternative data sources</li>
+<li>Test predictions with new data</li>
+</ol>
+<h2>Troubleshooting</h2>
+<h3>Graph Generation Issues</h3>
+<ol>
+<li><strong>Processing Failures</strong>:</li>
+<li>Check data source validity</li>
+<li>Verify entity identifier uniqueness</li>
+<li>Review relationship mappings</li>
+<li>
+<p>Check for memory limitations</p>
+</li>
+<li>
+<p><strong>Schema Conflicts</strong>:</p>
+</li>
+<li>Ensure data conforms to schema</li>
+<li>Check for missing required properties</li>
+<li>
+<p>Verify relationship constraints</p>
+</li>
+<li>
+<p><strong>Performance Problems</strong>:</p>
+</li>
+<li>Consider sampling for large datasets</li>
+<li>Break complex graphs into subgraphs</li>
+<li>Optimize entity and relationship selection</li>
+</ol>
+<h3>Visualization Issues</h3>
+<ol>
+<li><strong>Rendering Problems</strong>:</li>
+<li>Reduce graph size for better performance</li>
+<li>Use filtering to focus on subgraphs</li>
+<li>Try alternative layout algorithms</li>
+<li>
+<p>Update browser or clear cache</p>
+</li>
+<li>
+<p><strong>Layout Issues</strong>:</p>
+</li>
+<li>Adjust layout parameters</li>
+<li>Pin important nodes</li>
+<li>Use hierarchical layouts for complex graphs</li>
+<li>Apply clustering to simplify visualization</li>
+</ol>
+<h3>Analysis Issues</h3>
+<ol>
+<li><strong>Slow Analysis Computation</strong>:</li>
+<li>Limit analysis to relevant subgraphs</li>
+<li>Use approximation algorithms for large graphs</li>
+<li>
+<p>Schedule complex analyses for off-peak times</p>
+</li>
+<li>
+<p><strong>Unexpected Results</strong>:</p>
+</li>
+<li>Verify algorithm parameters</li>
+<li>Check for data anomalies</li>
+<li>Consider alternative metrics</li>
+<li>Consult domain experts for interpretation</li>
+</ol>
+<hr />
+<p><em>Previous: <a href="datapuur.html">DataPuur</a> | Next: <a href="djinni-assistant.html">Djinni Assistant</a></em></p>
+<p><em>Last updated: July 6, 2025</em></p>
+    </div>
+    <footer>
+        <p>RSW Documentation - Last updated: July 6, 2025</p>
+    </footer>
+</body>
+</html>

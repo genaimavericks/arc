@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RSW Documentation - API Reference</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            background-color: #f8f9fa;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        nav {
+            background-color: #f8f9fa;
+            padding: 10px 20px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        nav ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-wrap: wrap;
+        }
+        nav ul li {
+            margin-right: 20px;
+            margin-bottom: 10px;
+        }
+        nav ul li a {
+            text-decoration: none;
+            color: #0366d6;
+        }
+        nav ul li a:hover {
+            text-decoration: underline;
+        }
+        h1, h2, h3, h4, h5, h6 {
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: 600;
+            line-height: 1.25;
+        }
+        h1 {
+            font-size: 2em;
+            border-bottom: 1px solid #eaecef;
+            padding-bottom: 0.3em;
+        }
+        h2 {
+            font-size: 1.5em;
+            border-bottom: 1px solid #eaecef;
+            padding-bottom: 0.3em;
+        }
+        a {
+            color: #0366d6;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        pre {
+            background-color: #f6f8fa;
+            border-radius: 3px;
+            padding: 16px;
+            overflow: auto;
+        }
+        code {
+            font-family: SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+            background-color: rgba(27, 31, 35, 0.05);
+            border-radius: 3px;
+            padding: 0.2em 0.4em;
+            font-size: 85%;
+        }
+        pre code {
+            background-color: transparent;
+            padding: 0;
+        }
+        blockquote {
+            margin: 0;
+            padding: 0 1em;
+            color: #6a737d;
+            border-left: 0.25em solid #dfe2e5;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-bottom: 16px;
+        }
+        table th, table td {
+            padding: 6px 13px;
+            border: 1px solid #dfe2e5;
+        }
+        table tr {
+            background-color: #fff;
+            border-top: 1px solid #c6cbd1;
+        }
+        table tr:nth-child(2n) {
+            background-color: #f6f8fa;
+        }
+        img {
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+        hr {
+            height: 0.25em;
+            padding: 0;
+            margin: 24px 0;
+            background-color: #e1e4e8;
+            border: 0;
+        }
+        .content {
+            padding: 20px;
+        }
+        footer {
+            margin-top: 40px;
+            padding: 20px;
+            text-align: center;
+            font-size: 0.8em;
+            color: #6a737d;
+            border-top: 1px solid #eaecef;
+        }
+        .toc {
+            background-color: #f8f9fa;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        .toc h2 {
+            margin-top: 0;
+            border-bottom: none;
+        }
+        .toc ul {
+            padding-left: 20px;
+        }
+        .active {
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>RSW Documentation</h1>
+    </header>
+    <nav>
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="getting-started.html">Getting Started</a></li>
+            <li><a href="djinni-assistant.html">Djinni Assistant</a></li>
+            <li><a href="datapuur.html">DataPuur</a></li>
+            <li><a href="kginsights.html">KGInsights</a></li>
+            <li><a href="api-reference.html" class="active">API Reference</a></li>
+        </ul>
+    </nav>
+    <div class="content">
+        <!-- Content will be inserted here -->
+        <h1>API Reference</h1>
+<ul>
+<li><a href="index.html">Home</a></li>
+<li><a href="getting-started.html">Getting Started</a></li>
+<li><a href="djinni-assistant.html">Djinni Assistant</a></li>
+<li>Tools</li>
+<li><a href="datapuur.html">DataPuur</a></li>
+<li><a href="kginsights.html">KGInsights</a></li>
+<li><a href="api-reference.html" class="active">API Reference</a> (You are here)</li>
+</ul>
+<h2>Table of Contents</h2>
+<ul>
+<li><a href="#introduction">Introduction</a></li>
+<li><a href="#api-overview">API Overview</a></li>
+<li><a href="#authentication">Authentication</a></li>
+<li><a href="#obtaining-access-tokens">Obtaining Access Tokens</a></li>
+<li><a href="#refreshing-tokens">Refreshing Tokens</a></li>
+<li><a href="#password-reset">Password Reset</a></li>
+<li><a href="#user-management-api">User Management API</a></li>
+<li><a href="#datapuur-api">DataPuur API</a></li>
+<li><a href="#kginsights-api">KGInsights API</a></li>
+<li><a href="#factory-dashboard-api">Factory Dashboard API</a></li>
+<li><a href="#admin-api">Admin API</a></li>
+<li><a href="#error-handling">Error Handling</a></li>
+<li><a href="#rate-limiting">Rate Limiting</a></li>
+<li><a href="#api-versioning">API Versioning</a></li>
+</ul>
+<h2>Introduction</h2>
+<p>The RSW platform provides a comprehensive set of RESTful APIs that allow developers to interact with all aspects of the system. This API reference documents the available endpoints, request/response formats, authentication requirements, and examples.</p>
+<h2>API Overview</h2>
+<ul>
+<li><strong>Base URL</strong>: <code>https://your-rsw-instance.com/api/v1</code></li>
+<li><strong>Authentication</strong>: JWT token-based</li>
+<li><strong>Response Format</strong>: JSON</li>
+<li><strong>Error Handling</strong>: Standard HTTP status codes with error messages</li>
+</ul>
+<h2>Authentication</h2>
+<p>All protected API endpoints require authentication using JWT tokens. The authentication flow is as follows:</p>
+<h3>Obtaining Access Tokens</h3>
+<p><strong>Endpoint</strong>: <code>POST /auth/token</code></p>
+<p><strong>Request Body</strong>:</p>
+<pre><code class="language-json">{
+  &quot;username&quot;: &quot;string&quot;,
+  &quot;password&quot;: &quot;string&quot;
+}
+</code></pre>
+<p><strong>Response</strong>:</p>
+<pre><code class="language-json">{
+  &quot;access_token&quot;: &quot;string&quot;,
+  &quot;token_type&quot;: &quot;bearer&quot;,
+  &quot;expires_in&quot;: 3600,
+  &quot;refresh_token&quot;: &quot;string&quot;,
+  &quot;user&quot;: {
+    &quot;id&quot;: &quot;string&quot;,
+    &quot;username&quot;: &quot;string&quot;,
+    &quot;email&quot;: &quot;string&quot;,
+    &quot;roles&quot;: [&quot;string&quot;],
+    &quot;permissions&quot;: [&quot;string&quot;]
+  }
+}
+</code></pre>
+<p><strong>Status Codes</strong>:
+- <code>200 OK</code>: Successful authentication
+- <code>401 Unauthorized</code>: Invalid credentials</p>
+<p><strong>Example</strong>:</p>
+<pre><code class="language-bash">curl -X POST https://your-rsw-instance.com/api/v1/auth/token \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;username&quot;: &quot;admin&quot;, &quot;password&quot;: &quot;password&quot;}'
+</code></pre>
+<h3>Refreshing Tokens</h3>
+<p><strong>Endpoint</strong>: <code>POST /auth/refresh</code></p>
+<p><strong>Request Body</strong>:</p>
+<pre><code class="language-json">{
+  &quot;refresh_token&quot;: &quot;string&quot;
+}
+</code></pre>
+<p><strong>Response</strong>: Same as token endpoint</p>
+<p><strong>Status Codes</strong>:
+- <code>200 OK</code>: Token refreshed successfully
+- <code>401 Unauthorized</code>: Invalid refresh token</p>
+<p><strong>Example</strong>:</p>
+<pre><code class="language-bash">curl -X POST https://your-rsw-instance.com/api/v1/auth/refresh \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;refresh_token&quot;: &quot;your-refresh-token&quot;}'
+</code></pre>
+<h3>Password Reset</h3>
+<p><strong>Endpoint</strong>: <code>POST /auth/password-reset-request</code></p>
+<p><strong>Request Body</strong>:</p>
+<pre><code class="language-json">{
+  &quot;email&quot;: &quot;string&quot;
+}
+</code></pre>
+<p><strong>Response</strong>:</p>
+<pre><code class="language-json">{
+  &quot;message&quot;: &quot;Password reset email sent&quot;
+}
+</code></pre>
+<p><strong>Status Codes</strong>:
+- <code>200 OK</code>: Reset email sent
+- <code>404 Not Found</code>: Email not found</p>
+<p><strong>Example</strong>:</p>
+<pre><code class="language-bash">curl -X POST https://your-rsw-instance.com/api/v1/auth/password-reset-request \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;email&quot;: &quot;user@example.com&quot;}'
+</code></pre>
+<h2>User Management API</h2>
+<h3>Get Current User</h3>
+<p><strong>Endpoint</strong>: <code>GET /users/me</code></p>
+<p><strong>Headers</strong>:
+- <code>Authorization: Bearer {access_token}</code></p>
+<p><strong>Response</strong>:</p>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;string&quot;,
+  &quot;username&quot;: &quot;string&quot;,
+  &quot;email&quot;: &quot;string&quot;,
+  &quot;roles&quot;: [&quot;string&quot;],
+  &quot;permissions&quot;: [&quot;string&quot;],
+  &quot;created_at&quot;: &quot;string&quot;,
+  &quot;last_login&quot;: &quot;string&quot;
+}
+</code></pre>
+<p><strong>Status Codes</strong>:
+- <code>200 OK</code>: Success
+- <code>401 Unauthorized</code>: Invalid or expired token</p>
+<p><strong>Example</strong>:</p>
+<pre><code class="language-bash">curl -X GET https://your-rsw-instance.com/api/v1/users/me \
+  -H &quot;Authorization: Bearer your-access-token&quot;
+</code></pre>
+<h3>List Users</h3>
+<p><strong>Endpoint</strong>: <code>GET /users</code></p>
+<p><strong>Headers</strong>:
+- <code>Authorization: Bearer {access_token}</code></p>
+<p><strong>Query Parameters</strong>:
+- <code>page</code>: Page number (default: 1)
+- <code>limit</code>: Items per page (default: 10)
+- <code>search</code>: Search term for username or email</p>
+<p><strong>Response</strong>:</p>
+<pre><code class="language-json">{
+  &quot;items&quot;: [
+    {
+      &quot;id&quot;: &quot;string&quot;,
+      &quot;username&quot;: &quot;string&quot;,
+      &quot;email&quot;: &quot;string&quot;,
+      &quot;role&quot;: &quot;string&quot;,
+      &quot;status&quot;: &quot;active&quot;,
+      &quot;created_at&quot;: &quot;2025-01-01T00:00:00Z&quot;,
+      &quot;updated_at&quot;: &quot;2025-01-01T00:00:00Z&quot;
+    }
+  ],
+  &quot;total&quot;: 0,
+  &quot;page&quot;: 1,
+  &quot;limit&quot;: 10,
+  &quot;pages&quot;: 1
+}
+</code></pre>
+<p><strong>Required Permission</strong>: <code>admin:read</code></p>
+<p><strong>Example</strong>:</p>
+<pre><code class="language-bash">curl -X GET &quot;https://your-rsw-instance.com/api/v1/users?page=1&amp;limit=10&quot; \
+  -H &quot;Authorization: Bearer your-access-token&quot;
+</code></pre>
+<h3>Create User</h3>
+<p><strong>Endpoint</strong>: <code>POST /users</code></p>
+<p><strong>Headers</strong>:
+- <code>Authorization: Bearer {access_token}</code></p>
+<p><strong>Request Body</strong>:</p>
+<pre><code class="language-json">{
+  &quot;username&quot;: &quot;string&quot;,
+  &quot;email&quot;: &quot;string&quot;,
+  &quot;password&quot;: &quot;string&quot;,
+  &quot;role_id&quot;: &quot;string&quot;
+}
+</code></pre>
+<p><strong>Response</strong>:</p>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;string&quot;,
+  &quot;username&quot;: &quot;string&quot;,
+  &quot;email&quot;: &quot;string&quot;,
+  &quot;role&quot;: &quot;string&quot;,
+  &quot;status&quot;: &quot;active&quot;,
+  &quot;created_at&quot;: &quot;2025-01-01T00:00:00Z&quot;,
+  &quot;updated_at&quot;: &quot;2025-01-01T00:00:00Z&quot;
+}
+</code></pre>
+<p><strong>Required Permission</strong>: <code>admin:write</code></p>
+<p><strong>Example</strong>:</p>
+<pre><code class="language-bash">curl -X POST https://your-rsw-instance.com/api/v1/users \
+  -H &quot;Authorization: Bearer your-access-token&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;username&quot;: &quot;newuser&quot;, &quot;email&quot;: &quot;newuser@example.com&quot;, &quot;password&quot;: &quot;password123&quot;, &quot;role_id&quot;: &quot;analyst&quot;}'
+</code></pre>
+<h2>DataPuur API</h2>
+<h3>List Datasets</h3>
+<p><strong>Endpoint</strong>: <code>GET /datapuur/datasets</code></p>
+<p><strong>Headers</strong>:
+- <code>Authorization: Bearer {access_token}</code></p>
+<p><strong>Query Parameters</strong>:
+- <code>page</code>: Page number (default: 1)
+- <code>limit</code>: Items per page (default: 10)
+- <code>search</code>: Search term for dataset name
+- <code>status</code>: Filter by status
+- <code>type</code>: Filter by dataset type</p>
+<p><strong>Response</strong>:</p>
+<pre><code class="language-json">{
+  &quot;items&quot;: [
+    {
+      &quot;id&quot;: &quot;string&quot;,
+      &quot;name&quot;: &quot;string&quot;,
+      &quot;dataset&quot;: &quot;string&quot;,
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;last_updated&quot;: &quot;2025-01-01T00:00:00Z&quot;,
+      &quot;status&quot;: &quot;string&quot;,
+      &quot;uploaded_by&quot;: &quot;string&quot;,
+      &quot;file_size&quot;: 0,
+      &quot;row_count&quot;: 0,
+      &quot;created_at&quot;: &quot;2025-01-01T00:00:00Z&quot;
+    }
+  ],
+  &quot;total&quot;: 0,
+  &quot;page&quot;: 1,
+  &quot;limit&quot;: 10,
+  &quot;pages&quot;: 1
+}
+</code></pre>
+<p><strong>Required Permission</strong>: <code>datapuur:read</code></p>
+<p><strong>Example</strong>:</p>
+<pre><code class="language-bash">curl -X GET &quot;https://your-rsw-instance.com/api/v1/datapuur/datasets?page=1&amp;limit=10&quot; \
+  -H &quot;Authorization: Bearer your-access-token&quot;
+</code></pre>
+<h3>Upload Dataset</h3>
+<p><strong>Endpoint</strong>: <code>POST /datapuur/datasets</code></p>
+<p><strong>Headers</strong>:
+- <code>Authorization: Bearer {access_token}</code></p>
+<p><strong>Request Body</strong> (multipart/form-data):
+- <code>file</code>: File to upload
+- <code>name</code>: Dataset name</p>
+<p><strong>Response</strong>:</p>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;string&quot;,
+  &quot;name&quot;: &quot;string&quot;,
+  &quot;dataset&quot;: &quot;string&quot;,
+  &quot;type&quot;: &quot;string&quot;,
+  &quot;last_updated&quot;: &quot;2025-01-01T00:00:00Z&quot;,
+  &quot;status&quot;: &quot;processing&quot;,
+  &quot;uploaded_by&quot;: &quot;string&quot;,
+  &quot;file_size&quot;: 0,
+  &quot;created_at&quot;: &quot;2025-01-01T00:00:00Z&quot;
+}
+</code></pre>
+<p><strong>Required Permission</strong>: <code>datapuur:write</code></p>
+<p><strong>Example</strong>:</p>
+<pre><code class="language-bash">curl -X POST https://your-rsw-instance.com/api/v1/datapuur/datasets \
+  -H &quot;Authorization: Bearer your-access-token&quot; \
+  -F &quot;file=@/path/to/file.csv&quot; \
+  -F &quot;name=My Dataset&quot;
+</code></pre>
+<h2>KGInsights API</h2>
+<h3>Get Graph Data</h3>
+<p><strong>Endpoint</strong>: <code>GET /kginsights/graph/{graph_id}</code></p>
+<p><strong>Headers</strong>:
+- <code>Authorization: Bearer {access_token}</code></p>
+<p><strong>Response</strong>:</p>
+<pre><code class="language-json">{
+  &quot;nodes&quot;: [
+    {
+      &quot;id&quot;: 0,
+      &quot;label&quot;: &quot;string&quot;,
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;color&quot;: &quot;string&quot;,
+      &quot;x&quot;: 0,
+      &quot;y&quot;: 0
+    }
+  ],
+  &quot;edges&quot;: [
+    {
+      &quot;id&quot;: 0,
+      &quot;from_node&quot;: 0,
+      &quot;to_node&quot;: 0,
+      &quot;label&quot;: &quot;string&quot;
+    }
+  ]
+}
+</code></pre>
+<p><strong>Required Permission</strong>: <code>kginsights:read</code></p>
+<p><strong>Example</strong>:</p>
+<pre><code class="language-bash">curl -X GET https://your-rsw-instance.com/api/v1/kginsights/graph/123 \
+  -H &quot;Authorization: Bearer your-access-token&quot;
+</code></pre>
+<h3>Create Graph</h3>
+<p><strong>Endpoint</strong>: <code>POST /kginsights/graph</code></p>
+<p><strong>Headers</strong>:
+- <code>Authorization: Bearer {access_token}</code></p>
+<p><strong>Request Body</strong>:</p>
+<pre><code class="language-json">{
+  &quot;name&quot;: &quot;string&quot;,
+  &quot;dataset_id&quot;: &quot;string&quot;,
+  &quot;config&quot;: {
+    &quot;entity_types&quot;: [&quot;string&quot;],
+    &quot;relationship_types&quot;: [&quot;string&quot;]
+  }
+}
+</code></pre>
+<p><strong>Response</strong>:</p>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;string&quot;,
+  &quot;name&quot;: &quot;string&quot;,
+  &quot;status&quot;: &quot;processing&quot;,
+  &quot;created_at&quot;: &quot;2025-01-01T00:00:00Z&quot;
+}
+</code></pre>
+<p><strong>Required Permission</strong>: <code>kginsights:write</code></p>
+<p><strong>Example</strong>:</p>
+<pre><code class="language-bash">curl -X POST https://your-rsw-instance.com/api/v1/kginsights/graph \
+  -H &quot;Authorization: Bearer your-access-token&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;name&quot;: &quot;Customer Relationships&quot;, &quot;dataset_id&quot;: &quot;abc123&quot;, &quot;config&quot;: {&quot;entity_types&quot;: [&quot;Customer&quot;, &quot;Product&quot;], &quot;relationship_types&quot;: [&quot;Purchased&quot;]}}'
+</code></pre>
+<h2>Factory Dashboard API</h2>
+<h3>Get Factory Metrics</h3>
+<p><strong>Endpoint</strong>: <code>GET /factory/metrics</code></p>
+<p><strong>Headers</strong>:
+- <code>Authorization: Bearer {access_token}</code></p>
+<p><strong>Query Parameters</strong>:
+- <code>factory_id</code>: Optional factory ID to filter by
+- <code>start_date</code>: Start date for metrics (YYYY-MM-DD)
+- <code>end_date</code>: End date for metrics (YYYY-MM-DD)</p>
+<p><strong>Response</strong>:</p>
+<pre><code class="language-json">{
+  &quot;total_production&quot;: 18650000,
+  &quot;total_revenue&quot;: 11770010000,
+  &quot;average_quality&quot;: 90.4,
+  &quot;downtime_loss&quot;: 268197.4,
+  &quot;production_trend&quot;: [
+    {
+      &quot;date&quot;: &quot;2025-01-01&quot;,
+      &quot;value&quot;: 620000
+    }
+  ],
+  &quot;performance_metrics&quot;: {
+    &quot;quality_pass_rate&quot;: 95.2,
+    &quot;low_defects&quot;: 87.5,
+    &quot;profit_margin&quot;: 76.8,
+    &quot;machine_utilization&quot;: 82.3,
+    &quot;production_volume&quot;: 91.7
+  }
+}
+</code></pre>
+<p><strong>Required Permission</strong>: <code>factory:read</code></p>
+<p><strong>Example</strong>:</p>
+<pre><code class="language-bash">curl -X GET &quot;https://your-rsw-instance.com/api/v1/factory/metrics?start_date=2025-01-01&amp;end_date=2025-06-30&quot; \
+  -H &quot;Authorization: Bearer your-access-token&quot;
+</code></pre>
+<h2>Admin API</h2>
+<h3>Get Activity Logs</h3>
+<p><strong>Endpoint</strong>: <code>GET /admin/activity-logs</code></p>
+<p><strong>Headers</strong>:
+- <code>Authorization: Bearer {access_token}</code></p>
+<p><strong>Query Parameters</strong>:
+- <code>page</code>: Page number (default: 1)
+- <code>limit</code>: Items per page (default: 10)
+- <code>user_id</code>: Filter by user ID
+- <code>action</code>: Filter by action type
+- <code>start_date</code>: Start date (YYYY-MM-DD)
+- <code>end_date</code>: End date (YYYY-MM-DD)</p>
+<p><strong>Response</strong>:</p>
+<pre><code class="language-json">{
+  &quot;items&quot;: [
+    {
+      &quot;id&quot;: &quot;string&quot;,
+      &quot;user_id&quot;: &quot;string&quot;,
+      &quot;username&quot;: &quot;string&quot;,
+      &quot;action&quot;: &quot;string&quot;,
+      &quot;details&quot;: &quot;string&quot;,
+      &quot;timestamp&quot;: &quot;2025-01-01T00:00:00Z&quot;,
+      &quot;ip_address&quot;: &quot;string&quot;
+    }
+  ],
+  &quot;total&quot;: 0,
+  &quot;page&quot;: 1,
+  &quot;limit&quot;: 10,
+  &quot;pages&quot;: 1
+}
+</code></pre>
+<p><strong>Required Permission</strong>: <code>admin:read</code></p>
+<p><strong>Example</strong>:</p>
+<pre><code class="language-bash">curl -X GET &quot;https://your-rsw-instance.com/api/v1/admin/activity-logs?page=1&amp;limit=10&quot; \
+  -H &quot;Authorization: Bearer your-access-token&quot;
+</code></pre>
+<h2>Error Handling</h2>
+<p>All API endpoints use standard HTTP status codes:</p>
+<ul>
+<li><code>200 OK</code>: Request succeeded</li>
+<li><code>201 Created</code>: Resource created successfully</li>
+<li><code>400 Bad Request</code>: Invalid request parameters</li>
+<li><code>401 Unauthorized</code>: Authentication required</li>
+<li><code>403 Forbidden</code>: Insufficient permissions</li>
+<li><code>404 Not Found</code>: Resource not found</li>
+<li><code>422 Unprocessable Entity</code>: Validation error</li>
+<li><code>500 Internal Server Error</code>: Server error</li>
+</ul>
+<p>Error responses follow this format:</p>
+<pre><code class="language-json">{
+  &quot;detail&quot;: &quot;Error message&quot;,
+  &quot;code&quot;: &quot;ERROR_CODE&quot;,
+  &quot;params&quot;: {}
+}
+</code></pre>
+<h2>Rate Limiting</h2>
+<p>The API implements rate limiting to prevent abuse:</p>
+<ul>
+<li>Standard users: 100 requests per minute</li>
+<li>Admin users: 300 requests per minute</li>
+</ul>
+<p>Rate limit headers are included in all responses:</p>
+<ul>
+<li><code>X-RateLimit-Limit</code>: Maximum requests per minute</li>
+<li><code>X-RateLimit-Remaining</code>: Remaining requests in the current window</li>
+<li><code>X-RateLimit-Reset</code>: Time when the rate limit resets (Unix timestamp)</li>
+</ul>
+<p>When rate limit is exceeded, the API returns:</p>
+<ul>
+<li>Status code: <code>429 Too Many Requests</code></li>
+<li>Response body: <code>{"detail": "Rate limit exceeded. Try again in X seconds"}</code></li>
+</ul>
+<h2>API Versioning</h2>
+<p>The RSW API uses URL versioning:</p>
+<ul>
+<li>Current version: <code>/api/v1/</code></li>
+<li>Future versions: <code>/api/v2/</code>, etc.</li>
+</ul>
+<p>API changes follow these guidelines:
+- <strong>Major version changes</strong>: Breaking changes (v1 → v2)
+- <strong>Minor version changes</strong>: Non-breaking additions (documented in release notes)
+- <strong>Patch changes</strong>: Bug fixes and minor improvements (no API changes)</p>
+<hr />
+<p><em>Previous: <a href="dashboard-creator.html">Dashboard Creator</a></em></p>
+<p><em>Last updated: July 6, 2025</em></p>
+    </div>
+    <footer>
+        <p>RSW Documentation - Last updated: July 6, 2025</p>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RSW Documentation - Getting Started</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            background-color: #f8f9fa;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        nav {
+            background-color: #f8f9fa;
+            padding: 10px 20px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        nav ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-wrap: wrap;
+        }
+        nav ul li {
+            margin-right: 20px;
+            margin-bottom: 10px;
+        }
+        nav ul li a {
+            text-decoration: none;
+            color: #0366d6;
+        }
+        nav ul li a:hover {
+            text-decoration: underline;
+        }
+        h1, h2, h3, h4, h5, h6 {
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: 600;
+            line-height: 1.25;
+        }
+        h1 {
+            font-size: 2em;
+            border-bottom: 1px solid #eaecef;
+            padding-bottom: 0.3em;
+        }
+        h2 {
+            font-size: 1.5em;
+            border-bottom: 1px solid #eaecef;
+            padding-bottom: 0.3em;
+        }
+        a {
+            color: #0366d6;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        pre {
+            background-color: #f6f8fa;
+            border-radius: 3px;
+            padding: 16px;
+            overflow: auto;
+        }
+        code {
+            font-family: SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+            background-color: rgba(27, 31, 35, 0.05);
+            border-radius: 3px;
+            padding: 0.2em 0.4em;
+            font-size: 85%;
+        }
+        pre code {
+            background-color: transparent;
+            padding: 0;
+        }
+        blockquote {
+            margin: 0;
+            padding: 0 1em;
+            color: #6a737d;
+            border-left: 0.25em solid #dfe2e5;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-bottom: 16px;
+        }
+        table th, table td {
+            padding: 6px 13px;
+            border: 1px solid #dfe2e5;
+        }
+        table tr {
+            background-color: #fff;
+            border-top: 1px solid #c6cbd1;
+        }
+        table tr:nth-child(2n) {
+            background-color: #f6f8fa;
+        }
+        img {
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+        hr {
+            height: 0.25em;
+            padding: 0;
+            margin: 24px 0;
+            background-color: #e1e4e8;
+            border: 0;
+        }
+        .content {
+            padding: 20px;
+        }
+        footer {
+            margin-top: 40px;
+            padding: 20px;
+            text-align: center;
+            font-size: 0.8em;
+            color: #6a737d;
+            border-top: 1px solid #eaecef;
+        }
+        .toc {
+            background-color: #f8f9fa;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        .toc h2 {
+            margin-top: 0;
+            border-bottom: none;
+        }
+        .toc ul {
+            padding-left: 20px;
+        }
+        .active {
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>RSW Documentation</h1>
+    </header>
+    <nav>
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="getting-started.html" class="active">Getting Started</a></li>
+            <li><a href="djinni-assistant.html">Djinni Assistant</a></li>
+            <li><a href="datapuur.html">DataPuur</a></li>
+            <li><a href="kginsights.html">KGInsights</a></li>
+            <li><a href="api-reference.html">API Reference</a></li>
+        </ul>
+    </nav>
+    <div class="content">
+        <!-- Content will be inserted here -->
+        <h1>Getting Started with RSW</h1>
+<ul>
+<li><a href="index.html">Home</a></li>
+<li><a href="getting-started.html" class="active">Getting Started</a> (You are here)</li>
+<li><a href="djinni-assistant.html">Djinni Assistant</a></li>
+<li>Tools</li>
+<li><a href="datapuur.html">DataPuur</a></li>
+<li><a href="kginsights.html">KGInsights</a></li>
+<li><a href="api-reference.html">API Reference</a></li>
+</ul>
+<h2>Table of Contents</h2>
+<ul>
+<li><a href="#introduction">Introduction</a></li>
+<li><a href="#system-requirements">System Requirements</a></li>
+<li><a href="#installation">Installation</a></li>
+<li><a href="#development-environment-setup">Development Environment Setup</a></li>
+<li><a href="#environment-configuration">Environment Configuration</a></li>
+<li><a href="#initial-setup">Initial Setup</a></li>
+<li><a href="#first-time-login">First-time Login</a></li>
+<li><a href="#creating-users-and-roles">Creating Users and Roles</a></li>
+<li><a href="#setting-up-permissions">Setting Up Permissions</a></li>
+<li><a href="#navigation-overview">Navigation Overview</a></li>
+<li><a href="#basic-usage-workflow">Basic Usage Workflow</a></li>
+<li><a href="#troubleshooting">Troubleshooting</a></li>
+<li><a href="#getting-help">Getting Help</a></li>
+</ul>
+<h2>Introduction</h2>
+<p>Welcome to the RSW Smart Data Intelligence (SDI) platform! This guide will help you set up and start using the platform efficiently. RSW combines data processing, knowledge graph insights, factory analytics, and AI assistance in a unified interface.</p>
+<h2>System Requirements</h2>
+<h3>Server Requirements</h3>
+<ul>
+<li>Python 3.8+ for backend services</li>
+<li>Node.js 16+ for frontend development</li>
+<li>PostgreSQL 13+ for database</li>
+<li>8GB RAM minimum (16GB recommended)</li>
+<li>4 CPU cores minimum</li>
+</ul>
+<h3>Client Requirements</h3>
+<ul>
+<li>Modern web browser (Chrome, Firefox, Edge, Safari)</li>
+<li>Minimum screen resolution: 1366x768 (1920x1080 recommended)</li>
+</ul>
+<h2>Installation</h2>
+<h3>Development Environment Setup</h3>
+<ol>
+<li><strong>Clone the Repository</strong></li>
+</ol>
+<pre><code class="language-bash">git clone https://github.com/your-organization/rsw.git
+cd rsw
+</code></pre>
+<ol>
+<li><strong>Install Backend Dependencies</strong></li>
+</ol>
+<pre><code class="language-bash"># Create and activate a virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+</code></pre>
+<ol>
+<li><strong>Install Frontend Dependencies</strong></li>
+</ol>
+<pre><code class="language-bash"># Install dependencies
+npm install
+</code></pre>
+<h3>Environment Configuration</h3>
+<p>Create a <code>.env</code> file in the root directory with the following variables:</p>
+<pre><code># Database
+DATABASE_URL=sqlite:///./test.db
+# For production, use PostgreSQL:
+# DATABASE_URL=postgresql://user:password@localhost/rsw
+
+# Authentication
+SECRET_KEY=your_secret_key_here
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+REFRESH_TOKEN_EXPIRE_DAYS=7
+
+# OpenAI (for Djinni Assistant)
+OPENAI_API_KEY=your_openai_api_key_here
+
+# CORS settings (for development)
+CORS_ORIGINS=http://localhost:3000
+</code></pre>
+<ol>
+<li><strong>Initialize the Database</strong></li>
+</ol>
+<pre><code class="language-bash"># Run database migrations
+python -m api.scripts.create_db
+</code></pre>
+<ol>
+<li><strong>Start the Application</strong></li>
+</ol>
+<pre><code class="language-bash"># Start the backend server
+uvicorn api.main:app --reload
+
+# In a separate terminal, start the frontend
+npm run dev
+</code></pre>
+<ol>
+<li><strong>Access the Application</strong></li>
+</ol>
+<p>Open your browser and navigate to <code>http://localhost:3000</code></p>
+<h2>Initial Setup</h2>
+<h3>First-time Login</h3>
+<p>When you first access the application, use the default admin credentials:</p>
+<ul>
+<li><strong>Username</strong>: admin</li>
+<li><strong>Password</strong>: admin</li>
+</ul>
+<p>You will be prompted to change the password on first login.</p>
+<p><img alt="Admin Login Screen" src="./img/admin-login.png" /></p>
+<h3>Creating Users and Roles</h3>
+<ol>
+<li>Navigate to the Admin Dashboard by clicking on "Admin" in the sidebar</li>
+<li>Select the "Users" tab</li>
+<li>Click "Add User" to create new user accounts</li>
+<li>Assign appropriate roles and permissions based on user responsibilities</li>
+</ol>
+<p><img alt="User Management Screen" src="./img/admin-dashboard.png" /></p>
+<h3>Setting Up Permissions</h3>
+<p>RSW uses a hierarchical permission system:</p>
+<ul>
+<li><strong>DataPuur</strong>: datapuur:read, datapuur:write, datapuur:manage</li>
+<li><strong>KGInsights</strong>: kginsights:read, kginsights:write, kginsights:manage</li>
+<li><strong>Factory Dashboard</strong>: factory:read, factory:write, factory:manage</li>
+<li><strong>Admin</strong>: admin:read, admin:write, admin:manage</li>
+</ul>
+<p>Assign these permissions based on user roles and responsibilities.</p>
+<h2>Navigation Overview</h2>
+<p>The RSW platform is organized into several main sections:</p>
+<h3>Command Centers</h3>
+<ul>
+<li><strong>Factory Dashboard</strong>: Access factory performance metrics and analytics</li>
+<li>Performance Overview</li>
+<li>Operations &amp; Maintenance</li>
+<li>Workforce &amp; Resources</li>
+</ul>
+<h3>Personal Dashboard</h3>
+<ul>
+<li><strong>My Dashboards</strong>: View your saved custom dashboards</li>
+<li><strong>Dashboard Creator</strong>: Create and edit custom dashboards</li>
+<li><strong>Recent Activity</strong>: View your recent actions in the system</li>
+</ul>
+<h3>Djinni</h3>
+<ul>
+<li><strong>Djinni Assistant</strong>: Interact with the AI assistant for data insights</li>
+<li><strong>Conversations</strong>: View your conversation history with Djinni</li>
+</ul>
+<h3>Tools</h3>
+<ul>
+<li><strong>DataPuur</strong>: Data ingestion, processing, and analytics</li>
+<li>Dashboard: Overview of data metrics</li>
+<li>Ingestion: Upload and manage data sources</li>
+<li>AI Profile: Automated data profiling</li>
+<li>AI Transformation: AI-powered data transformations</li>
+<li>Data Catalog: Browse available datasets</li>
+<li>Export: Download processed data</li>
+<li><strong>K-Graff</strong>: Knowledge graph management</li>
+<li>K-Graff Dashboard: Overview of graph metrics</li>
+<li>Generate Graph: Create new knowledge graphs</li>
+<li>Manage K-Graff: Manage existing graphs</li>
+<li>K-Graff Insights: View insights derived from graphs</li>
+</ul>
+<h3>System</h3>
+<ul>
+<li><strong>Settings</strong>: Configure application settings</li>
+<li><strong>Help</strong>: Access documentation and support</li>
+</ul>
+<h2>Basic Usage Workflow</h2>
+<h3>1. Data Ingestion</h3>
+<ul>
+<li>Navigate to DataPuur &gt; Ingestion</li>
+<li>Upload data files or connect to databases</li>
+<li>Configure ingestion parameters</li>
+<li>Start ingestion process</li>
+</ul>
+<h3>2. Data Analysis</h3>
+<ul>
+<li>Navigate to DataPuur &gt; Dashboard</li>
+<li>View data metrics and visualizations</li>
+<li>Use AI Profile for automated insights</li>
+</ul>
+<h3>3. Knowledge Graph Creation</h3>
+<ul>
+<li>Navigate to K-Graff &gt; Generate Graph</li>
+<li>Select data sources</li>
+<li>Configure graph parameters</li>
+<li>Generate knowledge graph</li>
+</ul>
+<h3>4. Factory Analytics</h3>
+<ul>
+<li>Navigate to Factory Dashboard</li>
+<li>View performance metrics</li>
+<li>Analyze production trends</li>
+<li>Monitor machine utilization</li>
+</ul>
+<p><img alt="Factory Dashboard" src="./img/factory-dashboard.png" /></p>
+<h3>5. AI Assistance</h3>
+<ul>
+<li>Navigate to Djinni Assistant</li>
+<li>Ask questions in natural language</li>
+<li>View visualizations and insights</li>
+</ul>
+<h2>Troubleshooting</h2>
+<h3>Login Issues</h3>
+<ul>
+<li>Verify username and password</li>
+<li>Check if account is active</li>
+<li>Clear browser cache and cookies</li>
+</ul>
+<h3>Data Upload Failures</h3>
+<ul>
+<li>Verify file format and size</li>
+<li>Check network connection</li>
+<li>Review error messages in logs</li>
+</ul>
+<h3>Performance Issues</h3>
+<ul>
+<li>Check server resources</li>
+<li>Optimize database queries</li>
+<li>Clear browser cache</li>
+</ul>
+<h3>Permission Errors</h3>
+<ul>
+<li>Verify user role and permissions</li>
+<li>Contact administrator for access</li>
+</ul>
+<h2>Getting Help</h2>
+<ul>
+<li>In-app help: Click the Help icon in the sidebar</li>
+<li>Documentation: Available at <code>/docs</code> endpoint</li>
+<li>Support: Contact support@rsw-platform.com</li>
+</ul>
+<hr />
+<p><em>Next: <a href="djinni-assistant.html">Djinni Assistant</a></em></p>
+<p><em>Last updated: July 6, 2025</em></p>
+    </div>
+    <footer>
+        <p>RSW Documentation - Last updated: July 6, 2025</p>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RSW Documentation - DataPuur</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            background-color: #f8f9fa;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        nav {
+            background-color: #f8f9fa;
+            padding: 10px 20px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        nav ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-wrap: wrap;
+        }
+        nav ul li {
+            margin-right: 20px;
+            margin-bottom: 10px;
+        }
+        nav ul li a {
+            text-decoration: none;
+            color: #0366d6;
+        }
+        nav ul li a:hover {
+            text-decoration: underline;
+        }
+        h1, h2, h3, h4, h5, h6 {
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: 600;
+            line-height: 1.25;
+        }
+        h1 {
+            font-size: 2em;
+            border-bottom: 1px solid #eaecef;
+            padding-bottom: 0.3em;
+        }
+        h2 {
+            font-size: 1.5em;
+            border-bottom: 1px solid #eaecef;
+            padding-bottom: 0.3em;
+        }
+        a {
+            color: #0366d6;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        pre {
+            background-color: #f6f8fa;
+            border-radius: 3px;
+            padding: 16px;
+            overflow: auto;
+        }
+        code {
+            font-family: SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+            background-color: rgba(27, 31, 35, 0.05);
+            border-radius: 3px;
+            padding: 0.2em 0.4em;
+            font-size: 85%;
+        }
+        pre code {
+            background-color: transparent;
+            padding: 0;
+        }
+        blockquote {
+            margin: 0;
+            padding: 0 1em;
+            color: #6a737d;
+            border-left: 0.25em solid #dfe2e5;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-bottom: 16px;
+        }
+        table th, table td {
+            padding: 6px 13px;
+            border: 1px solid #dfe2e5;
+        }
+        table tr {
+            background-color: #fff;
+            border-top: 1px solid #c6cbd1;
+        }
+        table tr:nth-child(2n) {
+            background-color: #f6f8fa;
+        }
+        img {
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+        hr {
+            height: 0.25em;
+            padding: 0;
+            margin: 24px 0;
+            background-color: #e1e4e8;
+            border: 0;
+        }
+        .content {
+            padding: 20px;
+        }
+        footer {
+            margin-top: 40px;
+            padding: 20px;
+            text-align: center;
+            font-size: 0.8em;
+            color: #6a737d;
+            border-top: 1px solid #eaecef;
+        }
+        .toc {
+            background-color: #f8f9fa;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        .toc h2 {
+            margin-top: 0;
+            border-bottom: none;
+        }
+        .toc ul {
+            padding-left: 20px;
+        }
+        .active {
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>RSW Documentation</h1>
+    </header>
+    <nav>
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="getting-started.html">Getting Started</a></li>
+            <li><a href="djinni-assistant.html">Djinni Assistant</a></li>
+            <li><a href="datapuur.html" class="active">DataPuur</a></li>
+            <li><a href="kginsights.html">KGInsights</a></li>
+            <li><a href="api-reference.html">API Reference</a></li>
+        </ul>
+    </nav>
+    <div class="content">
+        <!-- Content will be inserted here -->
+        <h1>DataPuur</h1>
+<ul>
+<li><a href="index.html">Home</a></li>
+<li><a href="getting-started.html">Getting Started</a></li>
+<li><a href="djinni-assistant.html">Djinni Assistant</a></li>
+<li>Tools</li>
+<li><a href="datapuur.html" class="active">DataPuur</a> (You are here)</li>
+<li><a href="kginsights.html">KGInsights</a></li>
+<li><a href="api-reference.html">API Reference</a></li>
+</ul>
+<h2>Table of Contents</h2>
+<ul>
+<li><a href="#introduction">Introduction</a></li>
+<li><a href="#features-overview">Features Overview</a></li>
+<li><a href="#accessing-datapuur">Accessing DataPuur</a></li>
+<li><a href="#data-ingestion">Data Ingestion</a></li>
+<li><a href="#supported-file-formats">Supported File Formats</a></li>
+<li><a href="#uploading-files">Uploading Files</a></li>
+<li><a href="#database-connections">Database Connections</a></li>
+<li><a href="#ai-profile">AI Profile</a></li>
+<li><a href="#automatic-data-profiling">Automatic Data Profiling</a></li>
+<li><a href="#data-quality-assessment">Data Quality Assessment</a></li>
+<li><a href="#ai-transformation">AI Transformation</a></li>
+<li><a href="#data-cleaning">Data Cleaning</a></li>
+<li><a href="#data-enrichment">Data Enrichment</a></li>
+<li><a href="#data-normalization">Data Normalization</a></li>
+<li><a href="#data-catalog">Data Catalog</a></li>
+<li><a href="#export-options">Export Options</a></li>
+<li><a href="#best-practices">Best Practices</a></li>
+<li><a href="#troubleshooting">Troubleshooting</a></li>
+</ul>
+<h2>Introduction</h2>
+<p>DataPuur is the comprehensive data management module of the RSW platform, designed to streamline the entire data lifecycle from ingestion to analysis. It provides tools for data acquisition, processing, profiling, transformation, and analytics, enabling users to extract valuable insights from their data.</p>
+<p><img alt="DataPuur Dashboard" src="./img/datapuur-dashboard.png" /></p>
+<h2>Features Overview</h2>
+<ul>
+<li><strong>Data Ingestion</strong>: Upload files or connect to databases</li>
+<li><strong>AI Profile</strong>: Automatic data profiling and quality assessment</li>
+<li><strong>AI Transformation</strong>: Intelligent data cleaning and enrichment</li>
+<li><strong>Data Catalog</strong>: Centralized repository of available datasets</li>
+<li><strong>Export Options</strong>: Multiple formats for downstream use</li>
+<li><strong>Dashboard</strong>: Visual overview of data metrics and status</li>
+</ul>
+<h2>Accessing DataPuur</h2>
+<ol>
+<li><strong>Navigation</strong>:</li>
+<li>Click on "DataPuur" in the sidebar under Tools</li>
+<li>
+<p>Use the dropdown to access specific DataPuur features</p>
+</li>
+<li>
+<p><strong>Interface Components</strong>:</p>
+</li>
+<li><strong>Dashboard</strong>: Overview of data metrics and status</li>
+<li><strong>Ingestion</strong>: File upload and database connection</li>
+<li><strong>AI Profile</strong>: Data profiling tools</li>
+<li><strong>AI Transformation</strong>: Data transformation tools</li>
+<li><strong>Data Catalog</strong>: Dataset browser</li>
+<li><strong>Export</strong>: Download options</li>
+</ol>
+<h2>Data Ingestion</h2>
+<h3>Supported File Formats</h3>
+<p>DataPuur supports multiple file formats for data ingestion:</p>
+<ul>
+<li><strong>CSV</strong>: Comma-separated values</li>
+<li><strong>JSON</strong>: JavaScript Object Notation</li>
+<li><strong>Parquet</strong>: Columnar storage format</li>
+<li><strong>Database Connections</strong>: Direct database access</li>
+</ul>
+<h3>Uploading Files</h3>
+<ol>
+<li>Navigate to DataPuur &gt; Ingestion</li>
+<li>Click "Upload File" button</li>
+<li>Select file from your computer</li>
+<li>Configure ingestion parameters:</li>
+<li>File format detection</li>
+<li>Column delimiter (for CSV)</li>
+<li>Header row options</li>
+<li>Data type inference</li>
+<li>Click "Start Ingestion"</li>
+<li>Monitor ingestion progress</li>
+</ol>
+<p><img alt="Data Ingestion Interface" src="./img/data-ingestion.png" /></p>
+<h3>Database Connections</h3>
+<p>DataPuur can connect directly to various database systems:</p>
+<ol>
+<li>Navigate to DataPuur &gt; Ingestion</li>
+<li>Click "Connect Database"</li>
+<li>Select database type:</li>
+<li>PostgreSQL</li>
+<li>MySQL</li>
+<li>SQL Server</li>
+<li>Oracle</li>
+<li>MongoDB</li>
+<li>Enter connection parameters:</li>
+<li>Host/server</li>
+<li>Port</li>
+<li>Database name</li>
+<li>Username/password</li>
+<li>SSL options</li>
+<li>Test connection</li>
+<li>Select tables/collections to ingest</li>
+<li>Configure ingestion schedule (one-time or recurring)</li>
+</ol>
+<h2>AI Profile</h2>
+<p>The AI Profile feature uses advanced generative AI to automatically analyze and provide deep insights into your datasets, helping you understand data characteristics, quality issues, and potential use cases.</p>
+<h3>Starting a New AI Profiling Session</h3>
+<ol>
+<li>Navigate to DataPuur &gt; AI Profile</li>
+<li>Click on "Profile Sessions" tab</li>
+<li>Click "Start New AI Profiling Session"</li>
+<li>Select a data source from the list of available datasets</li>
+<li>Click "Start AI Analysis"</li>
+</ol>
+<p><img alt="AI Profile New Session" src="./img/ai-profile-new-session.png" /></p>
+<h3>Profile List</h3>
+<p>The Profile List provides an overview of all profiled datasets with key metrics:</p>
+<ol>
+<li>Navigate to DataPuur &gt; AI Profile</li>
+<li>Click on "Profile List" tab</li>
+<li>View profiled datasets with metrics:</li>
+<li>Dataset name</li>
+<li>Size (rows and columns)</li>
+<li>Duplicates (exact and fuzzy)</li>
+<li>Quality score</li>
+<li>Creation timestamp</li>
+<li>Available actions</li>
+</ol>
+<p><img alt="AI Profile List" src="./img/ai-profile-list.png" /></p>
+<h3>Profile Details</h3>
+<p>The Profile Details view provides comprehensive insights into your dataset:</p>
+<ol>
+<li>Navigate to DataPuur &gt; AI Profile</li>
+<li>Select a dataset from the Profile List</li>
+<li>View detailed profile information:</li>
+<li>Dataset overview (rows, columns, age)</li>
+<li>Quality score with rating (Excellent, Good, etc.)</li>
+<li>Duplicate analysis (exact and fuzzy duplicates)</li>
+<li>Column-specific analysis with interactive visualizations</li>
+<li>Value distributions and patterns</li>
+<li>Missing values analysis</li>
+<li>Statistical summaries</li>
+</ol>
+<p><img alt="AI Profile Details" src="./img/ai-profile-details.png" />
+<img alt="AI Profile Results" src="./img/ai-profile.png" /></p>
+<h3>Data Quality Assessment</h3>
+<p>The AI Profile also provides a detailed data quality assessment:</p>
+<ol>
+<li><strong>Completeness</strong>: Percentage of non-missing values</li>
+<li><strong>Validity</strong>: Conformance to expected formats</li>
+<li><strong>Accuracy</strong>: Correctness of values</li>
+<li><strong>Consistency</strong>: Internal data coherence</li>
+<li><strong>Uniqueness</strong>: Duplicate detection</li>
+<li><strong>Timeliness</strong>: Data freshness</li>
+</ol>
+<p>Each metric is scored from 0-100, with recommendations for improvement.</p>
+<h3>AI-Generated Analysis</h3>
+<p>The AI Profile provides a comprehensive natural language analysis of your dataset:</p>
+<ol>
+<li>Navigate to DataPuur &gt; AI Profile &gt; Profile Details</li>
+<li>Review the AI-generated analysis sections:</li>
+<li><strong>Overview of Data Characteristics</strong>: Summary of dataset size, structure, and content</li>
+<li><strong>Notable Features or Anomalies</strong>: Identification of unusual patterns or outliers</li>
+<li><strong>Data Quality Assessment</strong>: Evaluation of data quality with specific issues</li>
+<li><strong>Potential Use Cases</strong>: AI-suggested applications for the dataset</li>
+<li><strong>Process &amp; Quality Analysis</strong>: Insights into process performance and quality over time</li>
+<li><strong>Productivity &amp; Cost Reporting</strong>: Analysis of efficiency metrics and cost factors</li>
+<li><strong>Workforce Insights</strong>: Assessment of workforce patterns and performance</li>
+<li><strong>Action Points</strong>: Recommended next steps to improve data quality</li>
+</ol>
+<p><img alt="AI Profile Analysis" src="./img/ai-profile-analysis.png" /></p>
+<h3>Session History</h3>
+<p>Access and manage your previous AI profiling sessions:</p>
+<ol>
+<li>Navigate to DataPuur &gt; AI Profile</li>
+<li>Click on "Profile Sessions" tab</li>
+<li>View list of previous profiling sessions with:</li>
+<li>Dataset name</li>
+<li>Creation timestamp</li>
+<li>Session status (Active, Completed)</li>
+<li>AI-generated summary</li>
+<li>Options to resume analysis or view details</li>
+</ol>
+<p><img alt="AI Profile Session History" src="./img/ai-profile-sessions.png" /></p>
+<h2>AI Transformation</h2>
+<p>The AI Transformation feature uses advanced generative AI to intelligently transform your datasets, automatically applying the most appropriate data cleaning, enrichment, and normalization techniques based on your specific data characteristics and business needs.</p>
+<h3>Transform Data</h3>
+<ol>
+<li>Navigate to DataPuur &gt; AI Transformation</li>
+<li>Click on the "Transform Data" tab</li>
+<li>Select a dataset from the available list</li>
+<li>Click the "Transform" button next to your selected dataset</li>
+<li>The system will begin the AI-powered transformation process</li>
+</ol>
+<p><img alt="Transform Data" src="./img/ai-transformation-transform-data.png" /></p>
+<h3>Transformation Plans</h3>
+<p>Transformation Plans allow you to view, manage, and create reusable data transformation workflows:</p>
+<ol>
+<li>Navigate to DataPuur &gt; AI Transformation</li>
+<li>Click on the "Transformation Plans" tab</li>
+<li>View existing transformation plans with details:</li>
+<li>Plan name</li>
+<li>Description</li>
+<li>Status (Completed, In Progress)</li>
+<li>Creation timestamp</li>
+<li>Available actions (Edit, Delete)</li>
+</ol>
+<p><img alt="Transformation Plans" src="./img/ai-transformation-plans.png" /></p>
+<h3>Edit Transformation Plan</h3>
+<p>The Edit Transformation Plan interface allows you to customize and refine your data transformation workflows:</p>
+<ol>
+<li>Navigate to DataPuur &gt; AI Transformation &gt; Transformation Plans</li>
+<li>Click "Edit" next to the plan you want to modify</li>
+<li>Update plan details:</li>
+<li>Name</li>
+<li>Description</li>
+<li>Modify transformation steps with AI assistance</li>
+<li>Click "Execute Plan" to apply the updated transformations</li>
+</ol>
+<p><img alt="Edit Transformation Plan" src="./img/ai-transformation-edit.png" /></p>
+<h3>AI Assistant for Transformations</h3>
+<p>The AI Assistant helps you create and refine transformation plans through natural language interaction:</p>
+<ol>
+<li>In the Edit Transformation Plan view, interact with the AI Assistant panel</li>
+<li>View AI-suggested transformation steps based on your data profile</li>
+<li>Examples of transformation operations:</li>
+<li>Remove irrelevant or redundant columns</li>
+<li>Detect and impute missing values</li>
+<li>Standardize formats and units</li>
+<li>Generate derived features</li>
+<li>Type your own transformation instructions in natural language</li>
+<li>Click "Update Plan" to incorporate your changes</li>
+</ol>
+<h3>Transformation Execution and Results</h3>
+<p>After executing a transformation plan, you can view detailed results and the transformed dataset:</p>
+<ol>
+<li>The transformation execution page shows:</li>
+<li>Step-by-step execution of each transformation operation</li>
+<li>Detailed script of applied transformations</li>
+<li>Execution status and results</li>
+<li>Before/after metrics for data quality</li>
+<li>Click "View Catalog" to access the transformed dataset in the Data Catalog</li>
+</ol>
+<p><img alt="Transformation Execution" src="./img/ai-transformation-execution.png" /></p>
+<h3>Common Transformation Operations</h3>
+<p>The AI Transformation feature can perform various operations automatically:</p>
+<h4>Data Cleaning</h4>
+<ul>
+<li>Missing value detection and imputation</li>
+<li>Outlier identification and handling</li>
+<li>Error correction and validation</li>
+<li>Format standardization</li>
+<li>Duplicate removal</li>
+</ul>
+<h4>Data Enrichment</h4>
+<ul>
+<li>Feature generation</li>
+<li>Derived metrics calculation</li>
+<li>Temporal feature extraction</li>
+<li>Statistical aggregations</li>
+<li>Data type conversions</li>
+</ul>
+<h4>Data Normalization</h4>
+<ul>
+<li>Date/time standardization</li>
+<li>Text case normalization</li>
+<li>Unit conversion</li>
+<li>Numerical scaling (min-max, z-score)</li>
+<li>Categorical encoding</li>
+</ul>
+<h2>Data Catalog</h2>
+<p>The Data Catalog provides a centralized repository of transformed and clean datasets that are ready for analysis and decision-making:</p>
+<ol>
+<li>Navigate to DataPuur &gt; Data Catalog</li>
+<li>Browse available datasets</li>
+<li>View dataset details:</li>
+<li>Schema information</li>
+<li>Quality metrics</li>
+<li>Transformation history</li>
+<li>Data lineage (tracking data origins and transformations)</li>
+<li>Usage statistics</li>
+<li>Data quality certifications</li>
+<li>Tags and descriptions</li>
+</ol>
+<p><img alt="Data Catalog Interface" src="./img/data-catalog.png" /></p>
+<h2>Export Options</h2>
+<p>DataPuur offers multiple export options for processed data:</p>
+<ol>
+<li>Navigate to DataPuur &gt; Export</li>
+<li>Select a dataset</li>
+<li>Export as CSV format</li>
+<li>Configure export options:</li>
+<li>Column selection</li>
+<li>Filtering</li>
+<li>Sorting</li>
+<li>Compression</li>
+<li>Generate export</li>
+<li>Download or access via API</li>
+</ol>
+<h2>Best Practices</h2>
+<h3>Data Ingestion Best Practices</h3>
+<ol>
+<li><strong>Prepare your data</strong>:</li>
+<li>Ensure consistent formatting</li>
+<li>Validate file integrity</li>
+<li>
+<p>Document data sources</p>
+</li>
+<li>
+<p><strong>Configure appropriately</strong>:</p>
+</li>
+<li>Set correct delimiters</li>
+<li>Specify header rows</li>
+<li>
+<p>Define data types when possible</p>
+</li>
+<li>
+<p><strong>Monitor ingestion</strong>:</p>
+</li>
+<li>Check for warnings and errors</li>
+<li>Verify row counts</li>
+<li>Validate sample data</li>
+</ol>
+<h3>Data Profiling Best Practices</h3>
+<ol>
+<li><strong>Profile early</strong>:</li>
+<li>Run AI Profile immediately after ingestion</li>
+<li>
+<p>Address quality issues before analysis</p>
+</li>
+<li>
+<p><strong>Review all metrics</strong>:</p>
+</li>
+<li>Check completeness scores</li>
+<li>Investigate anomalies</li>
+<li>
+<p>Understand distributions</p>
+</li>
+<li>
+<p><strong>Document findings</strong>:</p>
+</li>
+<li>Save profile reports</li>
+<li>Note data limitations</li>
+<li>Share insights with stakeholders</li>
+</ol>
+<h3>Data Transformation Best Practices</h3>
+<ol>
+<li><strong>Incremental approach</strong>:</li>
+<li>Apply transformations in logical order</li>
+<li>Validate after each step</li>
+<li>
+<p>Maintain transformation history</p>
+</li>
+<li>
+<p><strong>Preserve raw data</strong>:</p>
+</li>
+<li>Keep original datasets</li>
+<li>Document transformation steps</li>
+<li>
+<p>Enable reproducibility</p>
+</li>
+<li>
+<p><strong>Test thoroughly</strong>:</p>
+</li>
+<li>Verify transformations with samples</li>
+<li>Check edge cases</li>
+<li>Validate business rules</li>
+</ol>
+<h2>Troubleshooting</h2>
+<h3>Ingestion Issues</h3>
+<ol>
+<li><strong>File Upload Failures</strong>:</li>
+<li>Check file size limits (max 500MB per file)</li>
+<li>Verify file format and encoding</li>
+<li>
+<p>Check for file corruption</p>
+</li>
+<li>
+<p><strong>Database Connection Problems</strong>:</p>
+</li>
+<li>Verify connection parameters</li>
+<li>Check network connectivity</li>
+<li>
+<p>Confirm database permissions</p>
+</li>
+<li>
+<p><strong>Parsing Errors</strong>:</p>
+</li>
+<li>Check for delimiter mismatches</li>
+<li>Verify character encoding</li>
+<li>Look for malformed records</li>
+</ol>
+<h3>Profiling Issues</h3>
+<ol>
+<li><strong>Slow Profile Generation</strong>:</li>
+<li>Large datasets may take time</li>
+<li>Check system resources</li>
+<li>
+<p>Consider sampling for initial profiles</p>
+</li>
+<li>
+<p><strong>Incomplete Profiles</strong>:</p>
+</li>
+<li>Check for timeout errors</li>
+<li>Verify data access permissions</li>
+<li>Look for unsupported data types</li>
+</ol>
+<h3>Transformation Issues</h3>
+<ol>
+<li><strong>Failed Transformations</strong>:</li>
+<li>Check error messages</li>
+<li>Verify data compatibility</li>
+<li>
+<p>Review transformation rules</p>
+</li>
+<li>
+<p><strong>Unexpected Results</strong>:</p>
+</li>
+<li>Compare before/after samples</li>
+<li>Check transformation parameters</li>
+<li>Verify business logic</li>
+</ol>
+<hr />
+<p><em>Next: <a href="kginsights.html">KGInsights</a></em></p>
+<p><em>Last updated: July 6, 2025</em></p>
+    </div>
+    <footer>
+        <p>RSW Documentation - Last updated: July 6, 2025</p>
+    </footer>
+</body>
+</html>
