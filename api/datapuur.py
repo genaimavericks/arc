@@ -44,6 +44,135 @@ def create_timezone_aware_timestamp():
     """
     return datetime.now(timezone.utc).isoformat()
 
+# Helper function to resolve file paths consistently
+def resolve_file_path(job_id, file_id=None):
+    """
+    Resolve the correct file path for a job, preferring file_id over job_id.
+    
+    Args:
+        job_id: The job ID
+        file_id: Optional file ID from job config
+        
+    Returns:
+        Path: The resolved file path
+    """
+    if file_id:
+        return DATA_DIR / f"{file_id}.parquet"
+    else:
+        return DATA_DIR / f"{job_id}.parquet"
+
+# Helper function to extract file_id from job config
+def extract_file_id_from_job(job):
+    """
+    Extract file_id from job configuration if available.
+    
+    Args:
+        job: The job object with config
+        
+    Returns:
+        str or None: The file_id if found, None otherwise
+    """
+    if not job.config:
+        return None
+    
+    try:
+        config = json.loads(job.config)
+        return config.get("file_id")
+    except json.JSONDecodeError:
+        logger.warning(f"Could not parse config JSON for job {job.id}")
+        return None
+
+# Helper function to convert NumPy types to Python native types
+def convert_numpy_types(obj):
+    """
+    Recursively convert NumPy types to Python native types for JSON serialization.
+    
+    Args:
+        obj: Object that may contain NumPy types
+        
+    Returns:
+        Object with NumPy types converted to Python native types
+    """
+    if isinstance(obj, np.bool_):
+        return bool(obj)
+    elif isinstance(obj, (np.integer, np.floating)):
+        return obj.item()
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {k: convert_numpy_types(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy_types(i) for i in obj]
+    else:
+        return obj
+
+# Helper function to check if a job has been cancelled
+def check_job_cancelled(job_id, db_session, job):
+    """
+    Check if a job has been cancelled by checking database status and marker files.
+    
+    Args:
+        job_id: The job ID to check
+        db_session: Database session
+        job: The job object
+        
+    Returns:
+        bool: True if job is cancelled, False otherwise
+    """
+    # Refresh job from database to get latest status
+    db_session.refresh(job)
+    
+    # Check if job has been marked as cancelled in the database
+    if job.status == "cancelled":
+        logger.info(f"Job {job_id} has been cancelled in the database, stopping processing")
+        return True
+        
+    # Check for cancellation marker file
+    cancel_marker_path = DATA_DIR / f"cancel_{job_id}"
+    if cancel_marker_path.exists():
+        logger.info(f"Cancellation marker found for job {job_id}, stopping processing")
+        # Update job status to cancelled since we found a marker
+        job.status = "cancelled"
+        job.end_time = datetime.now()
+        job.details = f"{job.details} (Cancelled by user)"
+        db_session.commit()
+        return True
+        
+    return False
+
+# Helper function to flatten JSON objects
+def flatten_json_iterative(nested_json, prefix=''):
+    """
+    Flatten nested JSON objects iteratively to avoid recursion limits.
+    
+    Args:
+        nested_json: The nested JSON object to flatten
+        prefix: Prefix for flattened keys
+        
+    Returns:
+        dict: Flattened dictionary
+    """
+    if not isinstance(nested_json, dict):
+        return {prefix.rstrip('_'): nested_json}
+    
+    flattened = {}
+    for key, value in nested_json.items():
+        new_key = f"{prefix}{key}"
+        if isinstance(value, dict):
+            flattened.update(flatten_json_iterative(value, f"{new_key}_"))
+        elif isinstance(value, list):
+            if all(not isinstance(item, dict) for item in value):
+                flattened[new_key] = str(value)
+            else:
+                for i, item in enumerate(value):
+                    if isinstance(item, dict):
+                        flattened.update(flatten_json_iterative(item, f"{new_key}_{i}_"))
+                    else:
+                        flattened[f"{new_key}_{i}"] = item
+        else:
+            flattened[new_key] = value
+    return flattened
+
 # Create a structured error response
 def create_error_response(error_code, message, details=None, suggestion=None):
     """
@@ -368,6 +497,84 @@ class StatisticsResponse(BaseModel):
     completion_rate: Optional[float] = None
     error_rate: Optional[float] = None
 
+# Helper function to detect data type from value
+def detect_data_type(value):
+    """
+    Detect the data type of a value for schema inference.
+    
+    Args:
+        value: The value to analyze
+        
+    Returns:
+        str: The detected data type
+    """
+    if not value:
+        return None
+    
+    # Try to convert to different types
+    try:
+        int(value)
+        return "integer"
+    except (ValueError, TypeError):
+        pass
+    
+    try:
+        float(value)
+        return "float"
+    except (ValueError, TypeError):
+        pass
+    
+    if str(value).lower() in ('true', 'false'):
+        return "boolean"
+    
+    # Try date formats
+    try:
+        datetime.strptime(str(value), '%Y-%m-%d')
+        return "date"
+    except ValueError:
+        pass
+    
+    try:
+        datetime.strptime(str(value), '%Y-%m-%dT%H:%M:%S')
+        return "datetime"
+    except ValueError:
+        pass
+    
+    # Default to string
+    return "string"
+
+def get_json_type(value):
+    """Determine the JSON type of a value"""
+    if value is None:
+        return "null"
+    elif isinstance(value, bool):
+        return "boolean"
+    elif isinstance(value, int):
+        return "integer"
+    elif isinstance(value, float):
+        return "float"
+    elif isinstance(value, str):
+        # Check if it might be a date
+        try:
+            datetime.strptime(value, '%Y-%m-%d')
+            return "date"
+        except ValueError:
+            pass
+        
+        try:
+            datetime.strptime(value, '%Y-%m-%dT%H:%M:%S')
+            return "datetime"
+        except ValueError:
+            pass
+        
+        return "string"
+    elif isinstance(value, list):
+        return "array"
+    elif isinstance(value, dict):
+        return "object"
+    else:
+        return "string"  # Default
+
 # Helper functions
 def detect_csv_schema(file_path, chunk_size=1000):
     """Detect schema from a CSV file"""
@@ -399,46 +606,10 @@ def detect_csv_schema(file_path, chunk_size=1000):
                     if sample_values[header] is None and value:
                         sample_values[header] = value
                     
-                    # Detect type
-                    if not value:
-                        continue
-                    
-                    # Try to convert to different types
-                    try:
-                        int(value)
-                        field_types[header].add("integer")
-                        continue
-                    except ValueError:
-                        pass
-                    
-                    try:
-                        float(value)
-                        field_types[header].add("float")
-                        continue
-                    except ValueError:
-                        pass
-                    
-                    if value.lower() in ('true', 'false'):
-                        field_types[header].add("boolean")
-                        continue
-                    
-                    # Try date formats
-                    try:
-                        datetime.strptime(value, '%Y-%m-%d')
-                        field_types[header].add("date")
-                        continue
-                    except ValueError:
-                        pass
-                    
-                    try:
-                        datetime.strptime(value, '%Y-%m-%dT%H:%M:%S')
-                        field_types[header].add("datetime")
-                        continue
-                    except ValueError:
-                        pass
-                    
-                    # Default to string
-                    field_types[header].add("string")
+                    # Detect type using helper function
+                    detected_type = detect_data_type(value)
+                    if detected_type:
+                        field_types[header].add(detected_type)
             
             row_count += 1
     
@@ -554,38 +725,6 @@ def detect_json_schema(file_path, chunk_size=1000):
             })
     
     return schema
-
-def get_json_type(value):
-    """Determine the JSON type of a value"""
-    if value is None:
-        return "null"
-    elif isinstance(value, bool):
-        return "boolean"
-    elif isinstance(value, int):
-        return "integer"
-    elif isinstance(value, float):
-        return "float"
-    elif isinstance(value, str):
-        # Check if it might be a date
-        try:
-            datetime.strptime(value, '%Y-%m-%d')
-            return "date"
-        except ValueError:
-            pass
-        
-        try:
-            datetime.strptime(value, '%Y-%m-%dT%H:%M:%S')
-            return "datetime"
-        except ValueError:
-            pass
-        
-        return "string"
-    elif isinstance(value, list):
-        return "array"
-    elif isinstance(value, dict):
-        return "object"
-    else:
-        return "string"  # Default
 
 def get_db_schema(db_type, config, chunk_size=1000):
     """Get schema from a database table"""
@@ -844,29 +983,9 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
         # Create output file path using file_id for better traceability
         output_file = DATA_DIR / f"{file_id}.parquet"
         
-        # Helper function to check if job has been cancelled
-        def check_job_cancelled():
-            # Refresh job from database to get latest status
-            nonlocal job
-            db_session.refresh(job)
-            
-            # Check if job has been marked as cancelled in the database
-            if job.status == "cancelled":
-                logger.info(f"Job {job_id} has been cancelled in the database, stopping processing")
-                return True
-                
-            # Check for cancellation marker file
-            cancel_marker_path = DATA_DIR / f"cancel_{job_id}"
-            if cancel_marker_path.exists():
-                logger.info(f"Cancellation marker found for job {job_id}, stopping processing")
-                # Update job status to cancelled since we found a marker
-                job.status = "cancelled"
-                job.end_time = datetime.now()
-                job.details = f"{job.details} (Cancelled by user)"
-                db_session.commit()
-                return True
-                
-            return False
+        # Use the centralized job cancellation check
+        def check_job_cancelled_local():
+            return check_job_cancelled(job_id, db_session, job)
         
         # Process file based on type
         if file_type == "csv":
@@ -882,7 +1001,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                     db_session.commit()
                     
                     # Check for cancellation before starting large file processing
-                    if check_job_cancelled():
+                    if check_job_cancelled_local():
                         logger.info(f"Job {job_id} was cancelled before starting large file processing, stopping")
                         return
                         
@@ -914,7 +1033,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                             # Update progress every few batches
                             if batch_number % 5 == 0:
                                 # Check for cancellation during batch processing
-                                if check_job_cancelled():
+                                if check_job_cancelled_local():
                                     logger.info(f"Job {job_id} was cancelled during batch processing, stopping")
                                     return
                                     
@@ -991,7 +1110,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                     # Process remaining chunks more efficiently
                     for chunk in chunk_iterator:
                         # Check for cancellation before processing each chunk
-                        if check_job_cancelled():
+                        if check_job_cancelled_local():
                             logger.info(f"Job {job_id} was cancelled during processing, stopping")
                             return
                                 
@@ -1064,29 +1183,7 @@ def process_file_ingestion_with_db(job_id, file_id, chunk_size, db):
                     processed_items = 0
                     total_items_estimate = max(1, file_size // 1000)  # Rough estimate based on file size
                     
-                    # Function to efficiently flatten JSON with iteration instead of recursion
-                    def flatten_json_iterative(nested_json, prefix=''):
-                        items = []
-                        if isinstance(nested_json, dict):
-                            items = nested_json.items()
-                        
-                        flattened = {}
-                        for key, value in items:
-                            new_key = f"{prefix}{key}"
-                            if isinstance(value, dict):
-                                flattened.update(flatten_json_iterative(value, f"{new_key}_"))
-                            elif isinstance(value, list):
-                                if all(not isinstance(item, dict) for item in value):
-                                    flattened[new_key] = str(value)
-                                else:
-                                    for i, item in enumerate(value):
-                                        if isinstance(item, dict):
-                                            flattened.update(flatten_json_iterative(item, f"{new_key}_{i}_"))
-                                        else:
-                                            flattened[f"{new_key}_{i}"] = item
-                            else:
-                                flattened[new_key] = value
-                        return flattened
+                    # Use the centralized JSON flattening function
                     
                     # Process the file in a streaming manner
                     with open(file_path, 'rb') as f:
@@ -1444,29 +1541,9 @@ def process_db_ingestion_with_db(job_id, db_type, db_config, chunk_size, db):
         job.details = "Initializing SQL database connection"
         db_session.commit()
         
-        # Function to check if job is cancelled
-        def check_job_cancelled():
-            # Refresh job from database to get latest status
-            nonlocal job
-            db_session.refresh(job)
-            
-            # Check if job has been marked as cancelled in the database
-            if job.status == "cancelled":
-                logger.info(f"Job {job_id} has been cancelled in the database, stopping processing")
-                return True
-                
-            # Check for cancellation marker file
-            cancel_marker_path = DATA_DIR / f"cancel_{job_id}"
-            if cancel_marker_path.exists():
-                logger.info(f"Cancellation marker found for job {job_id}, stopping processing")
-                # Update job status to cancelled since we found a marker
-                job.status = "cancelled"
-                job.end_time = datetime.now()
-                job.details = f"{job.details} (Cancelled by user)"
-                db_session.commit()
-                return True
-                
-            return False
+        # Use the centralized job cancellation check
+        def check_job_cancelled_local():
+            return check_job_cancelled(job_id, db_session, job)
         
         # Create connection string
         connection_string = create_connection_string(db_type, db_config)
@@ -1562,7 +1639,7 @@ def process_db_ingestion_with_db(job_id, db_type, db_config, chunk_size, db):
                 total_rows = 0  # Will use a different progress calculation
             
             # Check if job was cancelled during preparation
-            if check_job_cancelled():
+            if check_job_cancelled_local():
                 logger.info(f"Job {job_id} was cancelled during preparation, stopping")
                 return
             
@@ -1580,7 +1657,7 @@ def process_db_ingestion_with_db(job_id, db_type, db_config, chunk_size, db):
             
             while True:
                 # Check for cancellation
-                if check_job_cancelled():
+                if check_job_cancelled_local():
                     logger.info(f"Job {job_id} was cancelled during processing, stopping")
                     
                     # Clean up temporary files
@@ -2605,17 +2682,15 @@ async def get_ingestion_preview(
             if file_type == "csv":
                 # For CSV, return as list of lists with headers
                 headers = preview_df.columns.tolist()
-                # Convert NumPy types to Python native types
+                # Convert NumPy types to Python native types using helper function
                 rows = []
                 for row in preview_df.values:
                     python_row = []
                     for item in row:
                         if pd.isna(item):
                             python_row.append(None)
-                        elif isinstance(item, (np.integer, np.floating)):
-                            python_row.append(item.item())
                         else:
-                            python_row.append(item)
+                            python_row.append(convert_numpy_types(item))
                     rows.append(python_row)
                 
                 return {
@@ -2638,22 +2713,15 @@ async def get_ingestion_preview(
                 
                 # Convert to records and ensure all values have proper Python types
                 try:
-                    # First attempt - standard conversion
+                    # First attempt - standard conversion using helper function
                     records = []
                     for record in preview_df.to_dict(orient='records'):
                         clean_record = {}
                         for key, value in record.items():
                             if pd.isna(value):
                                 clean_record[key] = None
-                            elif isinstance(value, (np.integer, np.floating)):
-                                clean_record[key] = value.item()  # Convert NumPy scalar to Python native type
-                            elif isinstance(value, np.bool_):
-                                clean_record[key] = bool(value)  # Convert NumPy boolean to Python boolean
-                            elif isinstance(value, (dict, list)):
-                                # Ensure nested objects are properly serialized
-                                clean_record[key] = json.loads(json.dumps(value))
                             else:
-                                clean_record[key] = value
+                                clean_record[key] = convert_numpy_types(value)
                         records.append(clean_record)
                 except Exception as e:
                     # Fallback - if any error occurs, create a simpler structure
@@ -2707,19 +2775,15 @@ async def get_ingestion_preview(
             config = json.loads(job.config) if job.config else {}
             connection_name = config.get("connection_name", "Database Connection")
             
-            # Convert DataFrame to records and then handle NumPy types
+            # Convert DataFrame to records using helper function
             records = []
             for record in preview_df.to_dict(orient='records'):
                 clean_record = {}
                 for key, value in record.items():
                     if pd.isna(value):
                         clean_record[key] = None
-                    elif isinstance(value, (np.integer, np.floating)):
-                        clean_record[key] = value.item()  # Convert NumPy scalar to Python native type
-                    elif isinstance(value, np.bool_):
-                        clean_record[key] = bool(value)  # Convert NumPy boolean to Python boolean
                     else:
-                        clean_record[key] = value
+                        clean_record[key] = convert_numpy_types(value)
                 records.append(clean_record)
             
             return {
@@ -2779,24 +2843,13 @@ async def get_ingestion_schema(
         )
     
     try:
-        # Extract file_id from job config if available
-        file_id = None
-        if job.config:
-            try:
-                config = json.loads(job.config)
-                file_id = config.get("file_id")
-                if file_id:
-                    logger.info(f"Found file_id {file_id} in job config for ingestion {ingestion_id}")
-            except json.JSONDecodeError:
-                logger.warning(f"Could not parse config JSON for ingestion {ingestion_id}")
+        # Extract file_id and resolve file path
+        file_id = extract_file_id_from_job(job)
+        parquet_path = resolve_file_path(ingestion_id, file_id)
         
-        # Get the parquet file path using file_id if available
         if file_id:
-            parquet_path = DATA_DIR / f"{file_id}.parquet"
-            logger.info(f"Looking for parquet file with file_id: {file_id}")
+            logger.info(f"Found file_id {file_id} in job config for ingestion {ingestion_id}")
         else:
-            # Fallback to ingestion_id for backward compatibility
-            parquet_path = DATA_DIR / f"{ingestion_id}.parquet"
             logger.info(f"Falling back to ingestion_id for parquet file: {ingestion_id}")
             
         if not os.path.exists(parquet_path):
@@ -2830,25 +2883,17 @@ async def get_ingestion_schema(
             # Check nullability - convert numpy.bool_ to Python bool
             nullable = bool(df[column].isna().any())
             
-            # Get sample value
+            # Get sample value using helper function
             sample = None
             non_null_values = df[column].dropna()
             if not non_null_values.empty:
                 sample_value = non_null_values.iloc[0]
                 
-                # Convert NumPy types to Python native types
-                if isinstance(sample_value, (np.integer, np.floating)):
-                    sample = sample_value.item()  # Convert NumPy scalar to Python native type
-                elif isinstance(sample_value, np.bool_):
-                    sample = bool(sample_value)  # Convert NumPy boolean to Python boolean
-                elif pd.api.types.is_datetime64_dtype(dtype):
-                    sample = str(sample_value)
-                elif isinstance(sample_value, np.ndarray):
-                    sample = sample_value.tolist()  # Convert NumPy array to list
-                elif isinstance(sample_value, pd.Timestamp):
+                # Handle special pandas types first
+                if pd.api.types.is_datetime64_dtype(dtype) or isinstance(sample_value, pd.Timestamp):
                     sample = str(sample_value)
                 else:
-                    sample = sample_value
+                    sample = convert_numpy_types(sample_value)
                     
             fields.append({
                 "name": column,
@@ -2899,24 +2944,13 @@ async def debug_schema(
 ):
     """Debug endpoint to check schema data directly"""
     try:
-        # Extract file_id from job config if available
-        file_id = None
-        if job.config:
-            try:
-                config = json.loads(job.config)
-                file_id = config.get("file_id")
-                if file_id:
-                    logger.info(f"Found file_id {file_id} in job config for ingestion {ingestion_id}")
-            except json.JSONDecodeError:
-                logger.warning(f"Could not parse config JSON for ingestion {ingestion_id}")
+        # Extract file_id and resolve file path
+        file_id = extract_file_id_from_job(job)
+        parquet_path = resolve_file_path(ingestion_id, file_id)
         
-        # Get the parquet file path using file_id if available
         if file_id:
-            parquet_path = DATA_DIR / f"{file_id}.parquet"
-            logger.info(f"Looking for parquet file with file_id: {file_id}")
+            logger.info(f"Found file_id {file_id} in job config for ingestion {ingestion_id}")
         else:
-            # Fallback to ingestion_id for backward compatibility
-            parquet_path = DATA_DIR / f"{ingestion_id}.parquet"
             logger.info(f"Falling back to ingestion_id for parquet file: {ingestion_id}")
         
         if not os.path.exists(parquet_path):
@@ -3003,24 +3037,13 @@ async def get_ingestion_statistics(
         )
     
     try:
-        # Extract file_id from job config if available
-        file_id = None
-        if job.config:
-            try:
-                config = json.loads(job.config)
-                file_id = config.get("file_id")
-                if file_id:
-                    logger.info(f"Found file_id {file_id} in job config for ingestion {ingestion_id}")
-            except json.JSONDecodeError:
-                logger.warning(f"Could not parse config JSON for ingestion {ingestion_id}")
+        # Extract file_id and resolve file path
+        file_id = extract_file_id_from_job(job)
+        parquet_path = resolve_file_path(ingestion_id, file_id)
         
-        # Get the parquet file path using file_id if available
         if file_id:
-            parquet_path = DATA_DIR / f"{file_id}.parquet"
-            logger.info(f"Looking for parquet file with file_id: {file_id}")
+            logger.info(f"Found file_id {file_id} in job config for ingestion {ingestion_id}")
         else:
-            # Fallback to ingestion_id for backward compatibility
-            parquet_path = DATA_DIR / f"{ingestion_id}.parquet"
             logger.info(f"Falling back to ingestion_id for parquet file: {ingestion_id}")
         
         if not os.path.exists(parquet_path):
@@ -3108,24 +3131,13 @@ async def download_ingestion(
         )
     
     try:
-        # Extract file_id from job config if available
-        file_id = None
-        if job.config:
-            try:
-                config = json.loads(job.config)
-                file_id = config.get("file_id")
-                if file_id:
-                    logger.info(f"Found file_id {file_id} in job config for ingestion {ingestion_id}")
-            except json.JSONDecodeError:
-                logger.warning(f"Could not parse config JSON for ingestion {ingestion_id}")
+        # Extract file_id and resolve file path
+        file_id = extract_file_id_from_job(job)
+        parquet_path = resolve_file_path(ingestion_id, file_id)
         
-        # Get the parquet file path using file_id if available
         if file_id:
-            parquet_path = DATA_DIR / f"{file_id}.parquet"
-            logger.info(f"Looking for parquet file with file_id: {file_id}")
+            logger.info(f"Found file_id {file_id} in job config for ingestion {ingestion_id}")
         else:
-            # Fallback to ingestion_id for backward compatibility
-            parquet_path = DATA_DIR / f"{ingestion_id}.parquet"
             logger.info(f"Falling back to ingestion_id for parquet file: {ingestion_id}")
         
         if not os.path.exists(parquet_path):
