@@ -2944,6 +2944,11 @@ async def debug_schema(
 ):
     """Debug endpoint to check schema data directly"""
     try:
+        # Get the job first
+        job = get_ingestion_job(db, ingestion_id)
+        if not job:
+            return {"error": "Ingestion job not found"}
+        
         # Extract file_id and resolve file path
         file_id = extract_file_id_from_job(job)
         parquet_path = resolve_file_path(ingestion_id, file_id)
@@ -4828,7 +4833,7 @@ async def get_all_jobs_admin(
         return job_list
     except Exception as e:
         raise HTTPException(
-            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving jobs: {str(e)}"
         )
 
@@ -4849,14 +4854,14 @@ async def stop_job_admin(
         job = db.query(IngestionJob).filter(IngestionJob.id == job_id).first()
         if not job:
             raise HTTPException(
-                status_code=http_status.HTTP_404_NOT_FOUND,
+                status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Job not found with ID: {job_id}"
             )
         
         # Check if job can be stopped
         if job.status not in ["running", "queued"]:
             raise HTTPException(
-                status_code=http_status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Job with status '{job.status}' cannot be stopped"
             )
         
@@ -4883,7 +4888,7 @@ async def stop_job_admin(
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error stopping job: {str(e)}"
         )
 
@@ -4904,7 +4909,7 @@ async def delete_job_admin(
         job = db.query(IngestionJob).filter(IngestionJob.id == job_id).first()
         if not job:
             raise HTTPException(
-                status_code=http_status.HTTP_404_NOT_FOUND,
+                status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Job not found with ID: {job_id}"
             )
         
@@ -4957,6 +4962,6 @@ async def delete_job_admin(
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error deleting job: {str(e)}"
         )   
