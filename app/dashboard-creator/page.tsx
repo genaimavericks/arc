@@ -27,13 +27,22 @@ export default function DashboardCreator() {
       <MainLayout>
         <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
           <Tabs defaultValue="creation" className="space-y-4">
-            <div className="flex items-center gap-4">
-              <h2 className="text-2xl font-bold tracking-tight">Dashboard Creator</h2>
-              <TabsList>
-                <TabsTrigger value="creation">Creation</TabsTrigger>
-                <TabsTrigger value="templates">Templates</TabsTrigger>
-                <TabsTrigger value="saved">Saved</TabsTrigger>
-              </TabsList>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <h2 className="text-2xl font-bold tracking-tight">Dashboard Creator</h2>
+                <TabsList>
+                  <TabsTrigger value="creation">Creation</TabsTrigger>
+                  <TabsTrigger value="templates">Templates</TabsTrigger>
+                  <TabsTrigger value="saved">Saved</TabsTrigger>
+                </TabsList>
+              </div>
+              <Button 
+                onClick={() => window.location.href = '/dashboard-creator/enhanced'}
+                className="gap-2"
+              >
+                <span className="text-sm">🤖</span>
+                Try AI-Powered Creator
+              </Button>
             </div>
             
             <TabsContent value="creation" className="space-y-4">

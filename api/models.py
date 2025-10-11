@@ -193,5 +193,58 @@ class GraphSchema(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+class DashboardRecord(Base):
+    """Enhanced Dashboard Creator - Dashboard records"""
+    __tablename__ = "dashboard_records"
+    
+    id = Column(String, primary_key=True, index=True)  # UUID
+    user_id = Column(String, nullable=False, index=True)
+    dashboard_name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    
+    # Dataset References (reuses existing IDs)
+    source_dataset_ids = Column(JSON, nullable=True)  # References UploadedFile.id
+    transformed_dataset_ids = Column(JSON, nullable=True)  # References TransformedDataset.id
+    
+    # Static Generation Fields
+    static_path = Column(String(500), nullable=True)  # /out/dashboards/user_123/dash_456.html
+    build_status = Column(String(20), default='building', nullable=False)  # building, ready, failed
+    build_started_at = Column(DateTime, nullable=True)
+    build_completed_at = Column(DateTime, nullable=True)
+    
+    # AI & Config
+    ai_chat_history = Column(JSON, nullable=True)  # Chat conversation
+    dashboard_config = Column(JSON, nullable=True)  # Layout & widgets
+    template_id = Column(String(100), nullable=True)
+    
+    # Asset manifest for static files
+    asset_manifest = Column(JSON, nullable=True)  # {js: "dash-456.js", css: "dash-456.css"}
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Indexes for performance
+    __table_args__ = (
+        Index('idx_dashboard_user_status', 'user_id', 'build_status'),
+        Index('idx_dashboard_created', 'created_at'),
+    )
+
+class DashboardBuildQueue(Base):
+    """Build queue for async dashboard processing"""
+    __tablename__ = "dashboard_build_queue"
+    
+    id = Column(String, primary_key=True, index=True)  # UUID
+    dashboard_id = Column(String, ForeignKey('dashboard_records.id'), nullable=False)
+    build_priority = Column(Integer, default=5, nullable=False)
+    status = Column(String(20), default='queued', nullable=False)  # queued, processing, completed, failed
+    error_message = Column(Text, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    
+    # Relationship
+    dashboard = relationship("DashboardRecord", backref="build_jobs")
+
 # Create tables
 Base.metadata.create_all(bind=engine)

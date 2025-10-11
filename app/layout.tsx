@@ -3,6 +3,7 @@ import "./globals.css"
 import { AuthProvider } from "@/lib/auth-context"
 import { ThemeProvider } from "@/lib/theme-context"
 import { IngestionProvider } from "@/lib/ingestion-context"
+import { QueryProvider } from "@/lib/query-provider"
 import { ActivityTracker } from "@/components/activity-tracker"
 import { FloatingJobCard } from "@/components/datapuur/floating-job-card"
 import { AnimatedBackground } from "@/components/ui/animated-background"
@@ -13,15 +14,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         <AuthProvider>
-          <ThemeProvider>
-            <IngestionProvider>
-              <ActivityTracker />
-              <FloatingJobCard />
-              <AnimatedBackground />
-              <Toaster />
-              {children}
-            </IngestionProvider>
-          </ThemeProvider>
+          <QueryProvider>
+            <ThemeProvider>
+              <IngestionProvider>
+                <ActivityTracker />
+                <FloatingJobCard />
+                <AnimatedBackground />
+                <Toaster />
+                {children}
+              </IngestionProvider>
+            </ThemeProvider>
+          </QueryProvider>
         </AuthProvider>
       </body>
     </html>

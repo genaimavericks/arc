@@ -45,6 +45,7 @@ from api.admin import router as admin_router
 from api.gen_ai_layer.router import router as gen_ai_router
 from api.export_router import router as export_router
 from api.static_dashboards.churn_dashboard.api import router as churn_dashboard_router
+from api.dashboards.router import router as dashboards_router
 from api.middleware import ActivityLoggerMiddleware
 from api.log_filter_middleware import LogFilterMiddleware
 
@@ -100,6 +101,13 @@ app.include_router(export_router)
 app.include_router(admin_router)
 # Include the Gen AI Layer router
 app.include_router(gen_ai_router)
+
+# Include the Enhanced Dashboard Creator router
+try:
+    app.include_router(dashboards_router)
+    print("Enhanced Dashboard Creator router included successfully")
+except ImportError as e:
+    print(f"Could not import Dashboard router: {e}")
 
 # Include the Factory Astro router
 try:

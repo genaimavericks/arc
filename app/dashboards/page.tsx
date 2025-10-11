@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { MainLayout } from "@/components/main-layout"
 import { useAuth } from "@/lib/auth-context"
@@ -34,30 +34,38 @@ export default function MyDashboardsPage() {
     return null
   }
   
-  // Sample dashboard data
-  const recentDashboards = [
-    {
-      id: 1,
-      title: "Sales Performance",
-      description: "Overall sales metrics and KPIs",
-      lastViewed: "2 hours ago",
-      charts: 4
-    },
-    {
-      id: 2,
-      title: "Inventory Management",
-      description: "Stock levels and inventory projections",
-      lastViewed: "Yesterday",
-      charts: 6
-    },
-    {
-      id: 3,
-      title: "Customer Insights",
-      description: "Customer behavior and segmentation analysis",
-      lastViewed: "3 days ago",
-      charts: 5
+  // Fetch user dashboards from API
+  const [dashboards, setDashboards] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetchUserDashboards()
+  }, [])
+
+  const fetchUserDashboards = async () => {
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) {
+        console.warn('No auth token found for dashboards page')
+        return
+      }
+      
+      const response = await fetch('/api/dashboards/user-dashboards', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setDashboards(data)
+      }
+    } catch (error) {
+      console.error('Failed to fetch dashboards:', error)
+    } finally {
+      setLoading(false)
     }
-  ]
+  }
   
   return (
     <ProtectedRoute requiredPermission="dashboard:read">
@@ -71,7 +79,10 @@ export default function MyDashboardsPage() {
                 View, manage, and analyze your custom dashboards
               </p>
             </div>
-            <Button className="gap-2">
+            <Button 
+              className="gap-2"
+              onClick={() => router.push('/dashboard-creator')}
+            >
               <PlusCircle className="h-4 w-4" />
               Create Dashboard
             </Button>
@@ -79,28 +90,68 @@ export default function MyDashboardsPage() {
           
           {/* Recent Dashboards */}
           <div>
-            <h3 className="text-lg font-medium mb-4">Recent Dashboards</h3>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {recentDashboards.map((dashboard) => (
-                <Card key={dashboard.id} className="hover:border-primary/50 transition-colors cursor-pointer">
+            <h3 className="text-lg font-medium mb-4">My Dashboards</h3>
+            {loading ? (
+              <div className="flex items-center justify-center p-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              </div>
+            ) : dashboards.length === 0 ? (
+              <div className="text-center py-12">
+                <LayoutDashboard className="mx-auto h-12 w-12 text-muted-foreground" />
+                <h3 className="mt-4 text-lg font-semibold">No dashboards yet</h3>
+                <p className="mt-2 text-muted-foreground">
+                  Create your first AI-powered dashboard to get started
+                </p>
+                <Button 
+                  className="mt-4 gap-2"
+                  onClick={() => router.push('/dashboard-creator/enhanced')}
+                >
+                  <PlusCircle className="h-4 w-4" />
+                  Create Your First Dashboard
+                </Button>
+              </div>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {dashboards.map((dashboard: any) => (
+                <Card 
+                  key={dashboard.id} 
+                  className="hover:border-primary/50 transition-colors cursor-pointer"
+                  onClick={() => router.push(`/dashboards/${dashboard.id}`)}
+                >
                   <CardHeader className="pb-2">
                     <div className="flex items-center justify-between">
-                      <CardTitle className="text-base">{dashboard.title}</CardTitle>
+                      <CardTitle className="text-base">{dashboard.dashboard_name}</CardTitle>
                       <div className="bg-primary/10 p-1.5 rounded-md">
                         <LayoutDashboard className="h-4 w-4 text-primary" />
                       </div>
                     </div>
-                    <CardDescription>{dashboard.description}</CardDescription>
+                    <CardDescription>{dashboard.description || 'AI-generated dashboard'}</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="flex items-center justify-between text-sm">
                       <div className="flex items-center gap-1 text-muted-foreground">
                         <Clock className="h-3.5 w-3.5" />
-                        <span>{dashboard.lastViewed}</span>
+                        <span>{new Date(dashboard.created_at).toLocaleDateString()}</span>
                       </div>
-                      <div className="flex items-center gap-1 text-muted-foreground">
-                        <BarChart2 className="h-3.5 w-3.5" />
-                        <span>{dashboard.charts} charts</span>
+                      <div className="flex items-center gap-1">
+                        {dashboard.build_status === 'building' && (
+                          <div className="flex items-center gap-1 text-blue-600">
+                            <div className="animate-spin rounded-full h-3 w-3 border-b border-blue-600"></div>
+                            <span className="text-xs">Building...</span>
+                          </div>
+                        )}
+                        {dashboard.build_status === 'ready' && (
+                          <div className="flex items-center gap-1 text-green-600">
+                            <div className="w-2 h-2 rounded-full bg-green-600"></div>
+                            <span className="text-xs">Ready</span>
+                          </div>
+                        )}
+                        {dashboard.build_status === 'failed' && (
+                          <div className="flex items-center gap-1 text-red-600">
+                            <div className="w-2 h-2 rounded-full bg-red-600"></div>
+                            <span className="text-xs">Failed</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </CardContent>
@@ -117,7 +168,8 @@ export default function MyDashboardsPage() {
                   Build a custom dashboard with your own metrics and data
                 </p>
               </Card>
-            </div>
+              </div>
+            )}
           </div>
           
           {/* Dashboard Categories */}

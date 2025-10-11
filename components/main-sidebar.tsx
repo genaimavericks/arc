@@ -459,6 +459,7 @@ export function MainSidebar() {
       label: "Dashboard Creator",
       icon: Wand2,
       href: "/dashboard-creator",
+      key: "dashboard-creator",
       requiredPermission: "dashboard:write"
     },
     {
@@ -474,6 +475,43 @@ export function MainSidebar() {
     if (!user || !user.permissions || !item.requiredPermission) return false
     return user.permissions.includes(item.requiredPermission as string)
   })
+
+  // State for user dashboards
+  const [userDashboards, setUserDashboards] = useState<Array<{
+    id: string
+    dashboard_name: string
+    build_status: string
+  }>>([])
+
+  // Fetch user dashboards when user is available
+  useEffect(() => {
+    if (user && user.permissions?.includes("dashboard:read")) {
+      fetchUserDashboards()
+    }
+  }, [user])
+
+  const fetchUserDashboards = async () => {
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) {
+        console.warn('No auth token found for user dashboards')
+        return
+      }
+      
+      const response = await fetch('/api/dashboards/user-dashboards', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+      if (response.ok) {
+        const dashboards = await response.json()
+        setUserDashboards(dashboards.slice(0, 5)) // Show max 5 recent dashboards
+      }
+    } catch (error) {
+      console.error('Failed to fetch user dashboards:', error)
+    }
+  }
   
   // Filter system options based on user role
   const getSystemOptions = (): MenuSection[] => {
@@ -648,14 +686,44 @@ export function MainSidebar() {
               </h3>
             )}
             {personalDashboards.map((section) => (
-              <div key={section.label} className={cn("py-1", collapsed && "w-full flex justify-center")}>
-                <SidebarMenuItem
-                  href={section.href}
-                  icon={section.icon}
-                  label={section.label}
-                  isActive={!section.href ? false : (section.href === "/" ? pathname === "/" : (pathname === section.href || pathname.startsWith(`${section.href}/`)))}
-                  collapsed={collapsed}
-                />
+              <div key={section.label}>
+                <div className={cn("py-1", collapsed && "w-full flex justify-center")}>
+                  <SidebarMenuItem
+                    href={section.href}
+                    icon={section.icon}
+                    label={section.label}
+                    isActive={!section.href ? false : (section.href === "/" ? pathname === "/" : (pathname === section.href || pathname.startsWith(`${section.href}/`)))}
+                    collapsed={collapsed}
+                  />
+                </div>
+                
+                {/* Dynamic dashboard sub-items - only show for My Dashboards */}
+                {section.key === "my-dashboards" && userDashboards.length > 0 && !collapsed && (
+                  <div className="ml-4 space-y-1 border-l border-border pl-3 py-1">
+                    {userDashboards.map(dashboard => (
+                      <div key={dashboard.id} className="py-0.5">
+                        <SidebarMenuItem
+                          href={`/dashboards/${dashboard.id}`}
+                          icon={BarChart2}
+                          label={`${dashboard.dashboard_name}${dashboard.build_status === 'building' ? ' (Building...)' : ''}`}
+                          isActive={pathname === `/dashboards/${dashboard.id}`}
+                          collapsed={false}
+                        />
+                      </div>
+                    ))}
+                    {userDashboards.length >= 5 && (
+                      <div className="py-0.5">
+                        <SidebarMenuItem
+                          href="/dashboards"
+                          icon={BarChart2}
+                          label="View all..."
+                          isActive={false}
+                          collapsed={false}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>
