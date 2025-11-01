@@ -230,8 +230,8 @@ export default function ResetPasswordPage() {
                   className="relative z-10 flex items-center justify-center w-full h-full"
                 >
                   <Image
-                    src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/no_bg_logo-M7cBq60PCuZ1sN7MH6T2WMZRrdyQMZ.png"
-                    alt="RSW Logo"
+                    src="/logo-arc.png"
+                    alt="ARC Logo"
                     width={80}
                     height={80}
                     className="object-contain"
@@ -240,8 +240,7 @@ export default function ResetPasswordPage() {
               </motion.div>
               <h1 className="text-2xl font-bold text-foreground text-center mt-4 mb-1">Set New Password</h1>
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary via-secondary to-accent font-semibold text-sm">
-                Cognitive Data Expert
-              </span>
+                CogDIns              </span>
             </div>
 
             {!token && (
@@ -430,7 +429,7 @@ export default function ResetPasswordPage() {
           </motion.div>
           
           <p className="text-center text-muted-foreground text-sm mt-6">
-            RSW Smart Data Intelligence Platform
+            CogDIns Smart Data Intelligence Platform
           </p>
         </div>
       </div>
