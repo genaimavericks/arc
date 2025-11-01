@@ -105,7 +105,18 @@ export default function Navbar() {
           <ChevronLeft className="h-5 w-5 text-muted-foreground" />
         </Button>
         
-        <h1 className="text-lg font-semibold">{pageName}</h1>
+        <div className="flex items-center gap-3">
+          <div className="relative w-8 h-8 rounded-full bg-card flex items-center justify-center">
+            <Image
+              src="/logo-arc.png"
+              alt="ARC Logo"
+              width={32}
+              height={32}
+              className="object-contain"
+            />
+          </div>
+          <h1 className="text-lg font-semibold">{pageName}</h1>
+        </div>
       </div>
       
       <div className="hidden md:flex items-center gap-4 max-w-md w-full">

@@ -175,7 +175,7 @@ export default function ForgotPasswordPage() {
           >
             <div className="flex flex-col items-center mb-8">
               <motion.div
-                className="relative w-24 h-24"
+                className="relative w-32 h-32"
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onHoverStart={() => setIsLogoAnimating(true)}
@@ -202,12 +202,12 @@ export default function ForgotPasswordPage() {
                   }}
                   className="relative z-10 flex items-center justify-center w-full h-full"
                 >
-                  <div className="relative w-20 h-20 rounded-full bg-card flex items-center justify-center shadow-lg">
+                  <div className="relative w-28 h-28 rounded-full bg-card flex items-center justify-center shadow-lg">
                     <Image
-                      src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/no_bg_logo-M7cBq60PCuZ1sN7MH6T2WMZRrdyQMZ.png"
-                      alt="RSW Logo"
-                      width={80}
-                      height={80}
+                      src="/logo-arc.png"
+                      alt="ARC Logo"
+                      width={112}
+                      height={112}
                       className="object-contain"
                     />
                   </div>
@@ -220,8 +220,7 @@ export default function ForgotPasswordPage() {
                 transition={{ delay: 0.3, duration: 0.5 }}
                 className="text-transparent bg-clip-text bg-gradient-to-r from-primary via-secondary to-accent font-semibold text-sm"
               >
-                Cognitive Data Expert
-              </motion.span>
+                CogDIns              </motion.span>
             </div>
 
             {isSubmitted ? (
@@ -489,7 +488,7 @@ export default function ForgotPasswordPage() {
             transition={{ delay: 0.6, duration: 0.5 }}
           >
             <p className="text-center text-muted-foreground text-sm mt-6">
-              RSW Smart Data Intelligence Platform
+              CogDIns Smart Data Intelligence Platform
             </p>
           </motion.div>
         </div>

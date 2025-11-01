@@ -108,8 +108,8 @@ export default function LoginPage() {
                 >
                   <div className="relative w-20 h-20 rounded-full bg-card flex items-center justify-center shadow-lg">
                     <Image
-                      src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/no_bg_logo-M7cBq60PCuZ1sN7MH6T2WMZRrdyQMZ.png"
-                      alt="RSW Logo"
+                      src="/logo-arc.png"
+                      alt="ARC Logo"
                       width={80}
                       height={80}
                       className="object-contain"
@@ -124,8 +124,7 @@ export default function LoginPage() {
                 transition={{ delay: 0.3, duration: 0.5 }}
                 className="text-transparent bg-clip-text bg-gradient-to-r from-primary via-secondary to-accent font-semibold text-sm"
               >
-                Cognitive Data Expert
-              </motion.span>
+                CogDIns              </motion.span>
             </div>
 
             <AnimatePresence>
@@ -272,7 +271,7 @@ export default function LoginPage() {
             transition={{ delay: 0.6, duration: 0.5 }}
           >
             <p className="text-center text-muted-foreground text-sm mt-6">
-              RSW Smart Data Intelligence Platform
+              CogDIns Smart Data Intelligence Platform
             </p>
           </motion.div>
         </div>
