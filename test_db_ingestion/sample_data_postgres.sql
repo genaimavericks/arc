@@ -1,8 +1,8 @@
--- Create sample database for RSW testing
-CREATE DATABASE rsw_test;
+-- Create sample database for Lightening testing
+CREATE DATABASE lightening_test;
 
 -- Connect to the newly created database
-\c rsw_test;
+\c lightening_test;
 
 -- Create customers table
 CREATE TABLE customers (
@@ -167,7 +167,7 @@ GROUP BY c.customer_id, customer_name
 ORDER BY total_spent DESC NULLS LAST;
 
 -- Add user for connection
-CREATE USER rsw_user WITH PASSWORD 'rsw_password';
-GRANT ALL PRIVILEGES ON DATABASE rsw_test TO rsw_user;
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO rsw_user;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO rsw_user;
+CREATE USER lightening_user WITH PASSWORD 'lightening_password';
+GRANT ALL PRIVILEGES ON DATABASE lightening_test TO lightening_user;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO lightening_user;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO lightening_user;

@@ -1,6 +1,6 @@
-# PostgreSQL Setup for RSW DataPuur Testing
+# PostgreSQL Setup for Lightening DataPuur Testing
 
-This guide provides instructions for setting up a PostgreSQL database to test the SQL database ingestion feature in the RSW DataPuur module. The setup includes creating a test database, populating it with sample e-commerce data, and configuring the connection.
+This guide provides instructions for setting up a PostgreSQL database to test the SQL database ingestion feature in the Lightening DataPuur module. The setup includes creating a test database, populating it with sample e-commerce data, and configuring the connection.
 
 ## Table of Contents
 
@@ -18,7 +18,7 @@ This guide provides instructions for setting up a PostgreSQL database to test th
 
 - PostgreSQL 12 or later
 - Basic familiarity with PostgreSQL commands
-- RSW platform installed and running
+- Lightening platform installed and running
 
 ## Setup Instructions
 
@@ -39,7 +39,7 @@ This guide provides instructions for setting up a PostgreSQL database to test th
    psql postgres
    
    # Create the test database
-   CREATE DATABASE rsw_test;
+   CREATE DATABASE lightening_test;
    
    # Exit the PostgreSQL prompt
    \q
@@ -48,7 +48,7 @@ This guide provides instructions for setting up a PostgreSQL database to test th
 3. **Run the sample data script**:
    ```bash
    # Run the SQL script to create tables and populate data
-   psql -d rsw_test -f /Users/dhani/GitHub/dpk/rsw/populate_sample_data.sql
+   psql -d lightening_test -f /path/to/arc/test_db_ingestion/populate_sample_data.sql
    ```
 
 ### Windows Setup
@@ -70,7 +70,7 @@ This guide provides instructions for setting up a PostgreSQL database to test th
    # Enter your password when prompted
    
    # Create the test database
-   CREATE DATABASE rsw_test;
+   CREATE DATABASE lightening_test;
    
    # Exit the PostgreSQL prompt
    \q
@@ -79,16 +79,16 @@ This guide provides instructions for setting up a PostgreSQL database to test th
 3. **Run the sample data script**:
    ```bash
    # Navigate to the script directory
-   cd C:\path\to\rsw\directory
+   cd C:\path\to\arc\directory
    
    # Run the SQL script (replace 'postgres' with your username if different)
-   psql -U postgres -d rsw_test -f populate_sample_data.sql
+   psql -U postgres -d lightening_test -f populate_sample_data.sql
    ```
 
    Alternatively, you can use pgAdmin:
    - Open pgAdmin
    - Connect to your PostgreSQL server
-   - Right-click on the "rsw_test" database and select "Query Tool"
+   - Right-click on the "lightening_test" database and select "Query Tool"
    - Open the SQL file and execute it
 
 ## Verify Installation
@@ -98,10 +98,10 @@ To verify that the data was loaded correctly:
 ```bash
 # Connect to the test database
 # macOS:
-psql rsw_test
+psql lightening_test
 
 # Windows:
-psql -U postgres -d rsw_test
+psql -U postgres -d lightening_test
 
 # List all tables
 \dt
@@ -170,13 +170,13 @@ SELECT * FROM order_items LIMIT 5;
 
 ## Using the DataPuur Interface
 
-1. **Open the RSW DataPuur Ingestion interface**
+1. **Open the Lightening DataPuur Ingestion interface**
 2. **Select "Database Connection"**
 3. **Configure the connection**:
    - Connection Type: `postgresql`
    - Host: `localhost` (or `127.0.0.1`)
    - Port: `5432`
-   - Database Name: `rsw_test`
+   - Database Name: `lightening_test`
    - Username: 
      - macOS: Your system username
      - Windows: `postgres` (or the username you created)

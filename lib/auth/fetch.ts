@@ -3,7 +3,7 @@ import { getApiBaseUrl } from '../config';
 const API_BASE_URL = getApiBaseUrl();
 
 /**
- * Fetch with authentication for RSW API requests
+ * Fetch with authentication for Lightening API requests
  * 
  * @param url The URL to fetch from
  * @param options Fetch options
@@ -37,18 +37,18 @@ export async function fetchWithAuth(url: string, options: RequestInit = {}) {
       if (typeof window !== 'undefined') {
         localStorage.removeItem('token');
       }
-      
+
       // Redirect to login if needed
       if (typeof window !== 'undefined') {
         window.location.href = '/login';
       }
     }
-    
+
     // Handle permission errors (403 Forbidden)
     if (response.status === 403) {
       // Log the permission error
       console.error('Permission denied:', url);
-      
+
       // We don't redirect here, just return the response
       // The calling component should handle showing appropriate error messages
     }

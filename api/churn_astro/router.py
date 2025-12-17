@@ -1,5 +1,5 @@
 """
-Churn Astro Router Module for RSW
+Churn Astro Router Module for Lightening
 
 This module provides FastAPI router for the Churn Prediction functionality.
 """

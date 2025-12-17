@@ -1,5 +1,5 @@
 """
-Compatibility layer for churn_astro to work with RSW dependencies
+Compatibility layer for churn_astro to work with Lightening dependencies
 """
 import importlib
 import sys

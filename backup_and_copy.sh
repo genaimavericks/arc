@@ -30,7 +30,7 @@ fi
 
 # Validation based on mode
 if [ "$OPERATION_MODE" = "backup" ]; then
-    # In backup mode, SOURCE_PATH should be the source RSW installation
+    # In backup mode, SOURCE_PATH should be the source Lightening installation
     if [ ! -d "$SOURCE_PATH" ]; then
         echo "Error: Source path '$SOURCE_PATH' does not exist or is not a directory"
         exit 1
@@ -67,9 +67,9 @@ fi
 if [ "$OPERATION_MODE" = "backup" ]; then
     # Generate timestamp for backups
     TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-    BACKUP_DIR="${DEST_PATH}/rsw_backup_${TIMESTAMP}"
+    BACKUP_DIR="${DEST_PATH}/lightening_backup_${TIMESTAMP}"
     
-    echo "===== RSW Backup and Copy Script ====="
+    echo "===== Lightening Backup and Copy Script ====="
     echo "Mode: Backup"
     echo "Source: $SOURCE_PATH"
     echo "Destination: $DEST_PATH"
@@ -85,7 +85,7 @@ if [ "$OPERATION_MODE" = "backup" ]; then
 elif [ "$OPERATION_MODE" = "restore" ]; then
     BACKUP_DIR="$SOURCE_PATH"
     
-    echo "===== RSW Restore Script ====="
+    echo "===== Lightening Restore Script ====="
     echo "Mode: Restore"
     echo "Backup Source: $BACKUP_DIR"
     echo "Destination: $DEST_PATH"

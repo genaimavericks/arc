@@ -1,6 +1,6 @@
-# Gen AI Layer for RSW Platform
+# Gen AI Layer for Lightening Platform
 
-This package provides AI capabilities to the RSW platform by integrating with various LLM providers through LangChain.
+This package provides AI capabilities to the Lightening platform by integrating with various LLM providers through LangChain.
 
 ## Features
 
@@ -76,9 +76,9 @@ response = requests.get(url, headers=headers)
 print(response.json())
 ```
 
-## Integration with RSW Components
+## Integration with Lightening Components
 
-The Gen AI Layer is designed to integrate seamlessly with other RSW components:
+The Gen AI Layer is designed to integrate seamlessly with other Lightening components:
 
 - **KGInsights**: Enhance knowledge graphs with AI-generated metadata, summaries, and relationships
 - **DataPuur**: Analyze data sources, generate insights, and suggest transformations

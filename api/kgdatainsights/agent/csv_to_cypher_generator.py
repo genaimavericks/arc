@@ -1,4 +1,4 @@
-# /Users/asgiri218/gam-project/rsw/api/kgdatainsights/agent/csv_to_cypher_generator.py
+# api/kgdatainsights/agent/csv_to_cypher_generator.py
 import json
 import pandas as pd
 import math
@@ -185,8 +185,8 @@ class CsvToCypherGenerator:
 # Example Usage (Optional - for testing this script directly)
 if __name__ == '__main__':
     # Adjust paths relative to where you run this script, or use absolute paths
-    # Calculation updated for new location: rsw/api/kgdatainsights/agent
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) # -> rsw
+    # Calculation updated for new location: arc/api/kgdatainsights/agent
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) # -> arc
     
     # Add project root to path to help with imports if run directly
     if project_root not in sys.path:

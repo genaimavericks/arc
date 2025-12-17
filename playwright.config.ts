@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * Playwright configuration for RSW project
+ * Playwright configuration for Lightening project
  * @see https://playwright.dev/docs/test-configuration
  */
 export default defineConfig({
@@ -11,14 +11,14 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
   reporter: 'html',
-  
+
   use: {
     // Base URL to use in actions like `await page.goto('/')`
     baseURL: process.env.TEST_BASE_URL || 'http://127.0.0.1:9090',
-    
+
     // Capture screenshot on failure
     screenshot: 'only-on-failure',
-    
+
     // Record trace for each test
     trace: 'on-first-retry',
   },

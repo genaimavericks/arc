@@ -84,8 +84,8 @@ Entry point to the application offering navigation to DataPuur and KGInsights co
 
 1. **Clone the Repository**
    ```bash
-   git clone https://github.com/RSWdjinni/rsw.git
-   cd rsw
+   git clone https://github.com/genaimavericks/arc.git
+   cd arc
    ```
 
 2. **Set Up Environment**
@@ -110,8 +110,8 @@ Entry point to the application offering navigation to DataPuur and KGInsights co
 
 1. **Clone the Repository**
    ```bash
-   git clone https://github.com/RSWdjinni/rsw.git
-   cd rsw
+   git clone https://github.com/genaimavericks/arc.git
+   cd arc
    ```
 
 2. **Set Up Environment**
@@ -146,8 +146,8 @@ Entry point to the application offering navigation to DataPuur and KGInsights co
 2. **Set Up Application**
    ```bash
    # Clone repository
-   git clone https://github.com/RSWdjinni/rsw.git
-   cd rsw
+   git clone https://github.com/genaimavericks/arc.git
+   cd arc
 
    # Python setup
    python3 -m venv .venv
@@ -179,8 +179,8 @@ Entry point to the application offering navigation to DataPuur and KGInsights co
 
    3. Clone using SSH URL:
       ```bash
-      git clone git@github.com:RSWdjinni/rsw.git
-      cd rsw
+      git clone git@github.com:genaimavericks/arc.git
+      cd arc
       ```
 
    #### Option 2: Using Personal Access Token
@@ -189,8 +189,8 @@ Entry point to the application offering navigation to DataPuur and KGInsights co
 
    2. Clone using HTTPS with token:
       ```bash
-      git clone https://USERNAME:TOKEN@github.com/RSWdjinni/rsw.git
-      cd rsw
+      git clone https://USERNAME:TOKEN@github.com/genaimavericks/arc.git
+      cd arc
       ```
       Replace USERNAME with your GitHub username and TOKEN with your personal access token
 
@@ -209,8 +209,8 @@ Entry point to the application offering navigation to DataPuur and KGInsights co
 
    3. Clone the repository:
       ```bash
-      gh repo clone RSWdjinni/rsw
-      cd rsw
+      gh repo clone genaimavericks/arc
+      cd arc
       ```
 
 ### Deployment with Caddy (Ubuntu)
@@ -261,17 +261,17 @@ Caddy is a modern web server with automatic HTTPS certificate provisioning.
    sudo apt install -y openssl
 
    # Create directory for certificates
-   sudo mkdir -p /etc/ssl/rsw
+   sudo mkdir -p /etc/ssl/lightening
 
    # Generate private key
-   sudo openssl genrsa -out /etc/ssl/rsw/server.key 2048
+   sudo openssl genrsa -out /etc/ssl/lightening/server.key 2048
 
    # Create self-signed certificate (include your IP in the SAN)
-   sudo openssl req -new -x509 -key /etc/ssl/rsw/server.key -out /etc/ssl/rsw/server.crt -days 3650 -subj "/CN=RSW Application" -addext "subjectAltName = IP:YOUR_SERVER_IP"
+   sudo openssl req -new -x509 -key /etc/ssl/lightening/server.key -out /etc/ssl/lightening/server.crt -days 3650 -subj "/CN=Lightening Application" -addext "subjectAltName = IP:YOUR_SERVER_IP"
 
    # Set proper permissions
-   sudo chmod 400 /etc/ssl/rsw/server.key
-   sudo chmod 444 /etc/ssl/rsw/server.crt
+   sudo chmod 400 /etc/ssl/lightening/server.key
+   sudo chmod 444 /etc/ssl/lightening/server.crt
    ```
 
    Then update your Caddyfile to use these certificates:
@@ -319,7 +319,7 @@ Caddy is a modern web server with automatic HTTPS certificate provisioning.
 4. **Start Application with PM2**
    ```bash
    # Start the application
-   pm2 start "./start.sh" --name rsw
+   pm2 start "./start.sh" --name lightening
    pm2 save
    pm2 startup
    ```
@@ -330,7 +330,7 @@ Caddy is a modern web server with automatic HTTPS certificate provisioning.
 
 ## Creating a Deployable Package
 
-The RSW project includes a build script that creates a configurable and deployable package for easier distribution and deployment.
+The Lightening project includes a build script that creates a configurable and deployable package for easier distribution and deployment.
 
 ### Building the Package
 
@@ -348,7 +348,7 @@ The RSW project includes a build script that creates a configurable and deployab
    - Build optimized frontend assets
    - Copy backend code and configuration templates
    - Create deployment and startup scripts
-   - Package everything into a single archive (`rsw-deployment.tar.gz`)
+   - Package everything into a single archive (`lightening-deployment.tar.gz`)
 
 2. **Package Contents**
    The generated package includes:
@@ -363,19 +363,19 @@ The RSW project includes a build script that creates a configurable and deployab
 1. **Transfer the Package**
    ```bash
    # Using SCP
-   scp rsw-deployment.tar.gz user@server:/path/to/deployment/
+   scp lightening-deployment.tar.gz user@server:/path/to/deployment/
    
    # Or using SFTP
    sftp user@server
-   put rsw-deployment.tar.gz /path/to/deployment/
+   put lightening-deployment.tar.gz /path/to/deployment/
    ```
 
 2. **Extract and Configure**
    ```bash
    # On the server
-   mkdir -p /opt/rsw
-   cd /opt/rsw
-   tar -xzf /path/to/rsw-deployment.tar.gz
+   mkdir -p /opt/lightening
+   cd /opt/lightening
+   tar -xzf /path/to/lightening-deployment.tar.gz
    cd package
    
    # Run the deployment script
@@ -397,24 +397,24 @@ The RSW project includes a build script that creates a configurable and deployab
 4. **Set Up as a Service (Optional)**
    ```bash
    # Create systemd service file
-   sudo nano /etc/systemd/system/rsw.service
+   sudo nano /etc/systemd/system/lightening.service
    ```
    
    Add the following content:
    ```
    [Unit]
-   Description=RSW Application
+   Description=Lightening Application
    After=network.target
    
    [Service]
    User=your_user
-   WorkingDirectory=/opt/rsw/package
-   ExecStart=/opt/rsw/package/start.sh
+   WorkingDirectory=/opt/lightening/package
+   ExecStart=/opt/lightening/package/start.sh
    Restart=always
    RestartSec=5
    StandardOutput=journal
    StandardError=journal
-   SyslogIdentifier=rsw
+   SyslogIdentifier=lightening
    
    [Install]
    WantedBy=multi-user.target
@@ -423,17 +423,17 @@ The RSW project includes a build script that creates a configurable and deployab
    Enable and start the service:
    ```bash
    sudo systemctl daemon-reload
-   sudo systemctl enable rsw
-   sudo systemctl start rsw
+   sudo systemctl enable lightening
+   sudo systemctl start lightening
    ```
 
 5. **Monitor the Application**
    ```bash
    # Check service status
-   sudo systemctl status rsw
+   sudo systemctl status lightening
    
    # View logs
-   sudo journalctl -u rsw -f
+   sudo journalctl -u lightening -f
    ```
 
 ### Setting Up with Caddy (Recommended)
@@ -484,7 +484,7 @@ For production environments, we recommend using Caddy as a reverse proxy with HT
 ### Troubleshooting Common Deployment Issues
 
 1. **Application Won't Start**
-   - Check logs: `sudo journalctl -u rsw -f`
+   - Check logs: `sudo journalctl -u lightening -f`
    - Verify configuration in `config/.env`
    - Ensure Python dependencies are installed
 
@@ -494,8 +494,8 @@ For production environments, we recommend using Caddy as a reverse proxy with HT
    - Verify Python version (Python 3.10+ recommended)
 
 3. **Permission Issues**
-   - Check ownership: `sudo chown -R your_user:your_user /opt/rsw`
-   - Set proper permissions: `chmod -R 755 /opt/rsw`
+   - Check ownership: `sudo chown -R your_user:your_user /opt/lightening`
+   - Set proper permissions: `chmod -R 755 /opt/lightening`
    - Ensure start.sh is executable: `chmod +x start.sh`
 
 For more detailed deployment instructions, refer to the `PACKAGE_README.md` file included in the deployment package.
@@ -532,4 +532,4 @@ For more detailed deployment instructions, refer to the `PACKAGE_README.md` file
 
 ## Contributors
 
-RSW Team
+Lightening Team

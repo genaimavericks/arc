@@ -1,12 +1,12 @@
-# RSW Deployment Package
+# Lightening Deployment Package
 
-This package contains a deployable version of the RSW application.
+This package contains a deployable version of the Lightening application.
 
 ## Deployment Instructions
 
 1. Extract the archive to your target server:
    ```
-   tar -xzf rsw-deployment.tar.gz
+   tar -xzf lightening-deployment.tar.gz
    cd package
    ```
 

@@ -1,5 +1,5 @@
 """
-Churn Astro module for RSW
+Churn Astro module for Lightening
 """
 import sys
 import os

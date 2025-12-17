@@ -1,5 +1,5 @@
 @echo off
-echo Stopping RSW processes...
+echo Stopping Lightening processes...
 
 REM Stop Python API server
 echo Stopping Python API server...
@@ -19,5 +19,5 @@ IF %ERRORLEVEL% EQU 0 (
     echo No Next.js server running.
 )
 
-echo All RSW processes stopped.
+echo All Lightening processes stopped.
 pause

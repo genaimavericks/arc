@@ -6,7 +6,7 @@ import sys
 # Connection parameters
 host = "localhost"
 port = "5432"
-database = "rsw_test"
+database = "lightening_test"
 user = "dhani"
 password = ""  # If using trust authentication, password can be empty
 
@@ -57,6 +57,6 @@ except Exception as e:
         print("\nSuggested solutions:")
         print("1. Check if PostgreSQL service is running")
         print("2. Verify your username and password")
-        print("3. Make sure the database 'rsw_test' exists")
+        print("3. Make sure the database 'lightening_test' exists")
         print("4. Check pg_hba.conf for authentication settings")
         sys.exit(1)

@@ -1,5 +1,5 @@
 """
-Data Profiler Router for the RSW platform.
+Data Profiler Router for the Lightening platform.
 This module implements API endpoints for data profiling.
 """
 

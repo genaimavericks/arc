@@ -1,6 +1,6 @@
-# RSW Platform Documentation
+# Lightening Platform Documentation
 
-Welcome to the RSW Smart Data Intelligence (SDI) platform documentation. This guide will help you understand and use the platform effectively.
+Welcome to the Lightening Smart Data Intelligence (SDI) platform documentation. This guide will help you understand and use the platform effectively.
 
 ## Documentation Sections
 
@@ -11,20 +11,20 @@ Welcome to the RSW Smart Data Intelligence (SDI) platform documentation. This gu
   - [KGInsights](./kginsights.md)
 - [API Reference](./api-reference.md)
 
-## About RSW Platform
+## About Lightening Platform
 
-RSW is a comprehensive Smart Data Intelligence (SDI) platform built as a GenAI-first application. It leverages the power of generative AI throughout its architecture to automate complex data tasks and increase productivity across the entire data lifecycle.
+Lightening is a comprehensive Smart Data Intelligence (SDI) platform built as a GenAI-first application. It leverages the power of generative AI throughout its architecture to automate complex data tasks and increase productivity across the entire data lifecycle.
 
 ### GenAI-Powered Intelligence
 
-RSW uses advanced generative AI to:
+Lightening uses advanced generative AI to:
 
 - **Automate Data Engineering**: Automatically handle data ingestion, cleaning, transformation, and integration tasks that traditionally require significant manual effort
 - **Accelerate Data Science**: Perform automated feature engineering, pattern detection, and insight generation without requiring deep technical expertise
 - **Simplify Analytics**: Generate visualizations, reports, and dashboards based on natural language requests
 - **Enable Conversational Interaction**: Allow users to interact with data through natural language via the Djinni Assistant
 
-By embedding AI throughout the platform, RSW dramatically reduces the technical barriers to working with complex data, allowing domain experts to focus on business outcomes rather than technical implementation details.
+By embedding AI throughout the platform, Lightening dramatically reduces the technical barriers to working with complex data, allowing domain experts to focus on business outcomes rather than technical implementation details.
 
 The platform consists of several integrated modules:
 
@@ -54,7 +54,7 @@ The platform is built with a modern tech stack including Next.js with TypeScript
 
 ## AI-Driven Productivity
 
-RSW's GenAI capabilities deliver significant productivity benefits:
+Lightening's GenAI capabilities deliver significant productivity benefits:
 
 - **Reduced Manual Work**: Tasks that previously took days or weeks can be completed in minutes or hours
 - **Democratized Data Access**: Non-technical users can perform complex data operations through natural language
@@ -67,8 +67,8 @@ RSW's GenAI capabilities deliver significant productivity benefits:
 If you need additional assistance:
 
 - Check the [Troubleshooting](./getting-started.md#troubleshooting) section
-- Contact support at support@rsw.com
-- Visit our [GitHub repository](https://github.com/your-organization/rsw)
+- Contact support at support@lightening.com
+- Visit our [GitHub repository](https://github.com/genaimavericks/arc)
 
 ---
 

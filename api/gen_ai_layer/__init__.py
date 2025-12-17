@@ -1,5 +1,5 @@
 """
-Gen AI Layer for RSW platform.
+Gen AI Layer for Lightening platform.
 Provides integration with LLMs and other AI capabilities.
 """
 

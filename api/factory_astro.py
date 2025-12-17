@@ -1,5 +1,5 @@
 """
-Factory Astro API Module for RSW
+Factory Astro API Module for Lightening
 
 This module provides FastAPI endpoints for the Factory Astro functionality.
 """

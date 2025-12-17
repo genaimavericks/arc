@@ -1,4 +1,4 @@
-# /Users/asgiri218/gam-project/rsw/api/utils/llm_provider.py
+# api/utils/llm_provider.py
 import os
 from typing import Union, Optional
 from langchain_core.language_models.chat_models import BaseChatModel

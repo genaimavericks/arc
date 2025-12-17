@@ -1,12 +1,12 @@
 /**
- * Central configuration for the RSW application
+ * Central configuration for the Lightening application
  * This file provides a consistent way to access configuration values throughout the application
  */
 
 // This will be replaced at runtime with the actual configuration
 declare global {
   interface Window {
-    __RSW_CONFIG__?: {
+    __LIGHTENING_CONFIG__?: {
       apiBaseUrl?: string;
     };
   }
@@ -20,10 +20,10 @@ export function getApiBaseUrl(): string {
   // For client-side requests
   if (typeof window !== 'undefined') {
     // First check if we have a runtime config (injected by the server)
-    if (window.__RSW_CONFIG__?.apiBaseUrl) {
-      return window.__RSW_CONFIG__.apiBaseUrl;
+    if (window.__LIGHTENING_CONFIG__?.apiBaseUrl) {
+      return window.__LIGHTENING_CONFIG__.apiBaseUrl;
     }
-    
+
     // Then check environment variables
     const apiUrl = process.env.NEXT_PUBLIC_API_URL;
     if (apiUrl) {
@@ -33,11 +33,11 @@ export function getApiBaseUrl(): string {
       }
       return apiUrl;
     }
-    
+
     // Last resort: use the current window location
     return window.location.origin;
   }
-  
+
   // For server-side rendering
   const apiUrl = process.env.NEXT_PUBLIC_API_URL;
   if (apiUrl) {
@@ -46,7 +46,7 @@ export function getApiBaseUrl(): string {
     }
     return apiUrl;
   }
-  
+
   // Default fallback for server-side rendering
   return '';
 }

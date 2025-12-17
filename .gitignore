@@ -35,10 +35,10 @@ package-lock.json
 api/static
 out
 package
-rsw-deployment.tar.gz
+lightening-deployment.tar.gz
 .idea/
 api/static/*
-.rswvenv/
+.lighteningvenv/
 
 test-results
 db.logs
@@ -73,7 +73,7 @@ app/.DS_Store
 
 *.tar.gz
 
-rsw-deployment.menuhiding-2806-0830.tar.gz
+lightening-deployment.menuhiding-2806-0830.tar.gz
 
 neo4j-mcp-env
 api/.DS_Store

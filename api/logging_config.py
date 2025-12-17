@@ -1,5 +1,5 @@
 """
-Custom logging configuration for the RSW API.
+Custom logging configuration for the Lightening API.
 This configuration removes access logs for specific URL patterns and filters out excessive debug output.
 """
 import logging

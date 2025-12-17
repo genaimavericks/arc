@@ -1,5 +1,5 @@
 """
-Compatibility layer for astro_data to work with RSW dependencies
+Compatibility layer for astro_data to work with Lightening dependencies
 """
 import importlib
 import sys

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Print banner
-echo "Stopping RSW processes..."
+echo "Stopping Lightening processes..."
 
 # Stop Python API server
 echo "Stopping Python API server..."
@@ -9,7 +9,7 @@ pkill -f "python -m api.run" || echo "No API server running"
 
 # Stop Next.js development server if running
 echo "Stopping Next.js development server if running..."
-pkill -f "node .*/rsw/node_modules/.bin/next" || echo "No Next.js server running"
+pkill -f "node .*/arc/node_modules/.bin/next" || echo "No Next.js server running"
 
 # Stop processes on specific ports (especially 9090 for GraphCypherQAChain)
 echo "Stopping processes on port 9090..."
@@ -28,7 +28,7 @@ else
     echo "No processes found on port 9090"
 fi
 
-# Stop any uvicorn/fastapi processes related to RSW
+# Stop any uvicorn/fastapi processes related to Lightening
 echo "Stopping any remaining uvicorn/fastapi processes..."
 UVICORN_PIDS=$(ps aux | grep -E "[u]vicorn.*api\.run|[p]ython.*api\.run" | awk '{print $2}')
 if [ -n "$UVICORN_PIDS" ]; then
@@ -46,11 +46,11 @@ else
 fi
 
 # Final verification
-RSW_PIDS=$(ps aux | grep -E "[p]ython.*rsw|[u]vicorn.*rsw|[n]ode.*next" | awk '{print $2}')
-if [ -n "$RSW_PIDS" ]; then
-    echo "WARNING: Some RSW processes may still be running: $RSW_PIDS"
-    echo "Force killing all remaining RSW processes"
-    kill -9 $RSW_PIDS 2>/dev/null || true
+LIGHTENING_PIDS=$(ps aux | grep -E "[p]ython.*arc|[u]vicorn.*arc|[n]ode.*next" | awk '{print $2}')
+if [ -n "$LIGHTENING_PIDS" ]; then
+    echo "WARNING: Some Lightening processes may still be running: $LIGHTENING_PIDS"
+    echo "Force killing all remaining Lightening processes"
+    kill -9 $LIGHTENING_PIDS 2>/dev/null || true
 fi
 
-echo "All RSW processes stopped."
+echo "All Lightening processes stopped."

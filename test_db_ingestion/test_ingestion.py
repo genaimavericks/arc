@@ -31,7 +31,7 @@ db_type = "postgresql"
 config = {
     "host": "localhost",
     "port": "5432",
-    "database": "rsw_test",
+    "database": "lightening_test",
     "username": "dhani",
     "password": "",  # If using trust authentication, password can be empty
     "table": "customers" 

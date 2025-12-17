@@ -1,4 +1,4 @@
-// Runtime configuration for RSW application
-window.__RSW_CONFIG__ = {
+// Runtime configuration for Lightening application
+window.__LIGHTENING_CONFIG__ = {
   apiBaseUrl: window.location.origin
 };
